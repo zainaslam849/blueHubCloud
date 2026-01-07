@@ -1,30 +1,80 @@
-/vendor/
-node_modules/
-npm-debug.log
-yarn-error.log
+# ----------------------------
+# Dependencies
+# ----------------------------
+/vendor
+/node_modules
 
-# Laravel 4 specific
-bootstrap/compiled.php
-app/storage/
-
-# Laravel 5 & Lumen specific
-public/storage
-public/hot
-
-# Laravel 5 & Lumen specific with changed public path
-public_html/storage
-public_html/hot
-
-storage/*.key
+# ----------------------------
+# Environment & secrets
+# ----------------------------
 .env
+.env.*
+!.env.example
+auth.json
+
+# ----------------------------
+# Laravel storage & cache
+# ----------------------------
+/storage/*.key
+/storage/app/*
+!/storage/app/public
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/views/*
+/storage/logs/*
+
+# ----------------------------
+# Bootstrap cache
+# ----------------------------
+bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+
+# ----------------------------
+# Public build files
+# ----------------------------
+/public/build
+/public/hot
+/public/storage
+
+# If public path is changed
+/public_html/build
+/public_html/hot
+/public_html/storage
+
+# ----------------------------
+# Testing
+# ----------------------------
+.phpunit.result.cache
+/coverage
+
+# ----------------------------
+# IDE / OS junk
+# ----------------------------
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ----------------------------
+# Logs
+# ----------------------------
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ----------------------------
+# Homestead / Vagrant
+# ----------------------------
 Homestead.yaml
 Homestead.json
 /.vagrant
-.phpunit.result.cache
-
-/public/build
-/storage/pail
-.env.backup
-.env.production
-.phpactor.json
-auth.json
+*.sql
+*.sqlite
+*.zip
+*.tar.gz
+*.tar.bz2
+*.dump
+*.bak
