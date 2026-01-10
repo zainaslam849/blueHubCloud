@@ -3,6 +3,7 @@ import { ref } from "vue";
 import Card from "../components/ui/Card.vue";
 import DashboardSummaryCards from "../components/dashboard/DashboardSummaryCards.vue";
 import PageHeader from "../components/ui/PageHeader.vue";
+import TriggerIngestButton from "../components/admin/TriggerIngestButton.vue";
 
 // UI-only: demonstrate loading + empty states without backend calls.
 const demoState = ref<"loaded" | "loading" | "empty">("loaded");
@@ -49,6 +50,9 @@ const summaryData = {
             >
                 Empty
             </button>
+            <div style="margin-left: 8px">
+                <TriggerIngestButton />
+            </div>
         </div>
 
         <section class="grid2">

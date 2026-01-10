@@ -54,10 +54,16 @@ return [
         ],
     ],
 
+
     'reports' => [
         'storage_disk' => env('REPORTS_STORAGE_DISK', 's3'),
         'signed_url_minutes' => env('REPORTS_SIGNED_URL_MINUTES', 60),
         'weekly_template' => env('WEEKLY_REPORT_TEMPLATE', 'reports.weekly.default'),
+    ],
+
+    'pbxware' => [
+        'base_url' => env('PBXWARE_BASE_URL', 'https://your-pbxware-api-url'),
+        'aws_region' => env('PBXWARE_AWS_REGION', 'ap-southeast-2'),
     ],
 
 ];

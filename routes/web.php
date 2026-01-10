@@ -23,6 +23,7 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);
         Route::get('/transcriptions/{id}', [AdminTranscriptionsController::class, 'show']);
         Route::post('/logout', [AuthController::class, 'logout']);
+        Route::post('/pbx/ingest', [\App\Http\Controllers\Admin\PbxIngestController::class, 'trigger']);
     });
 });
 
