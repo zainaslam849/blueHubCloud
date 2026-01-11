@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Hash;
 
 class AdminUserSeeder extends Seeder
 {
-    public const DEFAULT_EMAIL = 'admin@bluehubcloud.test';
-    public const DEFAULT_PASSWORD = 'Admin@12345';
+    public const DEFAULT_EMAIL = 'admin@bluehubcloud.com';
+    public const DEFAULT_PASSWORD = '++Team@@11@@';
 
     /**
      * Seed an admin user for local/dev login.

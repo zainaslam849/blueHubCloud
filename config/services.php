@@ -64,6 +64,7 @@ return [
     'pbxware' => [
         'base_url' => env('PBXWARE_BASE_URL', 'https://your-pbxware-api-url'),
         'aws_region' => env('PBXWARE_AWS_REGION', 'ap-southeast-2'),
+        'timeout' => env('PBXWARE_TIMEOUT', 30),
     ],
 
 ];

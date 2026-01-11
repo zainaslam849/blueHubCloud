@@ -5,7 +5,10 @@ namespace App\Jobs;
 use App\Jobs\IngestPbxRecordingJob;
 use App\Models\Call;
 use App\Models\CompanyPbxAccount;
+use App\Models\CallRecording;
 use App\Services\PbxwareClient;
+use App\Services\Pbx\PbxClientResolver;
+use Illuminate\Support\Facades\Config;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -41,10 +44,15 @@ class IngestPbxCallsJob implements ShouldQueue
             return;
         }
 
-        $client = new PbxwareClient($pbxAccount->api_endpoint ?? null);
+        $client = PbxClientResolver::resolve($pbxAccount->api_endpoint ?? null);
 
         try {
             Log::info('Starting PBX calls ingestion', ['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId]);
+
+            // Log mock mode active for developer clarity
+            if (Config::get('pbx.mode') === 'mock') {
+                Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
+            }
 
             $calls = $client->fetchCalls(array_merge($this->params, ['company_id' => $this->companyId]), ['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId]);
 
@@ -70,11 +78,10 @@ class IngestPbxCallsJob implements ShouldQueue
                 ];
 
                 $call = Call::updateOrCreate([
-                    'company_id' => $this->companyId,
                     'call_uid' => $callUid,
-                ], array_filter($attributes, function ($v) { return $v !== null; }));
+                ], array_merge(['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId], array_filter($attributes, function ($v) { return $v !== null; })));
 
-                Log::info('Upserted call record', [
+                Log::info('📞 Call ingested', [
                     'company_id' => $this->companyId,
                     'company_pbx_account_id' => $this->companyPbxAccountId,
                     'call_id' => $call->id,
@@ -87,14 +94,29 @@ class IngestPbxCallsJob implements ShouldQueue
                 if (! empty($item['recordings']) && is_array($item['recordings'])) {
                     foreach ($item['recordings'] as $rec) {
                         $recId = is_array($rec) ? ($rec['id'] ?? $rec['recording_id'] ?? null) : $rec;
-                        if ($recId) {
-                            IngestPbxRecordingJob::dispatch($call->id, $this->companyId, (string) $recId)
-                                ->onQueue('ingest-pbx');
+                        if (! $recId) {
+                            continue;
                         }
+
+                        // Idempotency: skip if a recording with this idempotency key already exists
+                        $exists = CallRecording::where('idempotency_key', (string)$recId)->where('call_id', $call->id)->exists();
+                        if ($exists) {
+                            Log::info('Skipping dispatch for already-ingested recording', ['call_id' => $call->id, 'idempotency_key' => $recId]);
+                            continue;
+                        }
+
+                        IngestPbxRecordingJob::dispatch($this->companyId, $call->id, (string) $recId)
+                            ->onQueue('ingest-pbx');
                     }
                 } elseif (! empty($item['recording_id'])) {
-                    IngestPbxRecordingJob::dispatch($call->id, $this->companyId, (string) $item['recording_id'])
-                        ->onQueue('ingest-pbx');
+                    $recId = (string) $item['recording_id'];
+                    $exists = CallRecording::where('idempotency_key', $recId)->where('call_id', $call->id)->exists();
+                    if (! $exists) {
+                        IngestPbxRecordingJob::dispatch($this->companyId, $call->id, $recId)
+                            ->onQueue('ingest-pbx');
+                    } else {
+                        Log::info('Skipping dispatch for already-ingested recording', ['call_id' => $call->id, 'idempotency_key' => $recId]);
+                    }
                 }
             }
 
