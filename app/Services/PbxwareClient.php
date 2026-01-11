@@ -45,6 +45,15 @@ class PbxwareClient
         if (! empty($this->credentials['base_url'])) {
             $this->baseUrl = rtrim($this->credentials['base_url'], '/');
         }
+        // Normalize and validate credentials retrieved from Secrets Manager.
+        // This will throw a PbxwareClientException with a clear message
+        // if required auth fields are missing.
+        $this->credentials = $this->normalizeAndValidateCredentials($this->credentials);
+
+        // Warn operator if base URL does not contain an API prefix (versioning risk).
+        if ($this->baseUrl && stripos($this->baseUrl, '/api/') === false) {
+            Log::warning('PbxwareClient: configured PBX base URL does not contain an API prefix (e.g. /api/v7). This may cause 404s if the PBX API requires versioning.', ['base_url' => $this->baseUrl]);
+        }
     }
 
     protected function getCachedCredentials(): array
@@ -65,18 +74,59 @@ class PbxwareClient
         return 'pbxware_api_credentials_v1';
     }
 
+    /**
+     * Normalize and validate credentials fetched from Secrets Manager.
+     * Ensures one supported auth mechanism is present and returns a normalized
+     * credential array. Throws PbxwareClientException on validation failure.
+     */
+    protected function normalizeAndValidateCredentials(array $creds): array
+    {
+        // Warn about unsupported legacy keys if present
+        if (isset($creds['pbx_api_key']) || isset($creds['pbx_base_url'])) {
+            Log::warning('PbxwareClient: unsupported secret keys found (pbx_api_key or pbx_base_url). These are not used. Use auth_type/access_token/api_key/token or username/password and base_url instead.', ['present_keys' => array_intersect_key($creds, array_flip(['pbx_api_key','pbx_base_url']))]);
+        }
+
+        $normalized = $creds;
+        $authType = strtolower($creds['auth_type'] ?? $creds['auth'] ?? 'bearer');
+        $normalized['type'] = $authType;
+
+        if (isset($creds['timeout'])) {
+            $normalized['timeout'] = (int) $creds['timeout'];
+        }
+
+        if ($authType === 'basic') {
+            if (empty($creds['username']) || empty($creds['password'])) {
+                $msg = 'Secrets validation failed: auth_type is "basic" but username or password is missing.';
+                Log::error('PbxwareClient: ' . $msg, ['missing_username' => empty($creds['username']), 'missing_password' => empty($creds['password'])]);
+                throw new PbxwareClientException($msg);
+            }
+            $normalized['username'] = $creds['username'];
+            $normalized['password'] = $creds['password'];
+        } else {
+            $token = $creds['access_token'] ?? $creds['api_key'] ?? $creds['token'] ?? null;
+            if (empty($token)) {
+                $msg = 'Secrets validation failed: auth_type is "' . $authType . '" but no access_token/api_key/token was found.';
+                Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
+                throw new PbxwareClientException($msg);
+            }
+            $normalized['token'] = $token;
+        }
+
+        return $normalized;
+    }
+
     protected function buildHeaders(array $extra = []): array
     {
         $headers = array_merge([
             'Accept' => 'application/json',
         ], $extra);
 
-        // Add Authorization header based on secret-provided auth_type
-        $authType = strtolower($this->credentials['auth_type'] ?? $this->credentials['auth'] ?? 'bearer');
+        // Add Authorization header based on normalized credentials
+        $authType = strtolower($this->credentials['type'] ?? $this->credentials['auth_type'] ?? 'bearer');
         if ($authType === 'basic' && isset($this->credentials['username']) && isset($this->credentials['password'])) {
             $headers['Authorization'] = 'Basic ' . base64_encode($this->credentials['username'] . ':' . $this->credentials['password']);
-        } elseif (($authType === 'bearer' || $authType === 'token') && ! empty($this->credentials['api_key'] ?? $this->credentials['token'] ?? $this->credentials['access_token'])) {
-            $token = $this->credentials['api_key'] ?? $this->credentials['token'] ?? $this->credentials['access_token'];
+        } elseif (($authType === 'bearer' || $authType === 'token') && ! empty($this->credentials['token'] ?? null)) {
+            $token = $this->credentials['token'];
             $headers['Authorization'] = 'Bearer ' . $token;
         }
 
@@ -97,11 +147,10 @@ class PbxwareClient
         $url = $this->buildUrl($path);
         $headers = $this->buildHeaders($options['headers'] ?? []);
 
+        // Determine timeout: secret-provided timeout (seconds) or default 30s
+        $timeout = (int) ($this->credentials['timeout'] ?? $options['timeout'] ?? 30);
         try {
             $start = microtime(true);
-
-            // Determine timeout: secret-provided timeout (seconds) or default 30s
-            $timeout = (int) ($this->credentials['timeout'] ?? $options['timeout'] ?? 30);
 
             $requestOptions = array_merge($options['guzzle'] ?? [], ['stream' => $options['stream'] ?? false, 'timeout' => $timeout]);
 
@@ -135,8 +184,8 @@ class PbxwareClient
         } catch (PbxwareClientException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $url, 'error' => $e->getMessage()]);
-            throw new PbxwareClientException('PBX request exception: ' . $e->getMessage(), 0, $e);
+            Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $url, 'base_url' => $this->baseUrl, 'timeout' => $timeout, 'error' => $e->getMessage()]);
+            throw new PbxwareClientException('PBX request exception: ' . $e->getMessage() . ' (base_url=' . ($this->baseUrl ?? '[not set]') . ', timeout=' . $timeout . 's)', 0, $e);
         }
     }
 
