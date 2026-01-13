@@ -54,77 +54,63 @@ class IngestPbxCallsJob implements ShouldQueue
                 Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
             }
 
-            $calls = $client->fetchCalls(array_merge($this->params, ['company_id' => $this->companyId]), ['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId]);
+            $cdr = $client->fetchCdrList(array_merge($this->params, ['company_id' => $this->companyId]));
+            $rows = is_array($cdr) ? ($cdr['rows'] ?? []) : [];
 
             $processed = 0;
-            foreach ($calls as $item) {
-                // Map fields conservatively
-                $callUid = $this->resolveCallUid($item);
-                if ($callUid === null) {
-                    Log::warning('Skipping PBX call: no unique identifier present', [
-                        'company_id' => $this->companyId,
-                        'company_pbx_account_id' => $this->companyPbxAccountId,
-                    ]);
-                    Log::debug('PBX call missing unique identifier keys', [
-                        'available_keys' => array_keys($item),
-                        'item' => $this->safelog($item),
-                        'company_id' => $this->companyId,
-                        'company_pbx_account_id' => $this->companyPbxAccountId,
-                    ]);
+            foreach ($rows as $row) {
+                $mapped = $this->mapPbxwareCdr($row);
+                $callUid = $mapped['call_uid'] ?? null;
+                if (empty($callUid)) {
                     continue;
                 }
 
                 $attributes = [
                     'company_id' => $this->companyId,
                     'company_pbx_account_id' => $this->companyPbxAccountId,
-                    'direction' => $item['direction'] ?? null,
-                    'from_number' => $item['from'] ?? $item['from_number'] ?? null,
-                    'to_number' => $item['to'] ?? $item['to_number'] ?? null,
-                    'started_at' => isset($item['started_at']) ? $this->parseDate($item['started_at']) : null,
-                    'ended_at' => isset($item['ended_at']) ? $this->parseDate($item['ended_at']) : null,
-                    'duration_seconds' => $item['duration'] ?? $item['duration_seconds'] ?? null,
-                    'status' => $item['status'] ?? null,
+                    'started_at' => $mapped['started_at'] ?? null,
                 ];
 
-                $call = Call::updateOrCreate([
-                    'call_uid' => $callUid,
-                ], array_merge(['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId], array_filter($attributes, function ($v) { return $v !== null; })));
+                $call = Call::firstOrCreate(
+                    ['call_uid' => $callUid],
+                    array_filter($attributes, function ($v) { return $v !== null; })
+                );
 
-                Log::info('📞 Call ingested', [
-                    'company_id' => $this->companyId,
-                    'company_pbx_account_id' => $this->companyPbxAccountId,
-                    'call_id' => $call->id,
-                    'call_uid' => $callUid,
-                ]);
+                if (! $call->wasRecentlyCreated) {
+                    Log::info('Skipping duplicate call_uid', [
+                        'call_uid' => $callUid,
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                    ]);
+                }
 
-                $processed++;
+                if ($call->wasRecentlyCreated) {
+                    Log::info('📞 Call ingested', [
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        'call_id' => $call->id,
+                        'call_uid' => $callUid,
+                    ]);
 
-                // Detect recordings
-                if (! empty($item['recordings']) && is_array($item['recordings'])) {
-                    foreach ($item['recordings'] as $rec) {
-                        $recId = is_array($rec) ? ($rec['id'] ?? $rec['recording_id'] ?? null) : $rec;
-                        if (! $recId) {
-                            continue;
-                        }
+                    $processed++;
+                }
 
-                        // Idempotency: skip if a recording with this idempotency key already exists
-                        $exists = CallRecording::where('idempotency_key', (string)$recId)->where('call_id', $call->id)->exists();
-                        if ($exists) {
-                            Log::info('Skipping dispatch for already-ingested recording', ['call_id' => $call->id, 'idempotency_key' => $recId]);
-                            continue;
-                        }
+                // Fetch recordings only when PBXware indicates availability and the recording isn't already fetched.
+                if (! empty($mapped['recording_available']) && ! empty($mapped['recording_path'])) {
+                    $recordingPath = (string) $mapped['recording_path'];
+                    $alreadyFetched = CallRecording::where('idempotency_key', $recordingPath)
+                        ->where('call_id', $call->id)
+                        ->exists();
 
-                        IngestPbxRecordingJob::dispatch($this->companyId, $call->id, (string) $recId)
-                            ->onQueue('ingest-pbx');
-                    }
-                } elseif (! empty($item['recording_id'])) {
-                    $recId = (string) $item['recording_id'];
-                    $exists = CallRecording::where('idempotency_key', $recId)->where('call_id', $call->id)->exists();
-                    if (! $exists) {
-                        IngestPbxRecordingJob::dispatch($this->companyId, $call->id, $recId)
-                            ->onQueue('ingest-pbx');
+                    if ($alreadyFetched) {
+                        Log::info('Recording already fetched', [
+                            'call_id' => $call->id,
+                            'call_uid' => $callUid,
+                            'idempotency_key' => $recordingPath,
+                        ]);
                     } else {
-                        Log::info('Skipping dispatch for already-ingested recording', ['call_id' => $call->id, 'idempotency_key' => $recId]);
+                        IngestPbxRecordingJob::dispatch($this->companyId, $call->id, $recordingPath)
+                            ->onQueue('ingest-pbx');
                     }
                 }
             }
@@ -146,45 +132,43 @@ class IngestPbxCallsJob implements ShouldQueue
             return null;
         }
         try {
+            if (is_numeric($value)) {
+                return \Carbon\Carbon::createFromTimestamp((int) $value)->toDateTimeString();
+            }
             return \Carbon\Carbon::parse($value)->toDateTimeString();
         } catch (\Throwable $e) {
             return null;
         }
     }
 
-    protected function safelog(array $payload): array
+    private function mapPbxwareCdr(array $row): array
     {
-        // Remove potentially sensitive keys
-        $s = $payload;
-        unset($s['password'], $s['api_key'], $s['api_secret'], $s['secret']);
-        return $s;
-    }
-
-    private function resolveCallUid(array $call): ?string
-    {
-        // PBXware query-style API does not return a `uid` field.
-        // Prefer unique identifiers in priority order:
-        // a) uniqueid
-        // b) callid
-        // c) id
-
-        foreach (['uniqueid', 'callid', 'id'] as $key) {
-            if (! array_key_exists($key, $call)) {
-                continue;
-            }
-
-            $value = $call[$key];
-            if (is_string($value)) {
-                $value = trim($value);
-            }
-
-            if ($value === null || $value === '') {
-                continue;
-            }
-
-            return (string) $value;
+        // PBXware CDR CSV mapping using fixed column indexes.
+        // PBXware uses Unique ID only.
+        $uniqueId = isset($row[7]) ? trim((string) $row[7]) : '';
+        if ($uniqueId === '') {
+            Log::warning('Skipping PBX call: no unique identifier present', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+            ]);
+            Log::debug('PBX call missing Unique ID at column index 7', [
+                'row_len' => count($row),
+                'available_indexes' => array_keys($row),
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+            ]);
+            return ['call_uid' => null];
         }
 
-        return null;
+        $startedAt = isset($row[2]) ? $this->parseDate($row[2]) : null;
+        $recordingPath = isset($row[8]) ? (string) $row[8] : '';
+        $recordingAvailable = isset($row[9]) && ((string) $row[9] === 'True');
+
+        return [
+            'call_uid' => $uniqueId,
+            'started_at' => $startedAt,
+            'recording_path' => $recordingPath,
+            'recording_available' => $recordingAvailable,
+        ];
     }
 }

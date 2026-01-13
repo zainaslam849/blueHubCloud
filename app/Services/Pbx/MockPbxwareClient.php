@@ -67,6 +67,49 @@ class MockPbxwareClient
     }
 
     /**
+     * Return a PBXware-style CDR CSV structure: raw header + row arrays.
+     * This allows ingestion to treat calls as numeric arrays, matching the
+     * real PBXware CSV response.
+     *
+     * @return array{header: array<int,string>, rows: array<int, array<int,string>>}
+     */
+    public function fetchCdrList(array $params = []): array
+    {
+        $now = time();
+
+        // Minimal header for readability; ingestion uses fixed indexes.
+        $header = [
+            'col0', 'col1', 'timestamp', 'col3', 'col4', 'col5', 'col6',
+            'uniqueid', 'recording_path', 'recording_available',
+        ];
+
+        // Build three deterministic rows.
+        // Index mapping for ingestion:
+        // [2] timestamp, [7] Unique ID, [8] recording path, [9] recording available
+        $rows = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $uniqueId = "mock-uniqueid-{$i}";
+            $recordingPath = $i <= 2 ? "mock-rec-{$i}" : '';
+            $recordingAvailable = $i <= 2 ? 'True' : 'False';
+            $rows[] = [
+                '',
+                '',
+                (string) ($now - (60 * $i)),
+                '',
+                '',
+                '',
+                '',
+                $uniqueId,
+                $recordingPath,
+                $recordingAvailable,
+            ];
+        }
+
+        Log::info('MockPbxwareClient: fetchCdrList', ['params' => $params, 'count' => count($rows)]);
+        return ['header' => $header, 'rows' => $rows];
+    }
+
+    /**
      * Return recording metadata for given call IDs.
      * Signature: fetchRecordings(array $callIds): array
      */

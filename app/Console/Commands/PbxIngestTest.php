@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Log;
 
 class PbxIngestTest extends Command
 {
+    private ?int $currentCompanyId = null;
+    private ?int $currentCompanyPbxAccountId = null;
+
     /**
      * The name and signature of the console command.
      *
@@ -67,86 +70,69 @@ class PbxIngestTest extends Command
         foreach ($accounts as $acct) {
             $this->info("Starting ingest for company_id={$acct->company_id} account_id={$acct->id} since={$since}");
 
+            $this->currentCompanyId = (int) $acct->company_id;
+            $this->currentCompanyPbxAccountId = (int) $acct->id;
+
             // PBX base URL is intentionally centralized in Secrets Manager.
             $client = PbxClientResolver::resolve();
 
             try {
-                // For mock client the MockPbxwareClient expects a DateTimeInterface
-                $calls = [];
-                if (method_exists($client, 'fetchCalls')) {
-                    try {
-                        $calls = $client->fetchCalls(new \DateTimeImmutable($since));
-                    } catch (\TypeError $te) {
-                        // Fallback: try passing as array params
-                        $calls = $client->fetchCalls(['since' => $since, 'company_id' => $acct->company_id]);
-                    }
-                }
+                $cdr = $client->fetchCdrList(['since' => $since, 'company_id' => $acct->company_id]);
+                $rows = is_array($cdr) ? ($cdr['rows'] ?? []) : [];
 
-                foreach ($calls as $item) {
-                    $callUid = $this->resolveCallUid($item);
-                    if ($callUid === null) {
-                        $this->warn('Skipping PBX call: no unique identifier present');
-                        Log::warning('Skipping PBX call: no unique identifier present', [
-                            'company_id' => $acct->company_id,
-                            'company_pbx_account_id' => $acct->id,
-                        ]);
-                        Log::debug('PBX call missing unique identifier keys', [
-                            'available_keys' => array_keys($item),
-                            'company_id' => $acct->company_id,
-                            'company_pbx_account_id' => $acct->id,
-                        ]);
+                foreach ($rows as $row) {
+                    $mapped = $this->mapPbxwareCdr($row);
+                    $callUid = $mapped['call_uid'] ?? null;
+                    if (empty($callUid)) {
                         continue;
                     }
 
                     $attributes = [
                         'company_id' => $acct->company_id,
                         'company_pbx_account_id' => $acct->id,
-                        'direction' => $item['direction'] ?? null,
-                        'from_number' => $item['from'] ?? $item['from_number'] ?? null,
-                        'to_number' => $item['to'] ?? $item['to_number'] ?? null,
-                        'started_at' => isset($item['started_at']) ? Carbon::parse($item['started_at'])->toDateTimeString() : null,
-                        'ended_at' => isset($item['ended_at']) ? Carbon::parse($item['ended_at'])->toDateTimeString() : null,
-                        'duration_seconds' => $item['duration'] ?? $item['duration_seconds'] ?? null,
-                        'status' => $item['status'] ?? null,
+                        'started_at' => $mapped['started_at'] ?? null,
                     ];
 
-                    $call = Call::updateOrCreate([
-                        'call_uid' => $callUid,
-                    ], array_merge(['company_id' => $acct->company_id, 'company_pbx_account_id' => $acct->id], array_filter($attributes, function ($v) { return $v !== null; })));
+                    $call = Call::firstOrCreate(
+                        ['call_uid' => $callUid],
+                        array_filter($attributes, function ($v) { return $v !== null; })
+                    );
 
-                    $totalCalls++;
-                    $this->info("📞 Call ingested: call_id={$call->id} call_uid={$callUid}");
-
-                    // Handle recordings
-                    $recordings = [];
-                    if (! empty($item['recordings']) && is_array($item['recordings'])) {
-                        $recordings = $item['recordings'];
-                    } elseif (! empty($item['recording_id'])) {
-                        $recordings = [ ['id' => $item['recording_id']] ];
+                    if (! $call->wasRecentlyCreated) {
+                        $this->info('Skipping duplicate call_uid: ' . $callUid);
+                        Log::info('Skipping duplicate call_uid', ['call_uid' => $callUid, 'company_id' => $acct->company_id, 'company_pbx_account_id' => $acct->id]);
                     }
 
-                    foreach ($recordings as $rec) {
-                        $recId = is_array($rec) ? ($rec['id'] ?? $rec['recording_id'] ?? null) : $rec;
-                        if (! $recId) continue;
+                    if ($call->wasRecentlyCreated) {
+                        $totalCalls++;
+                        $this->info("📞 Call ingested: call_id={$call->id} call_uid={$callUid}");
+                    }
 
-                        $exists = CallRecording::where('idempotency_key', (string)$recId)->where('call_id', $call->id)->exists();
+                    // Fetch recordings only when recording_available === true and not already fetched.
+                    if (! empty($mapped['recording_available']) && ! empty($mapped['recording_path'])) {
+                        $recordingPath = (string) $mapped['recording_path'];
+                        $exists = CallRecording::where('idempotency_key', $recordingPath)
+                            ->where('call_id', $call->id)
+                            ->exists();
+
                         if ($exists) {
-                            $this->info("Skipping already-ingested recording: call_id={$call->id} idempotency_key={$recId}");
-                            continue;
-                        }
-
-                        // Run the recording ingestion synchronously so we can report success
-                        $job = new IngestPbxRecordingJob($acct->company_id, $call->id, (string)$recId);
-                        if (function_exists('dispatch_sync')) {
-                            dispatch_sync($job);
+                            $this->info("Recording already fetched: call_id={$call->id} idempotency_key={$recordingPath}");
+                            Log::info('Recording already fetched', ['call_id' => $call->id, 'call_uid' => $callUid, 'idempotency_key' => $recordingPath]);
                         } else {
-                            dispatch($job);
-                        }
+                            // Run the recording ingestion synchronously so we can report success
+                            $job = new IngestPbxRecordingJob($acct->company_id, $call->id, $recordingPath);
+                            if (function_exists('dispatch_sync')) {
+                                dispatch_sync($job);
+                            } else {
+                                dispatch($job);
+                            }
 
-                        $s3Key = sprintf('recordings/incoming/%s/%s.mp3', $acct->company_id, $callUid);
-                        $s3Paths[] = $s3Key;
-                        $totalRecordings++;
-                        $this->info("🎧 Recording uploaded: {$s3Key}");
+                            $s3Key = sprintf('recordings/incoming/%s/%s.mp3', $acct->company_id, $callUid);
+                            $s3Paths[] = $s3Key;
+
+                            $totalRecordings++;
+                            $this->info("🎧 Recording job dispatched: call_id={$call->id} recording_path={$recordingPath} -> s3={$s3Key}");
+                        }
                     }
                 }
 
@@ -174,31 +160,46 @@ class PbxIngestTest extends Command
         return 0;
     }
 
-    private function resolveCallUid(array $call): ?string
+    private function mapPbxwareCdr(array $row): array
     {
-        // PBXware query-style API does not return a `uid` field.
-        // Prefer unique identifiers in priority order:
-        // a) uniqueid
-        // b) callid
-        // c) id
-
-        foreach (['uniqueid', 'callid', 'id'] as $key) {
-            if (! array_key_exists($key, $call)) {
-                continue;
-            }
-
-            $value = $call[$key];
-            if (is_string($value)) {
-                $value = trim($value);
-            }
-
-            if ($value === null || $value === '') {
-                continue;
-            }
-
-            return (string) $value;
+        // PBXware CDR CSV mapping using fixed column indexes.
+        // PBXware uses Unique ID only.
+        $uniqueId = isset($row[7]) ? trim((string) $row[7]) : '';
+        if ($uniqueId === '') {
+            $this->warn('Skipping PBX call: no unique identifier present');
+            Log::warning('Skipping PBX call: no unique identifier present', [
+                'company_id' => $this->currentCompanyId,
+                'company_pbx_account_id' => $this->currentCompanyPbxAccountId,
+            ]);
+            Log::debug('PBX call missing Unique ID at column index 7', [
+                'row_len' => count($row),
+                'available_indexes' => array_keys($row),
+                'company_id' => $this->currentCompanyId,
+                'company_pbx_account_id' => $this->currentCompanyPbxAccountId,
+            ]);
+            return ['call_uid' => null];
         }
 
-        return null;
+        $startedAt = null;
+        if (isset($row[2]) && $row[2] !== '' && $row[2] !== null) {
+            $ts = $row[2];
+            try {
+                $startedAt = is_numeric($ts)
+                    ? Carbon::createFromTimestamp((int) $ts)->toDateTimeString()
+                    : Carbon::parse((string) $ts)->toDateTimeString();
+            } catch (\Throwable $e) {
+                $startedAt = null;
+            }
+        }
+
+        $recordingPath = isset($row[8]) ? (string) $row[8] : '';
+        $recordingAvailable = isset($row[9]) && ((string) $row[9] === 'True');
+
+        return [
+            'call_uid' => $uniqueId,
+            'started_at' => $startedAt,
+            'recording_path' => $recordingPath,
+            'recording_available' => $recordingAvailable,
+        ];
     }
 }

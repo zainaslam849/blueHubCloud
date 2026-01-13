@@ -361,14 +361,54 @@ class PbxwareClient
             Log::error('PbxwareClient: fetchCdrList failed', ['action' => 'pbxware.cdr.list', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
             throw new PbxwareClientException("Failed to fetch CDR list, status {$status}");
         }
-        $json = $response->json();
-        if (isset($json['data']) && is_array($json['data'])) {
-            return $json['data'];
+
+        // PBXware CDR list responses are CSV. Return raw header + row arrays
+        // exactly as received (no associative remapping).
+        $csv = (string) $response->body();
+        [$header, $rows] = $this->parseCsv($csv);
+
+        return [
+            'header' => $header,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * Parse a CSV string into [header, rows] where both are numeric arrays.
+     * Preserves raw cell strings as received.
+     *
+     * @return array{0: array<int,string>, 1: array<int, array<int,string>>}
+     */
+    protected function parseCsv(string $csv): array
+    {
+        $handle = fopen('php://temp', 'r+');
+        fwrite($handle, $csv);
+        rewind($handle);
+
+        $header = [];
+        $rows = [];
+        $line = 0;
+        while (($data = fgetcsv($handle)) !== false) {
+            // Skip completely empty lines
+            if ($data === [null] || $data === []) {
+                continue;
+            }
+
+            // Normalize nulls to empty strings to keep array shape predictable
+            $data = array_map(static function ($v) {
+                return $v === null ? '' : (string) $v;
+            }, $data);
+
+            if ($line === 0) {
+                $header = $data;
+            } else {
+                $rows[] = $data;
+            }
+            $line++;
         }
-        if (is_array($json)) {
-            return $json;
-        }
-        return [];
+
+        fclose($handle);
+        return [$header, $rows];
     }
 
     /**
