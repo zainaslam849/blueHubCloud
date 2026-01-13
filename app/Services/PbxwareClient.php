@@ -50,9 +50,10 @@ class PbxwareClient
         // if required auth fields are missing.
         $this->credentials = $this->normalizeAndValidateCredentials($this->credentials);
 
-        // Warn operator if base URL does not contain an API prefix (versioning risk).
-        if ($this->baseUrl && stripos($this->baseUrl, '/api/') === false) {
-            Log::warning('PbxwareClient: configured PBX base URL does not contain an API prefix (e.g. /api/v7). This may cause 404s if the PBX API requires versioning.', ['base_url' => $this->baseUrl]);
+        // PBXware uses a query-based API on the host root. Base URL must NOT
+        // contain an API path (e.g. /api/v7). Warn if an API-like path is present.
+        if ($this->baseUrl && stripos($this->baseUrl, '/api/') !== false) {
+            Log::warning('PbxwareClient: configured PBX base URL contains an /api/ path; PBXware expects root query endpoints (no /api/).', ['base_url' => $this->baseUrl]);
         }
     }
 
@@ -86,31 +87,36 @@ class PbxwareClient
             Log::warning('PbxwareClient: unsupported secret keys found (pbx_api_key or pbx_base_url). These are not used. Use auth_type/access_token/api_key/token or username/password and base_url instead.', ['present_keys' => array_intersect_key($creds, array_flip(['pbx_api_key','pbx_base_url']))]);
         }
 
+        // PBXware uses a query-based API. We require auth_type == 'query' and
+        // the presence of both `api_key` and `server_id` in Secrets Manager.
         $normalized = $creds;
-        $authType = strtolower($creds['auth_type'] ?? $creds['auth'] ?? 'bearer');
+        $authType = strtolower($creds['auth_type'] ?? $creds['auth'] ?? 'query');
         $normalized['type'] = $authType;
 
         if (isset($creds['timeout'])) {
             $normalized['timeout'] = (int) $creds['timeout'];
         }
 
-        if ($authType === 'basic') {
-            if (empty($creds['username']) || empty($creds['password'])) {
-                $msg = 'Secrets validation failed: auth_type is "basic" but username or password is missing.';
-                Log::error('PbxwareClient: ' . $msg, ['missing_username' => empty($creds['username']), 'missing_password' => empty($creds['password'])]);
-                throw new PbxwareClientException($msg);
-            }
-            $normalized['username'] = $creds['username'];
-            $normalized['password'] = $creds['password'];
-        } else {
-            $token = $creds['access_token'] ?? $creds['api_key'] ?? $creds['token'] ?? null;
-            if (empty($token)) {
-                $msg = 'Secrets validation failed: auth_type is "' . $authType . '" but no access_token/api_key/token was found.';
-                Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
-                throw new PbxwareClientException($msg);
-            }
-            $normalized['token'] = $token;
+        if ($authType !== 'query') {
+            $msg = 'Unsupported secrets auth_type: expected "query" for PBXware query-based API.';
+            Log::error('PbxwareClient: ' . $msg, ['auth_type' => $authType]);
+            throw new PbxwareClientException($msg);
         }
+
+        // Required for query auth
+        if (empty($creds['api_key'])) {
+            $msg = 'Secrets validation failed: auth_type is "query" but api_key is missing.';
+            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
+            throw new PbxwareClientException($msg);
+        }
+        if (empty($creds['server_id']) && ! isset($creds['server'])) {
+            $msg = 'Secrets validation failed: auth_type is "query" but server_id is missing.';
+            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
+            throw new PbxwareClientException($msg);
+        }
+
+        $normalized['api_key'] = $creds['api_key'];
+        $normalized['server_id'] = $creds['server_id'] ?? $creds['server'];
 
         return $normalized;
     }
@@ -120,21 +126,6 @@ class PbxwareClient
         $headers = array_merge([
             'Accept' => 'application/json',
         ], $extra);
-
-        // Add Authorization header based on normalized credentials
-        $authType = strtolower($this->credentials['type'] ?? $this->credentials['auth_type'] ?? 'bearer');
-        if ($authType === 'basic' && isset($this->credentials['username']) && isset($this->credentials['password'])) {
-            $headers['Authorization'] = 'Basic ' . base64_encode($this->credentials['username'] . ':' . $this->credentials['password']);
-        } elseif (($authType === 'bearer' || $authType === 'token') && ! empty($this->credentials['token'] ?? null)) {
-            $token = $this->credentials['token'];
-            $headers['Authorization'] = 'Bearer ' . $token;
-        }
-
-        // Allow callers to explicitly pass Authorization via $extra
-        if (isset($extra['Authorization'])) {
-            $headers['Authorization'] = $extra['Authorization'];
-        }
-
         return $headers;
     }
 
@@ -144,29 +135,32 @@ class PbxwareClient
      */
     protected function sendRequest(string $method, string $path, array $params = [], array $options = [])
     {
-        $url = $this->buildUrl($path);
+        // For PBXware query-based API we treat $path as the `action` name.
+        // Build the full query URL including apikey and server params.
         $headers = $this->buildHeaders($options['headers'] ?? []);
 
         // Determine timeout: secret-provided timeout (seconds) or default 30s
         $timeout = (int) ($this->credentials['timeout'] ?? $options['timeout'] ?? 30);
         try {
             $start = microtime(true);
-
             $requestOptions = array_merge($options['guzzle'] ?? [], ['stream' => $options['stream'] ?? false, 'timeout' => $timeout]);
+
+            // Build full query URL for PBXware (apikey/action/server + extra params)
+            $url = $this->buildQueryUrl($path, $params);
 
             $request = Http::withHeaders($headers)->withOptions($requestOptions);
 
-            if (strtoupper($method) === 'GET') {
-                $response = $request->get($url, $params);
-            } else {
-                $response = $request->{$method}($url, $params);
-            }
+            // PBXware API is query-based and primarily uses GET for list/download
+            $response = $request->get($url);
 
             $latencyMs = round((microtime(true) - $start) * 1000, 2);
 
+            // Redact apikey when logging URL
+            $redactedUrl = $this->redactUrl($url);
+
             if ($response->failed()) {
                 $logBody = $this->redactForLog($response->body());
-                $logContext = ['method' => $method, 'url' => $url, 'params' => $this->redactForLog($params), 'status' => $response->status(), 'body' => $logBody, 'latency_ms' => $latencyMs];
+                $logContext = ['method' => $method, 'url' => $redactedUrl, 'params' => $this->redactForLog($params), 'status' => $response->status(), 'body' => $logBody, 'latency_ms' => $latencyMs, 'action' => $path, 'server_id' => $this->credentials['server_id'] ?? null, 'base_url' => $this->baseUrl];
                 if (! empty($options['account_id'])) {
                     $logContext['account_id'] = $options['account_id'];
                 }
@@ -174,7 +168,7 @@ class PbxwareClient
                 throw new PbxwareClientException("PBX request failed with status {$response->status()}", $response->status());
             }
 
-            $logContext = ['method' => $method, 'url' => $url, 'status' => $response->status(), 'latency_ms' => $latencyMs];
+            $logContext = ['method' => $method, 'url' => $redactedUrl, 'status' => $response->status(), 'latency_ms' => $latencyMs, 'action' => $path, 'server_id' => $this->credentials['server_id'] ?? null, 'base_url' => $this->baseUrl];
             if (! empty($options['account_id'])) {
                 $logContext['account_id'] = $options['account_id'];
             }
@@ -184,9 +178,34 @@ class PbxwareClient
         } catch (PbxwareClientException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $url, 'base_url' => $this->baseUrl, 'timeout' => $timeout, 'error' => $e->getMessage()]);
+            Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $this->redactUrl($url ?? ''), 'base_url' => $this->baseUrl, 'timeout' => $timeout, 'error' => $e->getMessage()]);
             throw new PbxwareClientException('PBX request exception: ' . $e->getMessage() . ' (base_url=' . ($this->baseUrl ?? '[not set]') . ', timeout=' . $timeout . 's)', 0, $e);
         }
+    }
+
+    /**
+     * Build a full PBXware query URL. PBXware expects requests at the host
+     * root using query parameters: ?apikey=API_KEY&action=...&server=ID
+     * Additional params (date ranges, pagination) are appended as query params.
+     */
+    protected function buildQueryUrl(string $action, array $params = []): string
+    {
+        $base = rtrim($this->baseUrl ?? '', '/');
+        $query = array_merge([
+            'apikey' => $this->credentials['api_key'] ?? '',
+            'action' => $action,
+            'server' => $this->credentials['server_id'] ?? '',
+        ], $params);
+
+        return $base . '/?' . http_build_query($query);
+    }
+
+    /**
+     * Redact apikey values from a URL for safe logging.
+     */
+    protected function redactUrl(string $url): string
+    {
+        return preg_replace('/(apikey=)([^&]+)/i', '$1REDACTED', $url);
     }
 
     protected function buildUrl(string $path): string
@@ -220,7 +239,8 @@ class PbxwareClient
      */
     public function fetchCalls(array $params = []): array
     {
-        return $this->fetchPaginated('/calls', $params);
+        // Map legacy call fetch to PBXware query action
+        return $this->fetchPaginated('pbxware.cdr.list', $params);
     }
 
     /**
@@ -228,7 +248,8 @@ class PbxwareClient
      */
     public function fetchRecordings(array $params = []): array
     {
-        return $this->fetchPaginated('/recordings', $params);
+        // PBXware does not use REST recording endpoints; reuse cdr.list action
+        return $this->fetchPaginated('pbxware.cdr.list', $params);
     }
 
     /**
@@ -241,7 +262,7 @@ class PbxwareClient
 
         while (true) {
             $params['page'] = $params['page'] ?? $page;
-
+            // $path is the PBXware `action` name, e.g. 'pbxware.cdr.list'
             $response = $this->sendRequest('GET', $path, $params);
             $json = $response->json();
 
@@ -304,30 +325,83 @@ class PbxwareClient
      * Download a recording as a streamed response. The response streams directly from PBX through the server to the caller.
      * Returns Symfony\Component\HttpFoundation\StreamedResponse
      */
-    public function downloadRecording(string $recordingId): StreamedResponse
+    public function downloadRecording($params): StreamedResponse
     {
-        $path = '/recordings/' . rawurlencode($recordingId) . '/download';
+        // Accept either a string id (legacy) or an array of query params.
+        if (is_string($params)) {
+            $params = ['recording_id' => $params];
+        }
+        if (! is_array($params)) {
+            throw new PbxwareClientException('downloadRecording expects a recording id string or an array of query parameters');
+        }
+        return $this->downloadRecordingByParams($params);
+    }
 
+    /**
+     * Fetch Call Detail Records via PBXware query API.
+     * Returns decoded JSON array.
+     */
+    public function fetchCdrList(array $params = []): array
+    {
+        $response = $this->sendRequest('GET', 'pbxware.cdr.list', $params);
+        if ($response->failed()) {
+            $status = $response->status();
+            $body = $this->redactForLog($response->body());
+            Log::error('PbxwareClient: fetchCdrList failed', ['action' => 'pbxware.cdr.list', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
+            throw new PbxwareClientException("Failed to fetch CDR list, status {$status}");
+        }
+        $json = $response->json();
+        if (isset($json['data']) && is_array($json['data'])) {
+            return $json['data'];
+        }
+        if (is_array($json)) {
+            return $json;
+        }
+        return [];
+    }
+
+    /**
+     * Simple connectivity test against PBXware (lists extensions).
+     */
+    public function testConnection(): array
+    {
+        $response = $this->sendRequest('GET', 'pbxware.ext.list', []);
+        if ($response->failed()) {
+            $status = $response->status();
+            $body = $this->redactForLog($response->body());
+            Log::error('PbxwareClient: testConnection failed', ['action' => 'pbxware.ext.list', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
+            throw new PbxwareClientException("PBX testConnection failed, status {$status}");
+        }
+        return $response->json() ?: [];
+    }
+
+    /**
+     * Preferable: download recording by passing an array of query params.
+     * Builds ?apikey=...&action=pbxware.cdr.download&server=...&{params}
+     */
+    public function downloadRecordingByParams(array $params): StreamedResponse
+    {
+        $action = 'pbxware.cdr.download';
         $headers = $this->buildHeaders();
-        $url = $this->buildUrl($path);
+        $url = $this->buildQueryUrl($action, $params);
 
-        return new StreamedResponse(function () use ($url, $headers, $recordingId) {
+        // Choose a filename hint from params when available
+        $filenameHint = $params['recording_id'] ?? $params['id'] ?? ($params['file'] ?? 'recording');
+
+        return new StreamedResponse(function () use ($url, $headers, $filenameHint) {
             try {
-                // Use Laravel HTTP client but access underlying PSR response to stream
                 $response = Http::withHeaders($headers)->withOptions(['stream' => true])->get($url);
                 if ($response->failed()) {
                     $status = $response->status();
                     $body = $this->redactForLog($response->body());
-                    Log::error('PbxwareClient: downloadRecording failed', ['url' => $url, 'status' => $status, 'body' => $body]);
+                    Log::error('PbxwareClient: downloadRecording failed', ['url' => $this->redactUrl($url), 'status' => $status, 'body' => $body, 'action' => 'pbxware.cdr.download', 'server_id' => $this->credentials['server_id'] ?? null]);
                     throw new PbxwareClientException("Failed to download recording, status {$status}");
                 }
 
                 $psr = $response->toPsrResponse();
                 $body = $psr->getBody();
-                // stream chunks
                 while (! $body->eof()) {
                     echo $body->read(1024 * 16);
-                    // flush to the client
                     if (function_exists('fastcgi_finish_request')) {
                         @flush();
                     } else {
@@ -336,11 +410,10 @@ class PbxwareClient
                     }
                 }
             } catch (\Throwable $e) {
-                Log::error('PbxwareClient: exception streaming recording', ['recording_id' => $recordingId, 'error' => $e->getMessage()]);
-                // rethrow so caller can set HTTP status appropriately
+                Log::error('PbxwareClient: exception streaming recording', ['error' => $e->getMessage()]);
                 throw $e;
             }
-        }, 200, $this->downloadHeaders($recordingId));
+        }, 200, $this->downloadHeaders($filenameHint));
     }
 
     /**
@@ -350,13 +423,14 @@ class PbxwareClient
      */
     public function downloadRecordingStream(string $recordingId)
     {
-        $path = '/recordings/' . rawurlencode($recordingId) . '/download';
-        $response = $this->sendRequest('GET', $path, [], ['stream' => true]);
+        // Map to pbxware.cdr.download action and return PSR stream
+        $params = ['recording_id' => $recordingId];
+        $response = $this->sendRequest('GET', 'pbxware.cdr.download', $params, ['stream' => true]);
 
         if ($response->failed()) {
             $status = $response->status();
             $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: downloadRecordingStream failed', ['recording_id' => $recordingId, 'status' => $status, 'body' => $body]);
+            Log::error('PbxwareClient: downloadRecordingStream failed', ['recording_id' => $recordingId, 'status' => $status, 'body' => $body, 'action' => 'pbxware.cdr.download']);
             throw new PbxwareClientException("Failed to download recording, status {$status}");
         }
 
