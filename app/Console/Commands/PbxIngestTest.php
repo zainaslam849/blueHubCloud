@@ -34,7 +34,7 @@ class PbxIngestTest extends Command
 
     public function handle(): int
     {
-        $since = Carbon::now()->subDay()->toIsoString();
+        $now = Carbon::now();
 
         // Determine mock mode strictly from environment variable only.
         $mock = filter_var(env('PBXWARE_MOCK_MODE', false), FILTER_VALIDATE_BOOLEAN);
@@ -68,7 +68,7 @@ class PbxIngestTest extends Command
         $s3Paths = [];
 
         foreach ($accounts as $acct) {
-            $this->info("Starting ingest for company_id={$acct->company_id} account_id={$acct->id} since={$since}");
+            $this->info("Starting ingest for company_id={$acct->company_id} account_id={$acct->id}");
 
             $this->currentCompanyId = (int) $acct->company_id;
             $this->currentCompanyPbxAccountId = (int) $acct->id;
@@ -77,7 +77,21 @@ class PbxIngestTest extends Command
             $client = PbxClientResolver::resolve();
 
             try {
-                $cdr = $client->fetchCdrList(['since' => $since, 'company_id' => $acct->company_id]);
+                // PBXware query parameters must be unix timestamps.
+                // For first-time ingestion (no cursor), do NOT send `since` at all.
+                // Default to last 24 hours.
+                $pbxParams = $this->normalizePbxwareQueryParams([
+                    'startdate' => $now->copy()->subDay(),
+                    'enddate' => $now,
+                ]);
+
+                Log::info('PBXware CDR query params (excluding apikey)', [
+                    'company_id' => $acct->company_id,
+                    'company_pbx_account_id' => $acct->id,
+                    'params' => $pbxParams,
+                ]);
+
+                $cdr = $client->fetchCdrList($pbxParams);
                 $rows = is_array($cdr) ? ($cdr['rows'] ?? []) : [];
 
                 foreach ($rows as $row) {
@@ -201,5 +215,36 @@ class PbxIngestTest extends Command
             'recording_path' => $recordingPath,
             'recording_available' => $recordingAvailable,
         ];
+    }
+
+    private function normalizePbxwareQueryParams(array $params): array
+    {
+        // PBXware expects query params like startdate/enddate/limit.
+        // Convert any DateTime/Carbon values to unix timestamps.
+        $out = [];
+        foreach ($params as $key => $value) {
+            if (! in_array($key, ['startdate', 'enddate', 'limit'], true)) {
+                continue;
+            }
+
+            if ($value instanceof \DateTimeInterface) {
+                $out[$key] = $value->getTimestamp();
+                continue;
+            }
+
+            if (is_string($value) && $value !== '' && ! is_numeric($value)) {
+                try {
+                    $out[$key] = Carbon::parse($value)->timestamp;
+                    continue;
+                } catch (\Throwable $e) {
+                    // Ignore invalid strings
+                    continue;
+                }
+            }
+
+            $out[$key] = $value;
+        }
+
+        return $out;
     }
 }

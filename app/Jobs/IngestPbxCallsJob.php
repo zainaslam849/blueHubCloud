@@ -54,7 +54,23 @@ class IngestPbxCallsJob implements ShouldQueue
                 Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
             }
 
-            $cdr = $client->fetchCdrList(array_merge($this->params, ['company_id' => $this->companyId]));
+            // PBXware expects query params like startdate/enddate/limit.
+            // Never send ISO-8601 `since`. For first-time ingestion (no cursor),
+            // do NOT send since at all. Default to last 24 hours.
+            $defaultParams = [
+                'startdate' => time() - 86400,
+                'enddate' => time(),
+            ];
+
+            $pbxParams = $this->normalizePbxwareQueryParams(array_merge($defaultParams, $this->params));
+            
+            Log::info('PBXware CDR query params (excluding apikey)', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'params' => $pbxParams,
+            ]);
+
+            $cdr = $client->fetchCdrList($pbxParams);
             $rows = is_array($cdr) ? ($cdr['rows'] ?? []) : [];
 
             $processed = 0;
