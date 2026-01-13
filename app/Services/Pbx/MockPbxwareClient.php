@@ -202,6 +202,22 @@ class MockPbxwareClient
     }
 
     /**
+     * Mock discovery for available actions.
+     */
+    public function discoverActions(): array
+    {
+        return [
+            'pbxware.ext.list',
+            'pbxware.help',
+            'pbxware.api.list',
+            'pbxware.action.list',
+            'pbxware.system.actions',
+            'pbxware.cdr.export',
+            'pbxware.cdr.download',
+        ];
+    }
+
+    /**
      * Return recording metadata for given call IDs.
      * Signature: fetchRecordings(array $callIds): array
      */

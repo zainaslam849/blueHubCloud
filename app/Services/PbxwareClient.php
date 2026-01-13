@@ -545,6 +545,175 @@ class PbxwareClient
         return $trim !== '' && ($trim[0] === '{' || $trim[0] === '[');
     }
 
+    /**
+     * Attempt to discover available PBXware actions using documented-style patterns.
+     *
+     * Tries a small allow-list of discovery actions and returns the first
+     * successful parsed list of action names.
+     *
+     * Logs HTTP status + raw response body (apikey redacted).
+     */
+    public function discoverActions(): array
+    {
+        $candidates = [
+            'pbxware.api.list',
+            'pbxware.action.list',
+            'pbxware.system.actions',
+            'pbxware.help',
+        ];
+
+        foreach ($candidates as $action) {
+            try {
+                $url = $this->buildQueryUrl($action, []);
+                $response = $this->sendRequest('GET', $action, []);
+
+                $status = $response->status();
+                $body = (string) $response->body();
+                $bodyRedacted = $this->redactDiscoverBody($body);
+
+                Log::info('PbxwareClient: discoverActions attempt', [
+                    'action' => $action,
+                    'status' => $status,
+                    'url' => $this->redactUrl($url),
+                    'raw_response' => $this->truncateForLog($bodyRedacted, 8000),
+                ]);
+
+                if ($status !== 200) {
+                    continue;
+                }
+
+                if ($this->responseIsInvalidAction($body)) {
+                    continue;
+                }
+
+                $actions = $this->parseActionNamesFromBody($body);
+                if (! empty($actions)) {
+                    return $actions;
+                }
+            } catch (PbxwareClientException $e) {
+                Log::info('PbxwareClient: discoverActions attempt failed', [
+                    'action' => $action,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            } catch (\Throwable $e) {
+                Log::info('PbxwareClient: discoverActions attempt errored', [
+                    'action' => $action,
+                    'error' => $e->getMessage(),
+                ]);
+                continue;
+            }
+        }
+
+        return [];
+    }
+
+    protected function responseIsInvalidAction(string $body): bool
+    {
+        return stripos($body, 'Action method is invalid') !== false
+            || stripos($body, 'invalid action') !== false;
+    }
+
+    protected function redactDiscoverBody(string $body): string
+    {
+        // Best-effort: redact the api_key value if it appears.
+        $apiKey = (string) ($this->credentials['api_key'] ?? '');
+        if ($apiKey !== '') {
+            $body = str_replace($apiKey, 'REDACTED', $body);
+        }
+
+        // Also redact query-string apikey patterns.
+        $body = preg_replace('/(apikey=)([^&\s]+)/i', '$1REDACTED', $body);
+
+        return $body;
+    }
+
+    protected function truncateForLog(string $s, int $maxBytes): string
+    {
+        if (strlen($s) <= $maxBytes) {
+            return $s;
+        }
+        return substr($s, 0, $maxBytes) . '...';
+    }
+
+    /**
+     * Parse a list of action names from JSON/text bodies.
+     * Does not assume any particular response format.
+     */
+    protected function parseActionNamesFromBody(string $body): array
+    {
+        $bodyTrim = trim($body);
+        if ($bodyTrim === '') {
+            return [];
+        }
+
+        // JSON formats
+        if ($this->looksLikeJson($bodyTrim)) {
+            $decoded = json_decode($bodyTrim, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $this->extractActionNamesFromJson($decoded);
+            }
+        }
+
+        // Text formats: look for tokens that resemble pbxware.*.*
+        $tokens = preg_split('/[\r\n\t,;\s]+/', $bodyTrim);
+        if (! is_array($tokens)) {
+            return [];
+        }
+
+        $actions = [];
+        foreach ($tokens as $t) {
+            $t = trim((string) $t);
+            if ($t === '') {
+                continue;
+            }
+            if (preg_match('/^pbxware\.[a-z0-9_]+\.[a-z0-9_]+$/i', $t)) {
+                $actions[] = $t;
+            }
+        }
+
+        return array_values(array_unique($actions));
+    }
+
+    protected function extractActionNamesFromJson($decoded): array
+    {
+        $out = [];
+
+        if (is_string($decoded)) {
+            return [];
+        }
+
+        // If it's a list of strings
+        if (is_array($decoded) && array_values($decoded) === $decoded) {
+            foreach ($decoded as $item) {
+                if (is_string($item) && preg_match('/^pbxware\./i', $item)) {
+                    $out[] = $item;
+                } elseif (is_array($item)) {
+                    foreach (['action', 'name', 'method'] as $k) {
+                        if (isset($item[$k]) && is_string($item[$k]) && preg_match('/^pbxware\./i', $item[$k])) {
+                            $out[] = $item[$k];
+                        }
+                    }
+                }
+            }
+            return array_values(array_unique($out));
+        }
+
+        // Common wrappers
+        if (is_array($decoded)) {
+            foreach (['actions', 'data', 'items', 'result'] as $k) {
+                if (isset($decoded[$k])) {
+                    $nested = $this->extractActionNamesFromJson($decoded[$k]);
+                    if (! empty($nested)) {
+                        return $nested;
+                    }
+                }
+            }
+        }
+
+        return [];
+    }
+
     protected function inferResponseTypeFromResult(array|string $result): string
     {
         if (is_string($result)) {

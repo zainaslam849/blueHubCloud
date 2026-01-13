@@ -27,7 +27,7 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $description = 'Run IngestPbxCallsJob for the last 24 hours synchronously for all PBX accounts';
+    protected $description = 'Discover available PBXware actions (discovery-only)';
 
     public function handle(): int
     {
@@ -59,11 +59,11 @@ class PbxIngestTest extends Command
             $this->info('No PBX accounts found.');
             return 0;
         }
-        // Stats
-        $ran = 0;
+        $this->line('');
+        $this->info('=== PBXware Action Discovery ===');
 
         foreach ($accounts as $acct) {
-            $this->info("Starting ingest for company_id={$acct->company_id} account_id={$acct->id}");
+            $this->info("Discovering actions for company_id={$acct->company_id} account_id={$acct->id}");
 
             $this->currentCompanyId = (int) $acct->company_id;
             $this->currentCompanyPbxAccountId = (int) $acct->id;
@@ -72,22 +72,24 @@ class PbxIngestTest extends Command
             $client = PbxClientResolver::resolve();
 
             try {
-                // Official PBXware flow is implemented in IngestPbxCallsJob:
-                // - pbxware.cdr.export for discovery (CSV)
-                // - pbxware.cdr.download for recording stream
-                // Run synchronously so output reflects a single run.
-                $job = new IngestPbxCallsJob((int) $acct->company_id, (int) $acct->id);
-                if (function_exists('dispatch_sync')) {
-                    dispatch_sync($job);
-                } else {
-                    $job->handle();
+                if (! method_exists($client, 'discoverActions')) {
+                    $this->warn('Client does not support discoverActions(); skipping.');
+                    continue;
                 }
 
-                $ran++;
-                $this->info("Completed ingest for account_id={$acct->id}");
-                continue;
+                $actions = $client->discoverActions();
+                if (empty($actions)) {
+                    $this->warn('No actions discovered (all attempts invalid/empty).');
+                    continue;
+                }
 
-                // no-op
+                $this->info('Available actions:');
+                foreach ($actions as $a) {
+                    $this->line(' - ' . $a);
+                }
+
+                // Discovery-only step: exit after first successful discovery.
+                return 0;
             } catch (PbxwareClientException $e) {
                 $this->error("PBX API error for account_id={$acct->id}: " . $e->getMessage());
             } catch (\Throwable $e) {
@@ -95,12 +97,7 @@ class PbxIngestTest extends Command
             }
         }
 
-        // Verification summary
-        $this->line('');
-        $this->info('=== Ingest Test Summary ===');
-        $this->info('Accounts processed: ' . $ran);
-
-        $this->info('All ingests completed.');
+        $this->info('Discovery finished.');
         return 0;
     }
 
