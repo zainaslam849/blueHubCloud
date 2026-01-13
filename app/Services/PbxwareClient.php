@@ -673,6 +673,29 @@ class PbxwareClient
         return $psr->getBody();
     }
 
+    /**
+     * Official PBXware contract: pbxware.cdr.download uses recording=<recording_path>
+     * where recording_path comes from CDR CSV row[8].
+     */
+    public function downloadRecordingStreamByRecordingPath(string $recordingPath)
+    {
+        $params = ['recording' => $recordingPath];
+        $response = $this->sendRequest('GET', 'pbxware.cdr.download', $params, ['stream' => true]);
+
+        if ($response->failed()) {
+            $status = $response->status();
+            $body = $this->redactForLog($response->body());
+            Log::error('PbxwareClient: downloadRecordingStreamByRecordingPath failed', [
+                'status' => $status,
+                'body' => $body,
+                'action' => 'pbxware.cdr.download',
+            ]);
+            throw new PbxwareClientException("Failed to download recording, status {$status}");
+        }
+
+        return $response->toPsrResponse()->getBody();
+    }
+
     protected function downloadHeaders(string $recordingId): array
     {
         // Allow caller to override if needed. Provide sensible defaults.

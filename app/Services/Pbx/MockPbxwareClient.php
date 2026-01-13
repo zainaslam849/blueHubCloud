@@ -145,12 +145,20 @@ class MockPbxwareClient
             throw new \InvalidArgumentException('Unsupported mock stream action: ' . $action);
         }
 
-        $ref = $params['recording_id'] ?? $params['id'] ?? $params['file'] ?? null;
+        $ref = $params['recording'] ?? $params['recording_id'] ?? $params['id'] ?? $params['file'] ?? null;
         if (! is_string($ref) || $ref === '') {
             throw new \InvalidArgumentException('Missing recording reference for mock download');
         }
 
         return $this->downloadRecordingStream($ref);
+    }
+
+    /**
+     * Official-contract helper mirroring the real client.
+     */
+    public function downloadRecordingStreamByRecordingPath(string $recordingPath)
+    {
+        return $this->downloadRecordingStream($recordingPath);
     }
 
     /**
