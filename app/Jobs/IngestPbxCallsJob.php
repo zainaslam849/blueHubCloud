@@ -177,6 +177,37 @@ class IngestPbxCallsJob implements ShouldQueue
         }
     }
 
+    private function normalizePbxwareQueryParams(array $params): array
+    {
+        // PBXware expects query params like startdate/enddate/limit.
+        // Convert any DateTime/Carbon values to unix timestamps and ignore unknown keys.
+        $out = [];
+        foreach ($params as $key => $value) {
+            if (! in_array($key, ['startdate', 'enddate', 'limit'], true)) {
+                continue;
+            }
+
+            if ($value instanceof \DateTimeInterface) {
+                $out[$key] = $value->getTimestamp();
+                continue;
+            }
+
+            if (is_string($value) && $value !== '' && ! is_numeric($value)) {
+                try {
+                    $out[$key] = \Carbon\Carbon::parse($value)->timestamp;
+                    continue;
+                } catch (\Throwable $e) {
+                    // ignore invalid strings
+                    continue;
+                }
+            }
+
+            $out[$key] = $value;
+        }
+
+        return $out;
+    }
+
     private function discoverCdrActionName($client): ?string
     {
         if (! method_exists($client, 'testAvailableActions')) {
