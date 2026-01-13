@@ -11,7 +11,6 @@ use App\Services\Pbx\PbxClientResolver;
 use App\Exceptions\PbxwareClientException;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Config;
 
 class PbxIngestTest extends Command
 {
@@ -67,10 +66,8 @@ class PbxIngestTest extends Command
         foreach ($accounts as $acct) {
             $this->info("Starting ingest for company_id={$acct->company_id} account_id={$acct->id} since={$since}");
 
-            $pbxBase = $acct->api_endpoint ?? env('PBXWARE_BASE_URL') ?? config('services.pbxware.base_url');
-            $this->info('PBX base URL: ' . ($pbxBase ?? '[not set]'));
-
-            $client = PbxClientResolver::resolve($pbxBase ?? null);
+            // PBX base URL is intentionally centralized in Secrets Manager.
+            $client = PbxClientResolver::resolve();
 
             try {
                 // For mock client the MockPbxwareClient expects a DateTimeInterface

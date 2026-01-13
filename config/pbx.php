@@ -21,7 +21,7 @@ return [
     // Provider-specific configuration. Keep keys vendor-agnostic (slug => config).
     'providers' => [
         'pbxware' => [
-            'base_url' => env('PBXWARE_BASE_URL', 'https://your-pbxware-api-url'),
+            // PBX base URL is intentionally centralized in Secrets Manager.
             'timeout' => env('PBXWARE_TIMEOUT', 30),
             'aws_region' => env('PBXWARE_AWS_REGION', env('AWS_DEFAULT_REGION')),
         ],

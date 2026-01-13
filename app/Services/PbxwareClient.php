@@ -5,50 +5,53 @@ namespace App\Services;
 use App\Exceptions\PbxwareClientException;
 use App\Services\AwsSecretsService;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PbxwareClient
 {
+    protected static bool $hasLoggedBaseUrlResolution = false;
+
     protected string $baseUrl;
     protected array $credentials;
     protected string $secretName = 'pbxware/api-credentials';
     protected int $secretTtlSeconds = 600; // 10 minutes
     protected ?AwsSecretsService $secretsService = null;
 
-    public function __construct(?string $baseUrl = null, ?AwsSecretsService $secretsService = null)
+    public function __construct(?AwsSecretsService $secretsService = null)
     {
-        $this->baseUrl = $baseUrl ? rtrim($baseUrl, '/') : rtrim(Config::get('services.pbxware.base_url', ''), '/');
-        if (empty($this->baseUrl)) {
-            Log::warning('PbxwareClient: services.pbxware.base_url is empty');
-        }
-
-        $this->secretsService = $secretsService ?? new AwsSecretsService();
-
         // Determine mock mode strictly from environment variable only.
         // PBXWARE_MOCK_MODE is the single source of truth for mock vs real
         // PBX behaviour. Do not rely on APP_ENV or other config values.
         $mock = filter_var(env('PBXWARE_MOCK_MODE', false), FILTER_VALIDATE_BOOLEAN);
         if ($mock) {
             Log::info('PbxwareClient: operating in MOCK mode per PBXWARE_MOCK_MODE env var');
+            $this->baseUrl = '';
             $this->credentials = [];
             return;
         }
 
         Log::info('PbxwareClient: operating in REAL mode per PBXWARE_MOCK_MODE env var');
 
+        $this->secretsService = $secretsService ?? new AwsSecretsService();
+
         $this->credentials = $this->getCachedCredentials();
 
-        // Allow secret to provide base_url and override if present
-        if (! empty($this->credentials['base_url'])) {
-            $this->baseUrl = rtrim($this->credentials['base_url'], '/');
-        }
+        // PBX base URL is intentionally centralized in Secrets Manager.
+        // Always load credentials from Secrets Manager and read base_url ONLY
+        // from the `pbxware/api-credentials` secret.
         // Normalize and validate credentials retrieved from Secrets Manager.
         // This will throw a PbxwareClientException with a clear message
         // if required auth fields are missing.
         $this->credentials = $this->normalizeAndValidateCredentials($this->credentials);
+
+        // PBX base URL is intentionally centralized in Secrets Manager.
+        $this->baseUrl = rtrim((string) ($this->credentials['base_url'] ?? ''), '/');
+        if (! self::$hasLoggedBaseUrlResolution) {
+            Log::info('PBX base URL resolved from Secrets Manager');
+            self::$hasLoggedBaseUrlResolution = true;
+        }
 
         // PBXware uses a query-based API on the host root. Base URL must NOT
         // contain an API path (e.g. /api/v7). Warn if an API-like path is present.
@@ -115,8 +118,16 @@ class PbxwareClient
             throw new PbxwareClientException($msg);
         }
 
+        // PBX base URL is intentionally centralized in Secrets Manager.
+        if (empty($creds['base_url'])) {
+            $msg = 'Secrets validation failed: base_url is missing from the "pbxware/api-credentials" secret. PBX base URL is intentionally centralized in Secrets Manager.';
+            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
+            throw new PbxwareClientException($msg);
+        }
+
         $normalized['api_key'] = $creds['api_key'];
         $normalized['server_id'] = $creds['server_id'] ?? $creds['server'];
+        $normalized['base_url'] = rtrim((string) $creds['base_url'], '/');
 
         return $normalized;
     }

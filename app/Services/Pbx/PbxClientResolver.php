@@ -3,7 +3,6 @@
 namespace App\Services\Pbx;
 
 use App\Services\PbxwareClient;
-use Illuminate\Support\Facades\Config;
 
 /**
  * Resolve a PBX client implementation based on configuration.
@@ -12,11 +11,7 @@ use Illuminate\Support\Facades\Config;
  */
 class PbxClientResolver
 {
-    /**
-     * @param string|null $baseUrl Optional per-account base URL override
-     * @return mixed
-     */
-    public static function resolve(?string $baseUrl = null)
+    public static function resolve()
     {
         // Resolve mode directly from environment variable only.
         // PBXWARE_MOCK_MODE=true => use mock client. False => real client.
@@ -25,6 +20,6 @@ class PbxClientResolver
             return new MockPbxwareClient();
         }
 
-        return new PbxwareClient($baseUrl);
+        return new PbxwareClient();
     }
 }

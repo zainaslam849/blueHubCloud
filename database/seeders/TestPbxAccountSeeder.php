@@ -31,12 +31,13 @@ class TestPbxAccountSeeder extends Seeder
             'updated_at' => now(),
         ]);
 
-        // Insert a PBX account for that company pointing at the configured PBXWARE base URL
+        // Insert a PBX account for that company. PBX base URL is intentionally
+        // centralized in Secrets Manager (pbxware/api-credentials).
         DB::table('company_pbx_accounts')->insert([
             'company_id' => $companyId,
             'pbx_provider_id' => $providerId,
             'pbx_name' => 'pbxware-test',
-            'api_endpoint' => config('services.pbxware.base_url'),
+            'api_endpoint' => null,
             'api_key' => null,
             'api_secret' => null,
             'status' => 'active',

@@ -44,7 +44,7 @@ class IngestPbxCallsJob implements ShouldQueue
             return;
         }
 
-        $client = PbxClientResolver::resolve($pbxAccount->api_endpoint ?? null);
+        $client = PbxClientResolver::resolve();
 
         try {
             Log::info('Starting PBX calls ingestion', ['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId]);
