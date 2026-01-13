@@ -14,13 +14,7 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $signature = 'pbx:ingest-test
-        {--company_id= : Company ID (optional)}
-        {--account_id= : Company PBX account ID (optional)}
-        {--from= : Start datetime (optional; parseable by Carbon)}
-        {--to= : End datetime (optional; parseable by Carbon)}
-        {--limit= : Max rows per request (optional; default 1000, max 1000)}
-        {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
+    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
 
     /**
      * The console command description.
