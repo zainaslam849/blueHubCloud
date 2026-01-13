@@ -11,6 +11,7 @@ use App\Services\Pbx\PbxClientResolver;
 use App\Exceptions\PbxwareClientException;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class PbxIngestTest extends Command
 {
@@ -82,9 +83,18 @@ class PbxIngestTest extends Command
                 }
 
                 foreach ($calls as $item) {
-                    $callUid = $item['call_uid'] ?? $item['id'] ?? null;
-                    if (! $callUid) {
-                        $this->warn('Skipping call with missing uid');
+                    $callUid = $this->resolveCallUid($item);
+                    if ($callUid === null) {
+                        $this->warn('Skipping PBX call: no unique identifier present');
+                        Log::warning('Skipping PBX call: no unique identifier present', [
+                            'company_id' => $acct->company_id,
+                            'company_pbx_account_id' => $acct->id,
+                        ]);
+                        Log::debug('PBX call missing unique identifier keys', [
+                            'available_keys' => array_keys($item),
+                            'company_id' => $acct->company_id,
+                            'company_pbx_account_id' => $acct->id,
+                        ]);
                         continue;
                     }
 
@@ -162,5 +172,33 @@ class PbxIngestTest extends Command
 
         $this->info('All ingests completed.');
         return 0;
+    }
+
+    private function resolveCallUid(array $call): ?string
+    {
+        // PBXware query-style API does not return a `uid` field.
+        // Prefer unique identifiers in priority order:
+        // a) uniqueid
+        // b) callid
+        // c) id
+
+        foreach (['uniqueid', 'callid', 'id'] as $key) {
+            if (! array_key_exists($key, $call)) {
+                continue;
+            }
+
+            $value = $call[$key];
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            return (string) $value;
+        }
+
+        return null;
     }
 }

@@ -59,9 +59,18 @@ class IngestPbxCallsJob implements ShouldQueue
             $processed = 0;
             foreach ($calls as $item) {
                 // Map fields conservatively
-                $callUid = $item['call_uid'] ?? $item['id'] ?? null;
-                if (! $callUid) {
-                    Log::warning('Skipping call with missing uid', ['item' => $this->safelog($item)]);
+                $callUid = $this->resolveCallUid($item);
+                if ($callUid === null) {
+                    Log::warning('Skipping PBX call: no unique identifier present', [
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                    ]);
+                    Log::debug('PBX call missing unique identifier keys', [
+                        'available_keys' => array_keys($item),
+                        'item' => $this->safelog($item),
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                    ]);
                     continue;
                 }
 
@@ -149,5 +158,33 @@ class IngestPbxCallsJob implements ShouldQueue
         $s = $payload;
         unset($s['password'], $s['api_key'], $s['api_secret'], $s['secret']);
         return $s;
+    }
+
+    private function resolveCallUid(array $call): ?string
+    {
+        // PBXware query-style API does not return a `uid` field.
+        // Prefer unique identifiers in priority order:
+        // a) uniqueid
+        // b) callid
+        // c) id
+
+        foreach (['uniqueid', 'callid', 'id'] as $key) {
+            if (! array_key_exists($key, $call)) {
+                continue;
+            }
+
+            $value = $call[$key];
+            if (is_string($value)) {
+                $value = trim($value);
+            }
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            return (string) $value;
+        }
+
+        return null;
     }
 }
