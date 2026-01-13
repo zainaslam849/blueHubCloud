@@ -56,23 +56,45 @@ class IngestPbxCallsJob implements ShouldQueue
                 Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
             }
 
-            // PBXware expects query params like startdate/enddate/limit.
-            // Never send ISO-8601 `since`. For first-time ingestion (no cursor),
-            // do NOT send since at all. Default to last 24 hours.
-            $defaultParams = [
-                'startdate' => time() - 86400,
-                'enddate' => time(),
-            ];
+            // PBXware CDR actions require mandatory params:
+            // - from (epoch seconds)
+            // - to (epoch seconds)
+            // - export = 1
+            //
+            // If no explicit from/to provided, derive from the last ingested call for
+            // this account (based on max(started_at)), otherwise default to last 24h.
+            $now = time();
 
-            $pbxParams = $this->normalizePbxwareQueryParams(array_merge($defaultParams, $this->params));
-            
-            Log::info('PBXware CDR query params (excluding apikey)', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'params' => $pbxParams,
-            ]);
+            $pbxParams = $this->params;
+            $from = $pbxParams['from'] ?? null;
+            $to = $pbxParams['to'] ?? null;
 
-            $actionName = $this->cdrActionName ?: $this->discoverCdrActionName($client);
+            if ($from === null || $to === null) {
+                $last = Call::where('company_id', $this->companyId)
+                    ->where('company_pbx_account_id', $this->companyPbxAccountId)
+                    ->whereNotNull('started_at')
+                    ->max('started_at');
+
+                $lastEpoch = null;
+                if (! empty($last)) {
+                    try {
+                        $lastEpoch = \Carbon\Carbon::parse((string) $last)->timestamp;
+                    } catch (\Throwable $e) {
+                        $lastEpoch = null;
+                    }
+                }
+
+                $from = $from ?? ($lastEpoch ?? ($now - 86400));
+                $to = $to ?? $now;
+            }
+
+            $pbxParams['from'] = $from;
+            $pbxParams['to'] = $to;
+            $pbxParams['export'] = 1;
+
+            $pbxParams = $this->normalizePbxwareQueryParams($pbxParams);
+
+            $actionName = $this->cdrActionName ?: $this->discoverCdrActionName($client, $pbxParams);
             if (! $actionName) {
                 Log::warning('PBXware ingest aborted: no usable CDR action discovered', [
                     'company_id' => $this->companyId,
@@ -85,6 +107,15 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'action' => $actionName,
+            ]);
+
+            Log::info('PBXware CDR fetch params', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'action' => $actionName,
+                'from' => $pbxParams['from'] ?? null,
+                'to' => $pbxParams['to'] ?? null,
+                'export' => $pbxParams['export'] ?? null,
             ]);
 
             $result = $client->fetchAction($actionName, $pbxParams);
@@ -179,11 +210,11 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function normalizePbxwareQueryParams(array $params): array
     {
-        // PBXware expects query params like startdate/enddate/limit.
+        // PBXware expects query params like from/to/export/limit.
         // Convert any DateTime/Carbon values to unix timestamps and ignore unknown keys.
         $out = [];
         foreach ($params as $key => $value) {
-            if (! in_array($key, ['startdate', 'enddate', 'limit'], true)) {
+            if (! in_array($key, ['from', 'to', 'export', 'limit', 'startdate', 'enddate'], true)) {
                 continue;
             }
 
@@ -208,30 +239,41 @@ class IngestPbxCallsJob implements ShouldQueue
         return $out;
     }
 
-    private function discoverCdrActionName($client): ?string
+    private function discoverCdrActionName($client, array $baseParams): ?string
     {
-        if (! method_exists($client, 'testAvailableActions')) {
-            // Backward-compat safety: fall back to the historical action.
-            return 'pbxware.cdr.list';
-        }
+        $cdrActions = [
+            'pbxware.cdr.list',
+            'pbxware.cdr.report',
+            'pbxware.cdr.export',
+        ];
 
-        $diag = $client->testAvailableActions();
-        $results = is_array($diag) ? ($diag['results'] ?? []) : [];
+        $probeParams = $baseParams;
+        $probeParams['limit'] = 1;
+        $probeParams['export'] = 1;
+        $probeParams = $this->normalizePbxwareQueryParams($probeParams);
 
-        foreach ($results as $action => $info) {
-            if (($info['status'] ?? null) === 'success' && (int) ($info['rows'] ?? 0) > 0) {
-                return (string) $action;
+        foreach ($cdrActions as $action) {
+            try {
+                Log::info('PBXware CDR fetch params', [
+                    'company_id' => $this->companyId,
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'action' => $action,
+                    'from' => $probeParams['from'] ?? null,
+                    'to' => $probeParams['to'] ?? null,
+                    'export' => $probeParams['export'] ?? null,
+                ]);
+
+                $res = $client->fetchAction($action, $probeParams);
+                [, $rows] = $this->extractRows($res);
+                if (count($rows) > 0) {
+                    return $action;
+                }
+            } catch (\Throwable $e) {
+                // ignore and continue probing
             }
         }
 
-        // If nothing returns rows for limit=1, prefer first "empty" response over none.
-        foreach ($results as $action => $info) {
-            if (($info['status'] ?? null) === 'empty') {
-                return (string) $action;
-            }
-        }
-
-        return null;
+        return $cdrActions[0] ?? null;
     }
 
     /**
