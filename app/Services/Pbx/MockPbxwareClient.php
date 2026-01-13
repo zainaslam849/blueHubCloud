@@ -110,18 +110,21 @@ class MockPbxwareClient
     }
 
     /**
+     * Preferred name in the ingestion pipeline.
+     */
+    public function fetchCdrCsv(array $params = []): array
+    {
+        return $this->fetchCdrList($params);
+    }
+
+    /**
      * Dynamic PBXware-style action fetch for mock mode.
      * Returns JSON arrays or CSV structures matching the real client.
      */
     public function fetchAction(string $action, array $params = []): array|string
     {
-        if (in_array($action, ['pbxware.cdr.list', 'pbxware.cdr.report', 'pbxware.cdr.export'], true)) {
-            return $this->fetchCdrList($params);
-        }
-
-        if ($action === 'pbxware.recording.list') {
-            // Provide a minimal CSV-like structure; recording discovery is mocked via CDR rows.
-            return $this->fetchCdrList($params);
+        if ($action === 'pbxware.cdr.download' && (string) ($params['export'] ?? '') === '1') {
+            return $this->fetchCdrCsv($params);
         }
 
         if ($action === 'pbxware.ext.list') {
@@ -167,16 +170,13 @@ class MockPbxwareClient
     public function testAvailableActions(): array
     {
         $actions = [
-            'pbxware.cdr.list',
-            'pbxware.cdr.report',
-            'pbxware.cdr.export',
-            'pbxware.recording.list',
+            'pbxware.cdr.download',
         ];
 
         $results = [];
         foreach ($actions as $action) {
             try {
-                $res = $this->fetchAction($action, ['limit' => 1]);
+                $res = $this->fetchAction($action, ['limit' => 1, 'export' => 1]);
                 $rows = (is_array($res) && isset($res['rows']) && is_array($res['rows'])) ? count($res['rows']) : 0;
                 $isInvalid = is_array($res) && isset($res['error']) && stripos((string) $res['error'], 'invalid action') !== false;
 
@@ -212,7 +212,6 @@ class MockPbxwareClient
             'pbxware.api.list',
             'pbxware.action.list',
             'pbxware.system.actions',
-            'pbxware.cdr.export',
             'pbxware.cdr.download',
         ];
     }

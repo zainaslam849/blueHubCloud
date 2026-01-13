@@ -251,8 +251,10 @@ class PbxwareClient
      */
     public function fetchCalls(array $params = []): array
     {
-        // Map legacy call fetch to PBXware query action
-        return $this->fetchPaginated('pbxware.cdr.list', $params);
+        // PBXware CDR ingestion is implemented via CSV export on pbxware.cdr.download.
+        // This legacy helper is not used by the ingestion pipeline.
+        Log::warning('PbxwareClient: fetchCalls is deprecated; use fetchCdrCsv instead.');
+        return [];
     }
 
     /**
@@ -260,8 +262,10 @@ class PbxwareClient
      */
     public function fetchRecordings(array $params = []): array
     {
-        // PBXware does not use REST recording endpoints; reuse cdr.list action
-        return $this->fetchPaginated('pbxware.cdr.list', $params);
+        // Recording downloads are performed via pbxware.cdr.download with recording=<path>.
+        // This legacy helper is not used by the ingestion pipeline.
+        Log::warning('PbxwareClient: fetchRecordings is deprecated; use fetchActionStream(pbxware.cdr.download, ...) instead.');
+        return [];
     }
 
     /**
@@ -274,7 +278,7 @@ class PbxwareClient
 
         while (true) {
             $params['page'] = $params['page'] ?? $page;
-            // $path is the PBXware `action` name, e.g. 'pbxware.cdr.list'
+            // $path is the PBXware `action` name.
             $response = $this->sendRequest('GET', $path, $params);
             $json = $response->json();
 
@@ -350,17 +354,23 @@ class PbxwareClient
     }
 
     /**
-     * Fetch Call Detail Records via PBXware query API.
-     * Returns decoded JSON array.
+     * Fetch CDR rows via PBXware CSV export.
+     *
+     * Authoritative rule: use action=pbxware.cdr.download with export=1.
+     * Returns raw [header, rows] numeric arrays.
      */
-    public function fetchCdrList(array $params = []): array
+    public function fetchCdrCsv(array $params = []): array
     {
-        $response = $this->sendRequest('GET', 'pbxware.cdr.list', $params);
+        if (! array_key_exists('export', $params)) {
+            $params['export'] = 1;
+        }
+
+        $response = $this->sendRequest('GET', 'pbxware.cdr.download', $params);
         if ($response->failed()) {
             $status = $response->status();
             $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: fetchCdrList failed', ['action' => 'pbxware.cdr.list', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
-            throw new PbxwareClientException("Failed to fetch CDR list, status {$status}");
+            Log::error('PbxwareClient: fetchCdrCsv failed', ['action' => 'pbxware.cdr.download', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
+            throw new PbxwareClientException("Failed to fetch CDR CSV, status {$status}");
         }
 
         // PBXware CDR list responses are CSV. Return raw header + row arrays
@@ -372,6 +382,15 @@ class PbxwareClient
             'header' => $header,
             'rows' => $rows,
         ];
+    }
+
+    /**
+     * Backward-compatible alias; do not use in new code.
+     */
+    public function fetchCdrList(array $params = []): array
+    {
+        Log::warning('PbxwareClient: fetchCdrList is deprecated; use fetchCdrCsv instead.');
+        return $this->fetchCdrCsv($params);
     }
 
     /**
@@ -489,16 +508,13 @@ class PbxwareClient
     public function testAvailableActions(): array
     {
         $actions = [
-            'pbxware.cdr.list',
-            'pbxware.cdr.report',
-            'pbxware.cdr.export',
-            'pbxware.recording.list',
+            'pbxware.cdr.download',
         ];
 
         $results = [];
         foreach ($actions as $action) {
             try {
-                $result = $this->fetchAction($action, ['limit' => 1]);
+                $result = $this->fetchAction($action, ['limit' => 1, 'export' => 1]);
                 $responseType = $this->inferResponseTypeFromResult($result);
 
                 if ($this->resultLooksLikeInvalidAction($result)) {

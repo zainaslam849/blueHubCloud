@@ -27,14 +27,12 @@ class IngestPbxCallsJob implements ShouldQueue
     protected int $companyId;
     protected int $companyPbxAccountId;
     protected array $params;
-    protected ?string $cdrActionName;
 
-    public function __construct(int $companyId, int $companyPbxAccountId, array $params = [], ?string $cdrActionName = null)
+    public function __construct(int $companyId, int $companyPbxAccountId, array $params = [])
     {
         $this->companyId = $companyId;
         $this->companyPbxAccountId = $companyPbxAccountId;
         $this->params = $params;
-        $this->cdrActionName = $cdrActionName;
         $this->onQueue('ingest-pbx');
     }
 
@@ -56,77 +54,105 @@ class IngestPbxCallsJob implements ShouldQueue
                 Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
             }
 
-            // Official PBXware contract:
-            // Step 1: discover calls+recordings via action=pbxware.cdr.export (CSV)
-            // Step 2: download recording via action=pbxware.cdr.download&recording=<recording_path>
-            $range = $this->determineCdrRange();
-            $exportParamsBase = $this->buildCdrExportParams($range['start'], $range['end']);
+            // Authoritative PBXware rules:
+            // - The ONLY valid CDR action is pbxware.cdr.download
+            // - CSV fetch uses pbxware.cdr.download with export=1 and a required date/time range
+            // - Audio fetch uses the SAME action with recording=<recording_path>
 
-            Log::info('PBXware CDR date range used', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'start' => $exportParamsBase['start'] ?? null,
-                'end' => $exportParamsBase['end'] ?? null,
-                'starttime' => $exportParamsBase['starttime'] ?? null,
-                'endtime' => $exportParamsBase['endtime'] ?? null,
-            ]);
-
-            [$header, $rows] = $this->fetchAllCdrExportRows($client, $exportParamsBase);
-
-            Log::info('PBXware CDR CSV rows received', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'rows' => count($rows),
-            ]);
+            $range = $this->determineRequestedRange();
+            $chunks = $this->monthChunks($range['from'], $range['to']);
 
             $callsCreated = 0;
             $callsSkipped = 0;
             $recordingsDownloaded = 0;
             $recordingsSkipped = 0;
 
-            foreach ($rows as $row) {
-                // CDR CSV fixed indexes:
-                // row[7] = unique id, row[8] = recording_path, row[9] = recording_available
-                $callUid = isset($row[7]) ? trim((string) $row[7]) : '';
-                if ($callUid === '') {
-                    continue;
-                }
+            foreach ($chunks as $chunk) {
+                $params = $this->buildCdrCsvParams($chunk['from'], $chunk['to']);
 
-                $recordingPath = isset($row[8]) ? trim((string) $row[8]) : '';
-                $recordingAvailable = isset($row[9]) && ((string) $row[9] === 'True');
-
-                $attributes = [
+                Log::info('PBXware CDR date range used', [
                     'company_id' => $this->companyId,
                     'company_pbx_account_id' => $this->companyPbxAccountId,
-                    'started_at' => $mapped['started_at'] ?? null,
-                ];
+                    'start' => $params['start'],
+                    'end' => $params['end'],
+                    'starttime' => $params['starttime'],
+                    'endtime' => $params['endtime'],
+                    'limit' => $params['limit'],
+                ]);
 
-                $call = Call::firstOrCreate(
-                    ['call_uid' => $callUid],
-                    array_filter($attributes, function ($v) { return $v !== null; })
-                );
+                $csv = $client->fetchCdrCsv($params);
+                $rows = is_array($csv) ? ($csv['rows'] ?? []) : [];
 
-                if (! $call->wasRecentlyCreated) {
-                    $callsSkipped++;
+                Log::info('PBXware CDR CSV rows received', [
+                    'company_id' => $this->companyId,
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'rows' => is_array($rows) ? count($rows) : 0,
+                ]);
+
+                if (! is_array($rows)) {
                     continue;
                 }
 
-                $callsCreated++;
-
-                // Idempotency rule: skip recording download if call_recordings exists.
-                if (! $recordingAvailable || $recordingPath === '') {
-                    $recordingsSkipped++;
-                    continue;
+                // If PBXware returns exactly limit rows, there may be more data,
+                // but the manual did not document pagination; do not guess.
+                if (count($rows) === (int) $params['limit']) {
+                    Log::warning('PBXware CDR CSV reached limit; additional records may exist but pagination is not implemented (undocumented).', [
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        'limit' => $params['limit'],
+                    ]);
                 }
 
-                $alreadyHasRecording = CallRecording::where('call_id', $call->id)->exists();
-                if ($alreadyHasRecording) {
-                    $recordingsSkipped++;
-                    continue;
-                }
+                foreach ($rows as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
 
-                $this->downloadRecordingToS3($client, $call->id, $callUid, $recordingPath);
-                $recordingsDownloaded++;
+                    // CDR CSV fixed indexes (authoritative):
+                    // row[7] => Unique ID (call_uid)
+                    // row[8] => Recording Path
+                    // row[9] => Recording Available ("True"|"False")
+                    $callUid = isset($row[7]) ? trim((string) $row[7]) : '';
+                    if ($callUid === '') {
+                        continue;
+                    }
+
+                    $recordingPath = isset($row[8]) ? trim((string) $row[8]) : '';
+                    $recordingAvailable = isset($row[9]) && ((string) $row[9] === 'True');
+
+                    $call = Call::firstOrCreate(
+                        ['call_uid' => $callUid],
+                        [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                        ]
+                    );
+
+                    if (! $call->wasRecentlyCreated) {
+                        $callsSkipped++;
+                        continue;
+                    }
+
+                    $callsCreated++;
+
+                    if (! $recordingAvailable) {
+                        $recordingsSkipped++;
+                        continue;
+                    }
+                    if ($recordingPath === '') {
+                        $recordingsSkipped++;
+                        continue;
+                    }
+
+                    // Idempotency: do not re-download if a recording already exists for this call.
+                    if (CallRecording::where('call_id', $call->id)->exists()) {
+                        $recordingsSkipped++;
+                        continue;
+                    }
+
+                    $this->downloadRecordingToS3($client, $call->id, $callUid, $recordingPath);
+                    $recordingsDownloaded++;
+                }
             }
 
             Log::info('PBXware ingestion summary', [
@@ -164,11 +190,11 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function normalizePbxwareQueryParams(array $params): array
     {
-        // PBXware expects query params like start/end/starttime/endtime/limit/page.
-        // Convert any DateTime/Carbon values to unix timestamps and ignore unknown keys.
+        // PBXware expects query params like start/end/starttime/endtime/limit/export/recording.
+        // Do NOT guess or pass unknown keys.
         $out = [];
         foreach ($params as $key => $value) {
-            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'limit', 'page'], true)) {
+            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'limit', 'export', 'recording'], true)) {
                 continue;
             }
 
@@ -178,28 +204,68 @@ class IngestPbxCallsJob implements ShouldQueue
         return $out;
     }
 
-    private function determineCdrRange(): array
+    private function determineRequestedRange(): array
     {
-        $now = \Carbon\Carbon::now();
+        $to = \Carbon\Carbon::now();
+        $from = $to->copy()->subDay();
 
-        $last = Call::where('company_id', $this->companyId)
-            ->where('company_pbx_account_id', $this->companyPbxAccountId)
-            ->whereNotNull('started_at')
-            ->max('started_at');
-
-        if (! empty($last)) {
+        if (! empty($this->params['from'])) {
             try {
-                $start = \Carbon\Carbon::parse((string) $last);
-                return ['start' => $start, 'end' => $now];
+                $from = $this->parseRangeDate($this->params['from']);
             } catch (\Throwable $e) {
-                // fall through to default
+                // ignore
             }
         }
 
-        return ['start' => $now->copy()->subDay(), 'end' => $now];
+        if (! empty($this->params['to'])) {
+            try {
+                $to = $this->parseRangeDate($this->params['to']);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+
+        if ($from->greaterThan($to)) {
+            [$from, $to] = [$to, $from];
+        }
+
+        return ['from' => $from, 'to' => $to];
     }
 
-    private function buildCdrExportParams(\Carbon\Carbon $start, \Carbon\Carbon $end): array
+    private function parseRangeDate($value): \Carbon\Carbon
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return \Carbon\Carbon::instance($value);
+        }
+        return \Carbon\Carbon::parse((string) $value);
+    }
+
+    /**
+     * @return array<int, array{from: \Carbon\Carbon, to: \Carbon\Carbon}>
+     */
+    private function monthChunks(\Carbon\Carbon $from, \Carbon\Carbon $to): array
+    {
+        $chunks = [];
+
+        $cursor = $from->copy()->startOfMonth();
+        $endMonth = $to->copy()->startOfMonth();
+
+        while ($cursor->lessThanOrEqualTo($endMonth)) {
+            $monthStart = $cursor->copy()->startOfMonth();
+            $monthEnd = $cursor->copy()->endOfMonth();
+
+            $chunkFrom = $from->copy()->greaterThan($monthStart) ? $from->copy() : $monthStart;
+            $chunkTo = $to->copy()->lessThan($monthEnd) ? $to->copy() : $monthEnd;
+
+            $chunks[] = ['from' => $chunkFrom, 'to' => $chunkTo];
+
+            $cursor = $cursor->copy()->addMonth()->startOfMonth();
+        }
+
+        return $chunks;
+    }
+
+    private function buildCdrCsvParams(\Carbon\Carbon $from, \Carbon\Carbon $to): array
     {
         $limit = (int) ($this->params['limit'] ?? 1000);
         if ($limit <= 0) {
@@ -207,92 +273,16 @@ class IngestPbxCallsJob implements ShouldQueue
         }
         $limit = min($limit, 1000);
 
-        $page = (int) ($this->params['page'] ?? 1);
-        if ($page <= 0) {
-            $page = 1;
-        }
-
         $params = [
-            'start' => $start->format('M-d-Y'),
-            'end' => $end->format('M-d-Y'),
-            'starttime' => (string) ($this->params['starttime'] ?? '00:00:00'),
-            'endtime' => (string) ($this->params['endtime'] ?? '23:59:59'),
+            'start' => $from->format('M-d-Y'),
+            'end' => $to->format('M-d-Y'),
+            'starttime' => $from->format('H:i:s'),
+            'endtime' => $to->format('H:i:s'),
             'limit' => $limit,
-            'page' => $page,
+            'export' => 1,
         ];
 
         return $this->normalizePbxwareQueryParams($params);
-    }
-
-    /**
-     * Fetch all pages from pbxware.cdr.export and return [header, rows].
-     *
-     * @return array{0: array<int,string>|null, 1: array<int, array<int,string>>}
-     */
-    private function fetchAllCdrExportRows($client, array $baseParams): array
-    {
-        $allRows = [];
-        $header = null;
-
-        $limit = (int) ($baseParams['limit'] ?? 1000);
-        if ($limit <= 0) {
-            $limit = 1000;
-        }
-
-        $page = (int) ($baseParams['page'] ?? 1);
-        if ($page <= 0) {
-            $page = 1;
-        }
-
-        while (true) {
-            $params = $baseParams;
-            $params['page'] = $page;
-            $params = $this->normalizePbxwareQueryParams($params);
-
-            Log::info('PBXware CDR fetch params', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'action' => 'pbxware.cdr.export',
-                'start' => $params['start'] ?? null,
-                'end' => $params['end'] ?? null,
-                'starttime' => $params['starttime'] ?? null,
-                'endtime' => $params['endtime'] ?? null,
-                'limit' => $params['limit'] ?? null,
-                'page' => $params['page'] ?? null,
-            ]);
-
-            $result = $client->fetchAction('pbxware.cdr.export', $params);
-            [$h, $rows] = $this->extractRows($result);
-
-            if ($header === null && is_array($h) && $h !== []) {
-                $header = $h;
-            }
-
-            if (empty($rows)) {
-                break;
-            }
-
-            foreach ($rows as $r) {
-                if (is_array($r)) {
-                    $allRows[] = $r;
-                }
-            }
-
-            if (count($rows) < $limit) {
-                break;
-            }
-
-            $page++;
-            if ($page > 1000) {
-                Log::warning('PBXware CDR export pagination stopped at hard page limit', [
-                    'company_id' => $this->companyId,
-                    'company_pbx_account_id' => $this->companyPbxAccountId,
-                ]);
-                break;
-            }
-        }
-
-        return [$header, $allRows];
     }
 
     /**
