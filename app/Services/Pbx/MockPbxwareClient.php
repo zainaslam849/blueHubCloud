@@ -123,7 +123,8 @@ class MockPbxwareClient
      */
     public function fetchAction(string $action, array $params = []): array|string
     {
-        if ($action === 'pbxware.cdr.download' && (string) ($params['export'] ?? '') === '1') {
+        $csvAction = (string) (config('pbx.providers.pbxware.cdr_csv_action') ?? '');
+        if ($csvAction !== '' && $action === $csvAction) {
             return $this->fetchCdrCsv($params);
         }
 
@@ -165,56 +166,9 @@ class MockPbxwareClient
     }
 
     /**
-     * Probe a safe list of actions; never throws.
+     * NOTE: Action probing/discovery is intentionally not implemented.
+     * Use explicitly configured/documented actions only.
      */
-    public function testAvailableActions(): array
-    {
-        $actions = [
-            'pbxware.cdr.download',
-        ];
-
-        $results = [];
-        foreach ($actions as $action) {
-            try {
-                $res = $this->fetchAction($action, ['limit' => 1, 'export' => 1]);
-                $rows = (is_array($res) && isset($res['rows']) && is_array($res['rows'])) ? count($res['rows']) : 0;
-                $isInvalid = is_array($res) && isset($res['error']) && stripos((string) $res['error'], 'invalid action') !== false;
-
-                $results[$action] = [
-                    'status' => $isInvalid ? 'invalid_action' : ($rows > 0 ? 'success' : 'empty'),
-                    'response_type' => (is_array($res) && isset($res['rows'])) ? 'csv' : 'json',
-                    'rows' => $rows,
-                ];
-            } catch (\Throwable $e) {
-                $results[$action] = [
-                    'status' => 'invalid_action',
-                    'response_type' => 'error',
-                    'rows' => 0,
-                    'error' => $e->getMessage(),
-                ];
-            }
-        }
-
-        return [
-            'tested' => $actions,
-            'results' => $results,
-        ];
-    }
-
-    /**
-     * Mock discovery for available actions.
-     */
-    public function discoverActions(): array
-    {
-        return [
-            'pbxware.ext.list',
-            'pbxware.help',
-            'pbxware.api.list',
-            'pbxware.action.list',
-            'pbxware.system.actions',
-            'pbxware.cdr.download',
-        ];
-    }
 
     /**
      * Return recording metadata for given call IDs.

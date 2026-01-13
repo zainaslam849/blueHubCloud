@@ -354,22 +354,38 @@ class PbxwareClient
     }
 
     /**
-     * Fetch CDR rows via PBXware CSV export.
+     * Fetch CDR CSV (step 1 of PBXware two-step flow).
      *
-     * Authoritative rule: use action=pbxware.cdr.download with export=1.
+     * IMPORTANT: pbxware.cdr.download is NOT a CDR listing endpoint.
+     * This must call a documented PBXware CDR LIST/EXPORT action configured via:
+     *   config('pbx.providers.pbxware.cdr_csv_action') / env PBXWARE_CDR_CSV_ACTION
+     *
      * Returns raw [header, rows] numeric arrays.
      */
     public function fetchCdrCsv(array $params = []): array
     {
-        if (! array_key_exists('export', $params)) {
-            $params['export'] = 1;
+        $action = (string) config('pbx.providers.pbxware.cdr_csv_action');
+        if ($action === '') {
+            $msg = 'PBXware CDR CSV action is not configured. Set PBXWARE_CDR_CSV_ACTION to the documented PBXware CDR list/export action (this must NOT be pbxware.cdr.download).';
+            Log::error('PbxwareClient: ' . $msg);
+            throw new PbxwareClientException($msg);
+        }
+        if (strtolower($action) === 'pbxware.cdr.download') {
+            $msg = 'Invalid PBXWARE_CDR_CSV_ACTION: pbxware.cdr.download is only for downloading a single recording and cannot be used to fetch CDR CSV rows.';
+            Log::error('PbxwareClient: ' . $msg);
+            throw new PbxwareClientException($msg);
+        }
+        if (array_key_exists('recording', $params)) {
+            $msg = 'fetchCdrCsv does not accept a recording parameter; use fetchActionStream("pbxware.cdr.download", ["recording" => ...]) for audio downloads.';
+            Log::error('PbxwareClient: ' . $msg, ['action' => $action]);
+            throw new PbxwareClientException($msg);
         }
 
-        $response = $this->sendRequest('GET', 'pbxware.cdr.download', $params);
+        $response = $this->sendRequest('GET', $action, $params);
         if ($response->failed()) {
             $status = $response->status();
             $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: fetchCdrCsv failed', ['action' => 'pbxware.cdr.download', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
+            Log::error('PbxwareClient: fetchCdrCsv failed', ['action' => $action, 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
             throw new PbxwareClientException("Failed to fetch CDR CSV, status {$status}");
         }
 
@@ -501,283 +517,10 @@ class PbxwareClient
         return $response->toPsrResponse()->getBody();
     }
 
-    /**
-     * Probe a small SAFE list of known read-only PBXware actions.
-     * Never throws; returns structured diagnostics.
-     */
-    public function testAvailableActions(): array
-    {
-        $actions = [
-            'pbxware.cdr.download',
-        ];
-
-        $results = [];
-        foreach ($actions as $action) {
-            try {
-                $result = $this->fetchAction($action, ['limit' => 1, 'export' => 1]);
-                $responseType = $this->inferResponseTypeFromResult($result);
-
-                if ($this->resultLooksLikeInvalidAction($result)) {
-                    $results[$action] = [
-                        'status' => 'invalid_action',
-                        'response_type' => $responseType,
-                        'rows' => 0,
-                    ];
-                    continue;
-                }
-
-                $rowCount = $this->countRowsInResult($result);
-                $results[$action] = [
-                    'status' => $rowCount > 0 ? 'success' : 'empty',
-                    'response_type' => $responseType,
-                    'rows' => $rowCount,
-                ];
-            } catch (PbxwareClientException $e) {
-                $results[$action] = [
-                    'status' => 'invalid_action',
-                    'response_type' => 'error',
-                    'rows' => 0,
-                    'error' => $e->getMessage(),
-                ];
-            } catch (\Throwable $e) {
-                $results[$action] = [
-                    'status' => 'invalid_action',
-                    'response_type' => 'error',
-                    'rows' => 0,
-                    'error' => $e->getMessage(),
-                ];
-            }
-        }
-
-        return [
-            'tested' => $actions,
-            'results' => $results,
-        ];
-    }
-
     protected function looksLikeJson(string $body): bool
     {
         $trim = ltrim($body);
         return $trim !== '' && ($trim[0] === '{' || $trim[0] === '[');
-    }
-
-    /**
-     * Attempt to discover available PBXware actions using documented-style patterns.
-     *
-     * Tries a small allow-list of discovery actions and returns the first
-     * successful parsed list of action names.
-     *
-     * Logs HTTP status + raw response body (apikey redacted).
-     */
-    public function discoverActions(): array
-    {
-        $candidates = [
-            'pbxware.api.list',
-            'pbxware.action.list',
-            'pbxware.system.actions',
-            'pbxware.help',
-        ];
-
-        foreach ($candidates as $action) {
-            try {
-                $url = $this->buildQueryUrl($action, []);
-                $response = $this->sendRequest('GET', $action, []);
-
-                $status = $response->status();
-                $body = (string) $response->body();
-                $bodyRedacted = $this->redactDiscoverBody($body);
-
-                Log::info('PbxwareClient: discoverActions attempt', [
-                    'action' => $action,
-                    'status' => $status,
-                    'url' => $this->redactUrl($url),
-                    'raw_response' => $this->truncateForLog($bodyRedacted, 8000),
-                ]);
-
-                if ($status !== 200) {
-                    continue;
-                }
-
-                if ($this->responseIsInvalidAction($body)) {
-                    continue;
-                }
-
-                $actions = $this->parseActionNamesFromBody($body);
-                if (! empty($actions)) {
-                    return $actions;
-                }
-            } catch (PbxwareClientException $e) {
-                Log::info('PbxwareClient: discoverActions attempt failed', [
-                    'action' => $action,
-                    'error' => $e->getMessage(),
-                ]);
-                continue;
-            } catch (\Throwable $e) {
-                Log::info('PbxwareClient: discoverActions attempt errored', [
-                    'action' => $action,
-                    'error' => $e->getMessage(),
-                ]);
-                continue;
-            }
-        }
-
-        return [];
-    }
-
-    protected function responseIsInvalidAction(string $body): bool
-    {
-        return stripos($body, 'Action method is invalid') !== false
-            || stripos($body, 'invalid action') !== false;
-    }
-
-    protected function redactDiscoverBody(string $body): string
-    {
-        // Best-effort: redact the api_key value if it appears.
-        $apiKey = (string) ($this->credentials['api_key'] ?? '');
-        if ($apiKey !== '') {
-            $body = str_replace($apiKey, 'REDACTED', $body);
-        }
-
-        // Also redact query-string apikey patterns.
-        $body = preg_replace('/(apikey=)([^&\s]+)/i', '$1REDACTED', $body);
-
-        return $body;
-    }
-
-    protected function truncateForLog(string $s, int $maxBytes): string
-    {
-        if (strlen($s) <= $maxBytes) {
-            return $s;
-        }
-        return substr($s, 0, $maxBytes) . '...';
-    }
-
-    /**
-     * Parse a list of action names from JSON/text bodies.
-     * Does not assume any particular response format.
-     */
-    protected function parseActionNamesFromBody(string $body): array
-    {
-        $bodyTrim = trim($body);
-        if ($bodyTrim === '') {
-            return [];
-        }
-
-        // JSON formats
-        if ($this->looksLikeJson($bodyTrim)) {
-            $decoded = json_decode($bodyTrim, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                return $this->extractActionNamesFromJson($decoded);
-            }
-        }
-
-        // Text formats: look for tokens that resemble pbxware.*.*
-        $tokens = preg_split('/[\r\n\t,;\s]+/', $bodyTrim);
-        if (! is_array($tokens)) {
-            return [];
-        }
-
-        $actions = [];
-        foreach ($tokens as $t) {
-            $t = trim((string) $t);
-            if ($t === '') {
-                continue;
-            }
-            if (preg_match('/^pbxware\.[a-z0-9_]+\.[a-z0-9_]+$/i', $t)) {
-                $actions[] = $t;
-            }
-        }
-
-        return array_values(array_unique($actions));
-    }
-
-    protected function extractActionNamesFromJson($decoded): array
-    {
-        $out = [];
-
-        if (is_string($decoded)) {
-            return [];
-        }
-
-        // If it's a list of strings
-        if (is_array($decoded) && array_values($decoded) === $decoded) {
-            foreach ($decoded as $item) {
-                if (is_string($item) && preg_match('/^pbxware\./i', $item)) {
-                    $out[] = $item;
-                } elseif (is_array($item)) {
-                    foreach (['action', 'name', 'method'] as $k) {
-                        if (isset($item[$k]) && is_string($item[$k]) && preg_match('/^pbxware\./i', $item[$k])) {
-                            $out[] = $item[$k];
-                        }
-                    }
-                }
-            }
-            return array_values(array_unique($out));
-        }
-
-        // Common wrappers
-        if (is_array($decoded)) {
-            foreach (['actions', 'data', 'items', 'result'] as $k) {
-                if (isset($decoded[$k])) {
-                    $nested = $this->extractActionNamesFromJson($decoded[$k]);
-                    if (! empty($nested)) {
-                        return $nested;
-                    }
-                }
-            }
-        }
-
-        return [];
-    }
-
-    protected function inferResponseTypeFromResult(array|string $result): string
-    {
-        if (is_string($result)) {
-            return trim($result) === '' ? 'empty' : 'string';
-        }
-
-        if (isset($result['header'], $result['rows']) && is_array($result['rows'])) {
-            return 'csv';
-        }
-
-        return 'json';
-    }
-
-    protected function countRowsInResult(array|string $result): int
-    {
-        if (is_string($result)) {
-            return 0;
-        }
-
-        if (isset($result['rows']) && is_array($result['rows'])) {
-            return count($result['rows']);
-        }
-
-        // JSON-style arrays can either be a list or wrapped in data/items.
-        if (isset($result['data']) && is_array($result['data'])) {
-            return count($result['data']);
-        }
-        if (isset($result['items']) && is_array($result['items'])) {
-            return count($result['items']);
-        }
-
-        // If it's a list, count it.
-        return (array_values($result) === $result) ? count($result) : 0;
-    }
-
-    protected function resultLooksLikeInvalidAction(array|string $result): bool
-    {
-        if (is_string($result)) {
-            return stripos($result, 'invalid action') !== false;
-        }
-
-        foreach (['error', 'message', 'msg', 'status'] as $key) {
-            if (isset($result[$key]) && is_string($result[$key]) && stripos($result[$key], 'invalid action') !== false) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

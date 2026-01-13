@@ -13,9 +13,10 @@ class PbxClientResolver
 {
     public static function resolve()
     {
-        // Resolve mode directly from environment variable only.
-        // PBXWARE_MOCK_MODE=true => use mock client. False => real client.
-        $mock = filter_var(env('PBXWARE_MOCK_MODE', false), FILTER_VALIDATE_BOOLEAN);
+        // Prefer explicit runtime config override when present (e.g. CLI --mock),
+        // otherwise fall back to PBXWARE_MOCK_MODE env var.
+        $mock = (string) config('pbx.mode') === 'mock'
+            || filter_var(env('PBXWARE_MOCK_MODE', false), FILTER_VALIDATE_BOOLEAN);
         if ($mock) {
             return new MockPbxwareClient();
         }

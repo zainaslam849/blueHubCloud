@@ -21,14 +21,13 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $description = 'Run PBXware ingestion for a given date range (uses pbxware.cdr.download)';
+    protected $description = 'Run PBXware ingestion for a given date range (CDR CSV via PBXWARE_CDR_CSV_ACTION; recordings via pbxware.cdr.download)';
 
     public function handle(): int
     {
         if ($this->option('mock')) {
-            putenv('PBXWARE_MOCK_MODE=true');
-            $_ENV['PBXWARE_MOCK_MODE'] = 'true';
-            $this->info('Running with PBXWARE_MOCK_MODE=true (forced by --mock).');
+            config(['pbx.mode' => 'mock']);
+            $this->info("Running with pbx.mode=mock (forced by --mock).");
         }
 
         $accountQuery = CompanyPbxAccount::query();

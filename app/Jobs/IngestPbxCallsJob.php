@@ -54,10 +54,9 @@ class IngestPbxCallsJob implements ShouldQueue
                 Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
             }
 
-            // Authoritative PBXware rules:
-            // - The ONLY valid CDR action is pbxware.cdr.download
-            // - CSV fetch uses pbxware.cdr.download with export=1 and a required date/time range
-            // - Audio fetch uses the SAME action with recording=<recording_path>
+            // PBXware two-step CDR flow:
+            // 1) Fetch CDR CSV rows via a documented CDR LIST/EXPORT action (client->fetchCdrCsv)
+            // 2) Download a single recording via pbxware.cdr.download&recording=<path>
 
             $range = $this->determineRequestedRange();
             $chunks = $this->monthChunks($range['from'], $range['to']);
@@ -81,6 +80,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 ]);
 
                 $csv = $client->fetchCdrCsv($params);
+                $header = is_array($csv) ? ($csv['header'] ?? null) : null;
                 $rows = is_array($csv) ? ($csv['rows'] ?? []) : [];
 
                 Log::info('PBXware CDR CSV rows received', [
@@ -93,39 +93,53 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
-                // If PBXware returns exactly limit rows, there may be more data,
-                // but the manual did not document pagination; do not guess.
-                if (count($rows) === (int) $params['limit']) {
-                    Log::warning('PBXware CDR CSV reached limit; additional records may exist but pagination is not implemented (undocumented).', [
-                        'company_id' => $this->companyId,
-                        'company_pbx_account_id' => $this->companyPbxAccountId,
-                        'limit' => $params['limit'],
-                    ]);
-                }
+                // Pagination support depends on the configured PBXware CDR action contract.
+                // Do not auto-paginate unless the vendor documentation explicitly requires it.
 
                 foreach ($rows as $row) {
                     if (! is_array($row)) {
                         continue;
                     }
 
-                    // CDR CSV fixed indexes (authoritative):
-                    // row[7] => Unique ID (call_uid)
-                    // row[8] => Recording Path
-                    // row[9] => Recording Available ("True"|"False")
-                    $callUid = isset($row[7]) ? trim((string) $row[7]) : '';
-                    if ($callUid === '') {
+                    $normalized = $this->normalizeCdrRow($row, is_array($header) ? $header : null);
+                    $callUid = $normalized['call_uid'] ?? null;
+                    if (! is_string($callUid) || trim($callUid) === '') {
                         continue;
                     }
 
-                    $recordingPath = isset($row[8]) ? trim((string) $row[8]) : '';
-                    $recordingAvailable = isset($row[9]) && ((string) $row[9] === 'True');
+                    // The calls table requires direction/status/started_at.
+                    // Do not guess; if the CSV doesn't provide these fields, skip the row.
+                    $direction = $normalized['direction'] ?? null;
+                    $status = $normalized['status'] ?? null;
+                    $startedAt = $normalized['started_at'] ?? null;
+
+                    if (! is_string($direction) || trim($direction) === '' || ! is_string($status) || trim($status) === '' || ! is_string($startedAt) || trim($startedAt) === '') {
+                        Log::warning('Skipping PBX call: missing required call fields from CDR CSV', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'call_uid' => $callUid,
+                            'has_direction' => is_string($direction) && trim($direction) !== '',
+                            'has_status' => is_string($status) && trim($status) !== '',
+                            'has_started_at' => is_string($startedAt) && trim($startedAt) !== '',
+                        ]);
+                        continue;
+                    }
 
                     $call = Call::firstOrCreate(
                         ['call_uid' => $callUid],
-                        [
+                        array_filter([
                             'company_id' => $this->companyId,
                             'company_pbx_account_id' => $this->companyPbxAccountId,
-                        ]
+                            'direction' => trim($direction),
+                            'from_number' => $normalized['from_number'] ?? null,
+                            'to_number' => $normalized['to_number'] ?? null,
+                            'started_at' => $startedAt,
+                            'ended_at' => $normalized['ended_at'] ?? null,
+                            'duration_seconds' => $normalized['duration_seconds'] ?? null,
+                            'status' => trim($status),
+                        ], static function ($v) {
+                            return $v !== null && $v !== '';
+                        })
                     );
 
                     if (! $call->wasRecentlyCreated) {
@@ -135,17 +149,36 @@ class IngestPbxCallsJob implements ShouldQueue
 
                     $callsCreated++;
 
+                    $recordingAvailable = (bool) ($normalized['has_recording'] ?? false);
+                    $recordingPath = $normalized['recording_reference'] ?? null;
+
                     if (! $recordingAvailable) {
+                        Log::info('Recording skipped (not available)', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'call_uid' => $callUid,
+                        ]);
                         $recordingsSkipped++;
                         continue;
                     }
-                    if ($recordingPath === '') {
+                    if (! is_string($recordingPath) || trim($recordingPath) === '') {
+                        Log::info('Recording skipped (missing recording path)', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'call_uid' => $callUid,
+                        ]);
                         $recordingsSkipped++;
                         continue;
                     }
 
                     // Idempotency: do not re-download if a recording already exists for this call.
                     if (CallRecording::where('call_id', $call->id)->exists()) {
+                        Log::info('Recording skipped (already exists for call)', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'call_id' => $call->id,
+                            'call_uid' => $callUid,
+                        ]);
                         $recordingsSkipped++;
                         continue;
                     }
@@ -190,11 +223,12 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function normalizePbxwareQueryParams(array $params): array
     {
-        // PBXware expects query params like start/end/starttime/endtime/limit/export/recording.
+        // PBXware expects query params like start/end/starttime/endtime/limit/export.
+        // Recording downloads use pbxware.cdr.download&recording=<path>.
         // Do NOT guess or pass unknown keys.
         $out = [];
         foreach ($params as $key => $value) {
-            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'limit', 'export', 'recording'], true)) {
+            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'limit', 'export'], true)) {
                 continue;
             }
 
@@ -279,8 +313,13 @@ class IngestPbxCallsJob implements ShouldQueue
             'starttime' => $from->format('H:i:s'),
             'endtime' => $to->format('H:i:s'),
             'limit' => $limit,
-            'export' => 1,
         ];
+
+        // Some PBXware CDR export actions require an explicit export flag.
+        // Do not assume; allow the operator to pass it via params if required.
+        if (array_key_exists('export', $this->params)) {
+            $params['export'] = $this->params['export'];
+        }
 
         return $this->normalizePbxwareQueryParams($params);
     }
@@ -319,6 +358,12 @@ class IngestPbxCallsJob implements ShouldQueue
      * Output:
      * - call_uid (required)
      * - started_at (string|null)
+        * - direction (string|null)
+        * - status (string|null)
+        * - from_number (string|null)
+        * - to_number (string|null)
+        * - ended_at (string|null)
+        * - duration_seconds (int|null)
      * - has_recording (bool)
      * - recording_reference (string|null)
      */
@@ -353,9 +398,56 @@ class IngestPbxCallsJob implements ShouldQueue
                 $byName['timestamp'] ?? null,
                 $byName['started_at'] ?? null,
                 $byName['start'] ?? null,
+                $byName['calldate'] ?? null,
+                $byName['call_date'] ?? null,
                 $row[2] ?? null,
             ]);
             $startedAt = $startedAtRaw !== null ? $this->parseDate($startedAtRaw) : null;
+
+            $direction = $this->firstNonEmpty([
+                $byName['direction'] ?? null,
+                $byName['call_direction'] ?? null,
+                $byName['calltype'] ?? null,
+                $byName['call_type'] ?? null,
+            ]);
+
+            $status = $this->firstNonEmpty([
+                $byName['status'] ?? null,
+                $byName['disposition'] ?? null,
+                $byName['call_status'] ?? null,
+            ]);
+
+            $fromNumber = $this->firstNonEmpty([
+                $byName['from_number'] ?? null,
+                $byName['src'] ?? null,
+                $byName['source'] ?? null,
+                $byName['callerid'] ?? null,
+                $byName['caller_id'] ?? null,
+            ]);
+
+            $toNumber = $this->firstNonEmpty([
+                $byName['to_number'] ?? null,
+                $byName['dst'] ?? null,
+                $byName['destination'] ?? null,
+                $byName['callee'] ?? null,
+            ]);
+
+            $endedAtRaw = $this->firstNonEmpty([
+                $byName['ended_at'] ?? null,
+                $byName['end'] ?? null,
+            ]);
+            $endedAt = $endedAtRaw !== null ? $this->parseDate($endedAtRaw) : null;
+
+            $durationRaw = $this->firstNonEmpty([
+                $byName['duration_seconds'] ?? null,
+                $byName['duration'] ?? null,
+                $byName['billsec'] ?? null,
+                $byName['bill_sec'] ?? null,
+            ]);
+            $durationSeconds = null;
+            if ($durationRaw !== null && is_numeric($durationRaw)) {
+                $durationSeconds = (int) $durationRaw;
+            }
 
             $recordingRef = $this->firstNonEmpty([
                 $byName['recording_reference'] ?? null,
@@ -376,6 +468,12 @@ class IngestPbxCallsJob implements ShouldQueue
             return [
                 'call_uid' => (string) $callUid,
                 'started_at' => $startedAt,
+                'direction' => $direction !== null ? (string) $direction : null,
+                'status' => $status !== null ? (string) $status : null,
+                'from_number' => $fromNumber !== null ? (string) $fromNumber : null,
+                'to_number' => $toNumber !== null ? (string) $toNumber : null,
+                'ended_at' => $endedAt,
+                'duration_seconds' => $durationSeconds,
                 'has_recording' => $hasRecording,
                 'recording_reference' => ($recordingRef !== null && (string) $recordingRef !== '') ? (string) $recordingRef : null,
             ];
@@ -409,8 +507,54 @@ class IngestPbxCallsJob implements ShouldQueue
                 $lower['start'] ?? null,
                 $lower['timestamp'] ?? null,
                 $lower['date'] ?? null,
+                $lower['calldate'] ?? null,
             ]);
             $startedAt = $startedAtRaw !== null ? $this->parseDate($startedAtRaw) : null;
+
+            $direction = $this->firstNonEmpty([
+                $lower['direction'] ?? null,
+                $lower['call_direction'] ?? null,
+                $lower['calltype'] ?? null,
+                $lower['call_type'] ?? null,
+            ]);
+
+            $status = $this->firstNonEmpty([
+                $lower['status'] ?? null,
+                $lower['disposition'] ?? null,
+                $lower['call_status'] ?? null,
+            ]);
+
+            $fromNumber = $this->firstNonEmpty([
+                $lower['from_number'] ?? null,
+                $lower['src'] ?? null,
+                $lower['source'] ?? null,
+                $lower['callerid'] ?? null,
+                $lower['caller_id'] ?? null,
+            ]);
+
+            $toNumber = $this->firstNonEmpty([
+                $lower['to_number'] ?? null,
+                $lower['dst'] ?? null,
+                $lower['destination'] ?? null,
+                $lower['callee'] ?? null,
+            ]);
+
+            $endedAtRaw = $this->firstNonEmpty([
+                $lower['ended_at'] ?? null,
+                $lower['end'] ?? null,
+            ]);
+            $endedAt = $endedAtRaw !== null ? $this->parseDate($endedAtRaw) : null;
+
+            $durationRaw = $this->firstNonEmpty([
+                $lower['duration_seconds'] ?? null,
+                $lower['duration'] ?? null,
+                $lower['billsec'] ?? null,
+                $lower['bill_sec'] ?? null,
+            ]);
+            $durationSeconds = null;
+            if ($durationRaw !== null && is_numeric($durationRaw)) {
+                $durationSeconds = (int) $durationRaw;
+            }
 
             $recordingRef = $this->firstNonEmpty([
                 $lower['recording_reference'] ?? null,
@@ -429,6 +573,12 @@ class IngestPbxCallsJob implements ShouldQueue
             return [
                 'call_uid' => (string) $callUid,
                 'started_at' => $startedAt,
+                'direction' => $direction !== null ? (string) $direction : null,
+                'status' => $status !== null ? (string) $status : null,
+                'from_number' => $fromNumber !== null ? (string) $fromNumber : null,
+                'to_number' => $toNumber !== null ? (string) $toNumber : null,
+                'ended_at' => $endedAt,
+                'duration_seconds' => $durationSeconds,
                 'has_recording' => $hasRecording,
                 'recording_reference' => ($recordingRef !== null && (string) $recordingRef !== '') ? (string) $recordingRef : null,
             ];
