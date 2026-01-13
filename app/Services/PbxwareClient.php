@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Psr\Http\Message\StreamInterface;
 
 class PbxwareClient
 {
@@ -409,6 +410,189 @@ class PbxwareClient
 
         fclose($handle);
         return [$header, $rows];
+    }
+
+    /**
+     * Fetch any PBXware query action dynamically.
+     *
+     * - Builds: base_url + /?apikey=...&action=...&server=...&{params}
+     * - Supports JSON (returns array) and CSV (returns ['header'=>..., 'rows'=>...])
+     * - Logs action name + response type (json/csv/empty)
+     * - Throws PbxwareClientException on non-200 responses
+     */
+    public function fetchAction(string $action, array $params = []): array|string
+    {
+        $response = $this->sendRequest('GET', $action, $params);
+
+        if ($response->status() !== 200) {
+            $body = $this->redactForLog((string) $response->body());
+            Log::error('PbxwareClient: non-200 response for action', [
+                'action' => $action,
+                'status' => $response->status(),
+                'body' => $body,
+            ]);
+            throw new PbxwareClientException("PBX action {$action} failed with status {$response->status()}", $response->status());
+        }
+
+        $body = (string) $response->body();
+        if (trim($body) === '') {
+            Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'empty']);
+            return '';
+        }
+
+        $contentType = strtolower((string) ($response->header('Content-Type') ?? ''));
+
+        // Prefer JSON detection via content-type or body heuristics.
+        if (str_contains($contentType, 'json') || $this->looksLikeJson($body)) {
+            $json = $response->json();
+            $json = is_array($json) ? $json : [];
+            Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'json']);
+            return $json;
+        }
+
+        // Default to CSV for PBXware export-style responses.
+        [$header, $rows] = $this->parseCsv($body);
+        Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'csv', 'rows' => count($rows)]);
+
+        return [
+            'header' => $header,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * Streaming variant for actions that return binary bodies (e.g. downloads).
+     * Returns a PSR-7 stream; caller can pipe directly to S3.
+     */
+    public function fetchActionStream(string $action, array $params = []): StreamInterface
+    {
+        $response = $this->sendRequest('GET', $action, $params, ['stream' => true]);
+
+        if ($response->status() !== 200) {
+            $body = $this->redactForLog((string) $response->body());
+            Log::error('PbxwareClient: non-200 stream response for action', [
+                'action' => $action,
+                'status' => $response->status(),
+                'body' => $body,
+            ]);
+            throw new PbxwareClientException("PBX action {$action} failed with status {$response->status()}", $response->status());
+        }
+
+        Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'stream']);
+        return $response->toPsrResponse()->getBody();
+    }
+
+    /**
+     * Probe a small SAFE list of known read-only PBXware actions.
+     * Never throws; returns structured diagnostics.
+     */
+    public function testAvailableActions(): array
+    {
+        $actions = [
+            'pbxware.cdr.list',
+            'pbxware.cdr.report',
+            'pbxware.cdr.export',
+            'pbxware.recording.list',
+        ];
+
+        $results = [];
+        foreach ($actions as $action) {
+            try {
+                $result = $this->fetchAction($action, ['limit' => 1]);
+                $responseType = $this->inferResponseTypeFromResult($result);
+
+                if ($this->resultLooksLikeInvalidAction($result)) {
+                    $results[$action] = [
+                        'status' => 'invalid_action',
+                        'response_type' => $responseType,
+                        'rows' => 0,
+                    ];
+                    continue;
+                }
+
+                $rowCount = $this->countRowsInResult($result);
+                $results[$action] = [
+                    'status' => $rowCount > 0 ? 'success' : 'empty',
+                    'response_type' => $responseType,
+                    'rows' => $rowCount,
+                ];
+            } catch (PbxwareClientException $e) {
+                $results[$action] = [
+                    'status' => 'invalid_action',
+                    'response_type' => 'error',
+                    'rows' => 0,
+                    'error' => $e->getMessage(),
+                ];
+            } catch (\Throwable $e) {
+                $results[$action] = [
+                    'status' => 'invalid_action',
+                    'response_type' => 'error',
+                    'rows' => 0,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return [
+            'tested' => $actions,
+            'results' => $results,
+        ];
+    }
+
+    protected function looksLikeJson(string $body): bool
+    {
+        $trim = ltrim($body);
+        return $trim !== '' && ($trim[0] === '{' || $trim[0] === '[');
+    }
+
+    protected function inferResponseTypeFromResult(array|string $result): string
+    {
+        if (is_string($result)) {
+            return trim($result) === '' ? 'empty' : 'string';
+        }
+
+        if (isset($result['header'], $result['rows']) && is_array($result['rows'])) {
+            return 'csv';
+        }
+
+        return 'json';
+    }
+
+    protected function countRowsInResult(array|string $result): int
+    {
+        if (is_string($result)) {
+            return 0;
+        }
+
+        if (isset($result['rows']) && is_array($result['rows'])) {
+            return count($result['rows']);
+        }
+
+        // JSON-style arrays can either be a list or wrapped in data/items.
+        if (isset($result['data']) && is_array($result['data'])) {
+            return count($result['data']);
+        }
+        if (isset($result['items']) && is_array($result['items'])) {
+            return count($result['items']);
+        }
+
+        // If it's a list, count it.
+        return (array_values($result) === $result) ? count($result) : 0;
+    }
+
+    protected function resultLooksLikeInvalidAction(array|string $result): bool
+    {
+        if (is_string($result)) {
+            return stripos($result, 'invalid action') !== false;
+        }
+
+        foreach (['error', 'message', 'msg', 'status'] as $key) {
+            if (isset($result[$key]) && is_string($result[$key]) && stripos($result[$key], 'invalid action') !== false) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

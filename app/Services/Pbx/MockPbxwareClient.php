@@ -110,6 +110,90 @@ class MockPbxwareClient
     }
 
     /**
+     * Dynamic PBXware-style action fetch for mock mode.
+     * Returns JSON arrays or CSV structures matching the real client.
+     */
+    public function fetchAction(string $action, array $params = []): array|string
+    {
+        if (in_array($action, ['pbxware.cdr.list', 'pbxware.cdr.report', 'pbxware.cdr.export'], true)) {
+            return $this->fetchCdrList($params);
+        }
+
+        if ($action === 'pbxware.recording.list') {
+            // Provide a minimal CSV-like structure; recording discovery is mocked via CDR rows.
+            return $this->fetchCdrList($params);
+        }
+
+        if ($action === 'pbxware.ext.list') {
+            return [
+                ['extension' => '1001', 'name' => 'Mock User 1'],
+                ['extension' => '1002', 'name' => 'Mock User 2'],
+            ];
+        }
+
+        // Unknown action
+        return ['error' => 'Invalid action'];
+    }
+
+    /**
+     * Streaming variant for download-style actions.
+     * Returns a stream resource (compatible with S3 putObject Body).
+     */
+    public function fetchActionStream(string $action, array $params = [])
+    {
+        if ($action !== 'pbxware.cdr.download') {
+            throw new \InvalidArgumentException('Unsupported mock stream action: ' . $action);
+        }
+
+        $ref = $params['recording_id'] ?? $params['id'] ?? $params['file'] ?? null;
+        if (! is_string($ref) || $ref === '') {
+            throw new \InvalidArgumentException('Missing recording reference for mock download');
+        }
+
+        return $this->downloadRecordingStream($ref);
+    }
+
+    /**
+     * Probe a safe list of actions; never throws.
+     */
+    public function testAvailableActions(): array
+    {
+        $actions = [
+            'pbxware.cdr.list',
+            'pbxware.cdr.report',
+            'pbxware.cdr.export',
+            'pbxware.recording.list',
+        ];
+
+        $results = [];
+        foreach ($actions as $action) {
+            try {
+                $res = $this->fetchAction($action, ['limit' => 1]);
+                $rows = (is_array($res) && isset($res['rows']) && is_array($res['rows'])) ? count($res['rows']) : 0;
+                $isInvalid = is_array($res) && isset($res['error']) && stripos((string) $res['error'], 'invalid action') !== false;
+
+                $results[$action] = [
+                    'status' => $isInvalid ? 'invalid_action' : ($rows > 0 ? 'success' : 'empty'),
+                    'response_type' => (is_array($res) && isset($res['rows'])) ? 'csv' : 'json',
+                    'rows' => $rows,
+                ];
+            } catch (\Throwable $e) {
+                $results[$action] = [
+                    'status' => 'invalid_action',
+                    'response_type' => 'error',
+                    'rows' => 0,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return [
+            'tested' => $actions,
+            'results' => $results,
+        ];
+    }
+
+    /**
      * Return recording metadata for given call IDs.
      * Signature: fetchRecordings(array $callIds): array
      */

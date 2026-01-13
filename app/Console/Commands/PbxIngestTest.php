@@ -3,9 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Jobs\IngestPbxCallsJob;
-use App\Jobs\IngestPbxRecordingJob;
-use App\Models\Call;
-use App\Models\CallRecording;
 use App\Models\CompanyPbxAccount;
 use App\Services\Pbx\PbxClientResolver;
 use App\Exceptions\PbxwareClientException;
@@ -63,9 +60,7 @@ class PbxIngestTest extends Command
             return 0;
         }
         // Stats
-        $totalCalls = 0;
-        $totalRecordings = 0;
-        $s3Paths = [];
+        $ran = 0;
 
         foreach ($accounts as $acct) {
             $this->info("Starting ingest for company_id={$acct->company_id} account_id={$acct->id}");
@@ -77,6 +72,74 @@ class PbxIngestTest extends Command
             $client = PbxClientResolver::resolve();
 
             try {
+                // 1) Discover which PBXware action actually returns CDR rows.
+                if (method_exists($client, 'testAvailableActions')) {
+                    $diag = $client->testAvailableActions();
+                    $results = is_array($diag) ? ($diag['results'] ?? []) : [];
+
+                    $this->info('Action probe results (limit=1):');
+                    foreach ($results as $action => $info) {
+                        $status = (string) ($info['status'] ?? 'unknown');
+                        $rows = (int) ($info['rows'] ?? 0);
+                        $type = (string) ($info['response_type'] ?? 'unknown');
+                        $this->line(" - {$action}: {$status} (rows={$rows}, type={$type})");
+                    }
+
+                    $selected = null;
+                    foreach ($results as $action => $info) {
+                        if (($info['status'] ?? null) === 'success' && (int) ($info['rows'] ?? 0) > 0) {
+                            $selected = (string) $action;
+                            break;
+                        }
+                    }
+
+                    if (! $selected) {
+                        $this->warn('No action returned rows with limit=1; using first empty action as fallback (may still ingest 0).');
+                        foreach ($results as $action => $info) {
+                            if (($info['status'] ?? null) === 'empty') {
+                                $selected = (string) $action;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (! $selected) {
+                        $this->warn('No usable PBXware CDR action discovered for this account; skipping.');
+                        continue;
+                    }
+
+                    $this->info('Selected PBXware CDR action: ' . $selected);
+                    Log::info('pbx:ingest-test selected CDR action', [
+                        'company_id' => $acct->company_id,
+                        'company_pbx_account_id' => $acct->id,
+                        'action' => $selected,
+                    ]);
+
+                    // 2) Run the ingestion job synchronously with that action.
+                    $pbxParams = $this->normalizePbxwareQueryParams([
+                        'startdate' => $now->copy()->subDay(),
+                        'enddate' => $now,
+                    ]);
+
+                    Log::info('PBXware CDR query params (excluding apikey)', [
+                        'company_id' => $acct->company_id,
+                        'company_pbx_account_id' => $acct->id,
+                        'params' => $pbxParams,
+                    ]);
+
+                    $job = new IngestPbxCallsJob((int) $acct->company_id, (int) $acct->id, $pbxParams, $selected);
+                    if (function_exists('dispatch_sync')) {
+                        dispatch_sync($job);
+                    } else {
+                        // Best-effort fallback for older Laravel versions.
+                        $job->handle();
+                    }
+
+                    $ran++;
+                    $this->info("Completed ingest for account_id={$acct->id}");
+                    continue;
+                }
+
                 // PBXware query parameters must be unix timestamps.
                 // For first-time ingestion (no cursor), do NOT send `since` at all.
                 // Default to last 24 hours.
@@ -91,66 +154,7 @@ class PbxIngestTest extends Command
                     'params' => $pbxParams,
                 ]);
 
-                $cdr = $client->fetchCdrList($pbxParams);
-                $rows = is_array($cdr) ? ($cdr['rows'] ?? []) : [];
-
-                foreach ($rows as $row) {
-                    $mapped = $this->mapPbxwareCdr($row);
-                    $callUid = $mapped['call_uid'] ?? null;
-                    if (empty($callUid)) {
-                        continue;
-                    }
-
-                    $attributes = [
-                        'company_id' => $acct->company_id,
-                        'company_pbx_account_id' => $acct->id,
-                        'started_at' => $mapped['started_at'] ?? null,
-                    ];
-
-                    $call = Call::firstOrCreate(
-                        ['call_uid' => $callUid],
-                        array_filter($attributes, function ($v) { return $v !== null; })
-                    );
-
-                    if (! $call->wasRecentlyCreated) {
-                        $this->info('Skipping duplicate call_uid: ' . $callUid);
-                        Log::info('Skipping duplicate call_uid', ['call_uid' => $callUid, 'company_id' => $acct->company_id, 'company_pbx_account_id' => $acct->id]);
-                    }
-
-                    if ($call->wasRecentlyCreated) {
-                        $totalCalls++;
-                        $this->info("📞 Call ingested: call_id={$call->id} call_uid={$callUid}");
-                    }
-
-                    // Fetch recordings only when recording_available === true and not already fetched.
-                    if (! empty($mapped['recording_available']) && ! empty($mapped['recording_path'])) {
-                        $recordingPath = (string) $mapped['recording_path'];
-                        $exists = CallRecording::where('idempotency_key', $recordingPath)
-                            ->where('call_id', $call->id)
-                            ->exists();
-
-                        if ($exists) {
-                            $this->info("Recording already fetched: call_id={$call->id} idempotency_key={$recordingPath}");
-                            Log::info('Recording already fetched', ['call_id' => $call->id, 'call_uid' => $callUid, 'idempotency_key' => $recordingPath]);
-                        } else {
-                            // Run the recording ingestion synchronously so we can report success
-                            $job = new IngestPbxRecordingJob($acct->company_id, $call->id, $recordingPath);
-                            if (function_exists('dispatch_sync')) {
-                                dispatch_sync($job);
-                            } else {
-                                dispatch($job);
-                            }
-
-                            $s3Key = sprintf('recordings/incoming/%s/%s.mp3', $acct->company_id, $callUid);
-                            $s3Paths[] = $s3Key;
-
-                            $totalRecordings++;
-                            $this->info("🎧 Recording job dispatched: call_id={$call->id} recording_path={$recordingPath} -> s3={$s3Key}");
-                        }
-                    }
-                }
-
-                $this->info("Completed ingest for account_id={$acct->id}");
+                $this->warn('Client does not support action probing; please update client to use testAvailableActions().');
             } catch (PbxwareClientException $e) {
                 $this->error("PBX API error for account_id={$acct->id}: " . $e->getMessage());
             } catch (\Throwable $e) {
@@ -161,60 +165,10 @@ class PbxIngestTest extends Command
         // Verification summary
         $this->line('');
         $this->info('=== Ingest Test Summary ===');
-        $this->info('Total calls ingested: ' . $totalCalls);
-        $this->info('Total recordings uploaded: ' . $totalRecordings);
-        $this->info('S3 paths:');
-        foreach (array_unique($s3Paths) as $p) {
-            $this->line(' - ' . $p);
-        }
-        $lambdaExpected = $totalRecordings > 0 ? 'yes' : 'no';
-        $this->info('Lambda trigger expected: ' . $lambdaExpected);
+        $this->info('Accounts processed: ' . $ran);
 
         $this->info('All ingests completed.');
         return 0;
-    }
-
-    private function mapPbxwareCdr(array $row): array
-    {
-        // PBXware CDR CSV mapping using fixed column indexes.
-        // PBXware uses Unique ID only.
-        $uniqueId = isset($row[7]) ? trim((string) $row[7]) : '';
-        if ($uniqueId === '') {
-            $this->warn('Skipping PBX call: no unique identifier present');
-            Log::warning('Skipping PBX call: no unique identifier present', [
-                'company_id' => $this->currentCompanyId,
-                'company_pbx_account_id' => $this->currentCompanyPbxAccountId,
-            ]);
-            Log::debug('PBX call missing Unique ID at column index 7', [
-                'row_len' => count($row),
-                'available_indexes' => array_keys($row),
-                'company_id' => $this->currentCompanyId,
-                'company_pbx_account_id' => $this->currentCompanyPbxAccountId,
-            ]);
-            return ['call_uid' => null];
-        }
-
-        $startedAt = null;
-        if (isset($row[2]) && $row[2] !== '' && $row[2] !== null) {
-            $ts = $row[2];
-            try {
-                $startedAt = is_numeric($ts)
-                    ? Carbon::createFromTimestamp((int) $ts)->toDateTimeString()
-                    : Carbon::parse((string) $ts)->toDateTimeString();
-            } catch (\Throwable $e) {
-                $startedAt = null;
-            }
-        }
-
-        $recordingPath = isset($row[8]) ? (string) $row[8] : '';
-        $recordingAvailable = isset($row[9]) && ((string) $row[9] === 'True');
-
-        return [
-            'call_uid' => $uniqueId,
-            'started_at' => $startedAt,
-            'recording_path' => $recordingPath,
-            'recording_available' => $recordingAvailable,
-        ];
     }
 
     private function normalizePbxwareQueryParams(array $params): array
