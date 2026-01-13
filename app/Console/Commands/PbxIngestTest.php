@@ -14,7 +14,7 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
+    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--cdr_csv_action= : PBXware documented CDR CSV list/export action name (overrides PBXWARE_CDR_CSV_ACTION; must NOT be pbxware.cdr.download)} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
 
     /**
      * The console command description.
@@ -28,6 +28,12 @@ class PbxIngestTest extends Command
         if ($this->option('mock')) {
             config(['pbx.mode' => 'mock']);
             $this->info("Running with pbx.mode=mock (forced by --mock).");
+        }
+
+        $cdrCsvAction = $this->option('cdr_csv_action');
+        if (is_string($cdrCsvAction) && trim($cdrCsvAction) !== '') {
+            config(['pbx.providers.pbxware.cdr_csv_action' => trim($cdrCsvAction)]);
+            $this->info('Using CDR CSV action override from --cdr_csv_action.');
         }
 
         $accountQuery = CompanyPbxAccount::query();
