@@ -67,6 +67,55 @@ class MockPbxwareClient
     }
 
     /**
+     * Authoritative-contract helper: return available PBXware server IDs.
+     */
+    public function fetchTenantServerIds(): array
+    {
+        return ['mock-server-1'];
+    }
+
+    /**
+     * Authoritative-contract helper: pbxware.cdr.download returns CDR records.
+     */
+    public function fetchCdrRecords(array $params): array
+    {
+        $now = time();
+
+        $rows = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $rows[] = [
+                'uniqueid' => "mock-uniqueid-{$i}",
+                'started_at' => date('c', $now - (60 * $i)),
+                'duration' => 30 * $i,
+                'direction' => $i % 2 === 0 ? 'inbound' : 'outbound',
+                'status' => '8',
+                'src' => '+611000000' . $i,
+                'dst' => '+612000000' . $i,
+            ];
+        }
+
+        Log::info('MockPbxwareClient: fetchCdrRecords', ['params' => $params, 'count' => count($rows)]);
+        return $rows;
+    }
+
+    /**
+     * Authoritative-contract helper: pbxware.transcription.get returns per-call transcript.
+     */
+    public function fetchTranscription(array $params): array
+    {
+        $uniqueid = (string) ($params['uniqueid'] ?? '');
+        $uniqueid = trim($uniqueid);
+
+        return [
+            'provider_name' => 'pbxware',
+            'language' => 'en',
+            'confidence_score' => 0.9,
+            'duration_seconds' => 60,
+            'transcript_text' => $uniqueid !== '' ? "Mock transcript for {$uniqueid}" : 'Mock transcript',
+        ];
+    }
+
+    /**
      * Return a PBXware-style CDR CSV structure: raw header + row arrays.
      * This allows ingestion to treat calls as numeric arrays, matching the
      * real PBXware CSV response.
@@ -123,9 +172,17 @@ class MockPbxwareClient
      */
     public function fetchAction(string $action, array $params = []): array|string
     {
-        $csvAction = (string) (config('pbx.providers.pbxware.cdr_csv_action') ?? '');
-        if ($csvAction !== '' && $action === $csvAction) {
-            return $this->fetchCdrCsv($params);
+        if ($action === 'pbxware.tenant.list') {
+            // Keys are server IDs per authoritative contract.
+            return ['mock-server-1' => ['name' => 'Mock Server 1']];
+        }
+
+        if ($action === 'pbxware.cdr.download') {
+            return $this->fetchCdrRecords($params);
+        }
+
+        if ($action === 'pbxware.transcription.get') {
+            return $this->fetchTranscription($params);
         }
 
         if ($action === 'pbxware.ext.list') {

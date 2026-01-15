@@ -4,12 +4,11 @@ namespace App\Jobs;
 
 use App\Models\Call;
 use App\Models\CompanyPbxAccount;
-use App\Models\CallRecording;
+use App\Models\CallTranscription;
 use App\Services\PbxwareClient;
 use App\Services\Pbx\PbxClientResolver;
 use Illuminate\Support\Facades\Config;
 use App\Exceptions\PbxwareClientException;
-use Aws\S3\S3Client;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -44,6 +43,15 @@ class IngestPbxCallsJob implements ShouldQueue
             return;
         }
 
+        $serverId = is_string($pbxAccount->server_id ?? null) ? trim((string) $pbxAccount->server_id) : '';
+        if ($serverId === '') {
+            Log::error('PBX calls ingestion aborted: company_pbx_accounts.server_id is not set', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+            ]);
+            return;
+        }
+
         $client = PbxClientResolver::resolve();
 
         try {
@@ -54,38 +62,41 @@ class IngestPbxCallsJob implements ShouldQueue
                 Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
             }
 
-            // PBXware two-step CDR flow:
-            // 1) Fetch CDR CSV rows via a documented CDR LIST/EXPORT action (client->fetchCdrCsv)
-            // 2) Download a single recording via pbxware.cdr.download&recording=<path>
+            // Authoritative PBXware flow:
+            // - pbxware.cdr.download returns CDR records for a server/date range
+            // - For each NEW call, pull transcription via pbxware.transcription.get
+            // - No recording downloads
 
             $range = $this->determineRequestedRange();
             $chunks = $this->monthChunks($range['from'], $range['to']);
 
             $callsCreated = 0;
             $callsSkipped = 0;
-            $recordingsDownloaded = 0;
-            $recordingsSkipped = 0;
+            $transcriptionsStored = 0;
 
             foreach ($chunks as $chunk) {
-                $params = $this->buildCdrCsvParams($chunk['from'], $chunk['to']);
+                $params = $this->buildCdrDownloadParams($chunk['from'], $chunk['to'], $serverId);
 
                 Log::info('PBXware CDR date range used', [
                     'company_id' => $this->companyId,
                     'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
                     'start' => $params['start'],
                     'end' => $params['end'],
-                    'starttime' => $params['starttime'],
-                    'endtime' => $params['endtime'],
+                    'status' => $params['status'] ?? null,
                     'limit' => $params['limit'],
                 ]);
 
-                $csv = $client->fetchCdrCsv($params);
-                $header = is_array($csv) ? ($csv['header'] ?? null) : null;
-                $rows = is_array($csv) ? ($csv['rows'] ?? []) : [];
+                $result = method_exists($client, 'fetchCdrRecords')
+                    ? $client->fetchCdrRecords($params)
+                    : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
 
-                Log::info('PBXware CDR CSV rows received', [
+                [, $rows] = $this->extractRows($result);
+
+                Log::info('PBXware CDR rows received', [
                     'company_id' => $this->companyId,
                     'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
                     'rows' => is_array($rows) ? count($rows) : 0,
                 ]);
 
@@ -101,7 +112,7 @@ class IngestPbxCallsJob implements ShouldQueue
                         continue;
                     }
 
-                    $normalized = $this->normalizeCdrRow($row, is_array($header) ? $header : null);
+                    $normalized = $this->normalizeCdrRow($row, null);
                     $callUid = $normalized['call_uid'] ?? null;
                     if (! is_string($callUid) || trim($callUid) === '') {
                         continue;
@@ -110,7 +121,7 @@ class IngestPbxCallsJob implements ShouldQueue
                     // The calls table requires direction/status/started_at.
                     // Do not guess; if the CSV doesn't provide these fields, skip the row.
                     $direction = $normalized['direction'] ?? null;
-                    $status = $normalized['status'] ?? null;
+                    $status = $normalized['status'] ?? (isset($params['status']) ? (string) $params['status'] : null);
                     $startedAt = $normalized['started_at'] ?? null;
 
                     if (! is_string($direction) || trim($direction) === '' || ! is_string($status) || trim($status) === '' || ! is_string($startedAt) || trim($startedAt) === '') {
@@ -149,52 +160,70 @@ class IngestPbxCallsJob implements ShouldQueue
 
                     $callsCreated++;
 
-                    $recordingAvailable = (bool) ($normalized['has_recording'] ?? false);
-                    $recordingPath = $normalized['recording_reference'] ?? null;
+                    $transcriptionResult = method_exists($client, 'fetchTranscription')
+                        ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
+                        : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
 
-                    if (! $recordingAvailable) {
-                        Log::info('Recording skipped (not available)', [
-                            'company_id' => $this->companyId,
-                            'company_pbx_account_id' => $this->companyPbxAccountId,
-                            'call_uid' => $callUid,
+                    $transcriptText = null;
+                    $language = 'en';
+                    $confidence = null;
+                    $durationSeconds = $call->duration_seconds ?? 0;
+
+                    if (is_string($transcriptionResult)) {
+                        $transcriptText = trim($transcriptionResult);
+                    } elseif (is_array($transcriptionResult)) {
+                        $lower = [];
+                        foreach ($transcriptionResult as $k => $v) {
+                            $lower[strtolower((string) $k)] = $v;
+                        }
+
+                        if (isset($lower['language']) && is_string($lower['language']) && trim($lower['language']) !== '') {
+                            $language = trim($lower['language']);
+                        }
+                        if (isset($lower['confidence']) && is_numeric($lower['confidence'])) {
+                            $confidence = (float) $lower['confidence'];
+                        }
+                        if (isset($lower['confidence_score']) && is_numeric($lower['confidence_score'])) {
+                            $confidence = (float) $lower['confidence_score'];
+                        }
+                        if (isset($lower['duration_seconds']) && is_numeric($lower['duration_seconds'])) {
+                            $durationSeconds = (int) $lower['duration_seconds'];
+                        }
+
+                        $transcriptText = $this->firstNonEmpty([
+                            $lower['transcript_text'] ?? null,
+                            $lower['transcription'] ?? null,
+                            $lower['transcript'] ?? null,
+                            $lower['text'] ?? null,
                         ]);
-                        $recordingsSkipped++;
-                        continue;
-                    }
-                    if (! is_string($recordingPath) || trim($recordingPath) === '') {
-                        Log::info('Recording skipped (missing recording path)', [
-                            'company_id' => $this->companyId,
-                            'company_pbx_account_id' => $this->companyPbxAccountId,
-                            'call_uid' => $callUid,
-                        ]);
-                        $recordingsSkipped++;
-                        continue;
+                        $transcriptText = is_string($transcriptText) ? trim($transcriptText) : null;
                     }
 
-                    // Idempotency: do not re-download if a recording already exists for this call.
-                    if (CallRecording::where('call_id', $call->id)->exists()) {
-                        Log::info('Recording skipped (already exists for call)', [
-                            'company_id' => $this->companyId,
-                            'company_pbx_account_id' => $this->companyPbxAccountId,
-                            'call_id' => $call->id,
-                            'call_uid' => $callUid,
-                        ]);
-                        $recordingsSkipped++;
-                        continue;
+                    if (is_string($transcriptText) && $transcriptText !== '') {
+                        CallTranscription::updateOrCreate(
+                            [
+                                'call_id' => $call->id,
+                                'provider_name' => 'pbxware',
+                                'language' => $language,
+                            ],
+                            [
+                                'transcript_text' => $transcriptText,
+                                'duration_seconds' => (int) $durationSeconds,
+                                'confidence_score' => $confidence,
+                            ]
+                        );
+                        $transcriptionsStored++;
                     }
-
-                    $this->downloadRecordingToS3($client, $call->id, $callUid, $recordingPath);
-                    $recordingsDownloaded++;
                 }
             }
 
             Log::info('PBXware ingestion summary', [
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
+                'server_id' => $serverId,
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
-                'recordings_downloaded' => $recordingsDownloaded,
-                'recordings_skipped' => $recordingsSkipped,
+                'transcriptions_stored' => $transcriptionsStored,
             ]);
 
         } catch (PbxwareClientException $e) {
@@ -223,12 +252,11 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function normalizePbxwareQueryParams(array $params): array
     {
-        // PBXware expects query params like start/end/starttime/endtime/limit/export.
-        // Recording downloads use pbxware.cdr.download&recording=<path>.
+        // PBXware expects query params like start/end/status/server/limit.
         // Do NOT guess or pass unknown keys.
         $out = [];
         foreach ($params as $key => $value) {
-            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'limit', 'export'], true)) {
+            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'status', 'server', 'limit', 'export'], true)) {
                 continue;
             }
 
@@ -236,6 +264,27 @@ class IngestPbxCallsJob implements ShouldQueue
         }
 
         return $out;
+    }
+
+    private function buildCdrDownloadParams(\Carbon\Carbon $from, \Carbon\Carbon $to, string $serverId): array
+    {
+        $limit = (int) ($this->params['limit'] ?? 1000);
+        if ($limit <= 0) {
+            $limit = 1000;
+        }
+        $limit = min($limit, 1000);
+
+        $status = $this->params['status'] ?? 8;
+
+        $params = [
+            'server' => $serverId,
+            'start' => $from->format('M-d-Y'),
+            'end' => $to->format('M-d-Y'),
+            'status' => $status,
+            'limit' => $limit,
+        ];
+
+        return $this->normalizePbxwareQueryParams($params);
     }
 
     private function determineRequestedRange(): array
@@ -364,8 +413,6 @@ class IngestPbxCallsJob implements ShouldQueue
         * - to_number (string|null)
         * - ended_at (string|null)
         * - duration_seconds (int|null)
-     * - has_recording (bool)
-     * - recording_reference (string|null)
      */
     private function normalizeCdrRow($row, ?array $header = null): array
     {
@@ -449,22 +496,6 @@ class IngestPbxCallsJob implements ShouldQueue
                 $durationSeconds = (int) $durationRaw;
             }
 
-            $recordingRef = $this->firstNonEmpty([
-                $byName['recording_reference'] ?? null,
-                $byName['recording_path'] ?? null,
-                $byName['recording'] ?? null,
-                $byName['recording_id'] ?? null,
-                $row[8] ?? null,
-            ]);
-
-            $availableRaw = $this->firstNonEmpty([
-                $byName['recording_available'] ?? null,
-                $byName['has_recording'] ?? null,
-                $byName['hasrecording'] ?? null,
-                $row[9] ?? null,
-            ]);
-            $hasRecording = $this->truthy($availableRaw) || ($recordingRef !== null && $recordingRef !== '');
-
             return [
                 'call_uid' => (string) $callUid,
                 'started_at' => $startedAt,
@@ -474,8 +505,6 @@ class IngestPbxCallsJob implements ShouldQueue
                 'to_number' => $toNumber !== null ? (string) $toNumber : null,
                 'ended_at' => $endedAt,
                 'duration_seconds' => $durationSeconds,
-                'has_recording' => $hasRecording,
-                'recording_reference' => ($recordingRef !== null && (string) $recordingRef !== '') ? (string) $recordingRef : null,
             ];
         }
 
@@ -556,20 +585,6 @@ class IngestPbxCallsJob implements ShouldQueue
                 $durationSeconds = (int) $durationRaw;
             }
 
-            $recordingRef = $this->firstNonEmpty([
-                $lower['recording_reference'] ?? null,
-                $lower['recording_path'] ?? null,
-                $lower['recording'] ?? null,
-                $lower['recording_id'] ?? null,
-                $lower['file'] ?? null,
-            ]);
-
-            $availableRaw = $this->firstNonEmpty([
-                $lower['recording_available'] ?? null,
-                $lower['has_recording'] ?? null,
-            ]);
-            $hasRecording = $this->truthy($availableRaw) || ($recordingRef !== null && (string) $recordingRef !== '');
-
             return [
                 'call_uid' => (string) $callUid,
                 'started_at' => $startedAt,
@@ -579,8 +594,6 @@ class IngestPbxCallsJob implements ShouldQueue
                 'to_number' => $toNumber !== null ? (string) $toNumber : null,
                 'ended_at' => $endedAt,
                 'duration_seconds' => $durationSeconds,
-                'has_recording' => $hasRecording,
-                'recording_reference' => ($recordingRef !== null && (string) $recordingRef !== '') ? (string) $recordingRef : null,
             ];
         }
 
@@ -611,117 +624,5 @@ class IngestPbxCallsJob implements ShouldQueue
         }
         $s = strtolower(trim((string) $value));
         return in_array($s, ['1', 'true', 'yes', 'y', 'on'], true);
-    }
-
-    private function downloadRecordingToS3($client, int $callId, string $callUid, string $recordingReference): void
-    {
-        $s3Key = sprintf('recordings/incoming/%s/%s.wav', $this->companyId, $callUid);
-
-        Log::info('Recording download started', [
-            'company_id' => $this->companyId,
-            'call_id' => $callId,
-            'call_uid' => $callUid,
-            's3_key' => $s3Key,
-        ]);
-
-        $s3Region = Config::get('filesystems.disks.s3.region') ?: env('AWS_DEFAULT_REGION');
-        $s3Bucket = Config::get('filesystems.disks.s3.bucket') ?: env('AWS_BUCKET');
-
-        $s3 = new S3Client([
-            'version' => 'latest',
-            'region' => $s3Region,
-        ]);
-
-        try {
-            // Download stream directly from PBXware and upload without writing to disk.
-            $stream = method_exists($client, 'fetchActionStream')
-                ? $client->fetchActionStream('pbxware.cdr.download', ['recording' => $recordingReference])
-                : (method_exists($client, 'downloadRecordingStreamByRecordingPath')
-                    ? $client->downloadRecordingStreamByRecordingPath($recordingReference)
-                    : $client->downloadRecordingStream($recordingReference));
-
-            $uploadStart = microtime(true);
-            $result = $s3->putObject([
-                'Bucket' => $s3Bucket,
-                'Key' => $s3Key,
-                'Body' => $stream,
-                'ContentType' => 'audio/wav',
-            ]);
-
-            if (is_resource($stream)) {
-                fclose($stream);
-            }
-            $uploadMs = round((microtime(true) - $uploadStart) * 1000, 2);
-
-            Log::info('Recording download finished', [
-                'company_id' => $this->companyId,
-                'call_id' => $callId,
-                'call_uid' => $callUid,
-                's3_key' => $s3Key,
-                'latency_ms' => $uploadMs,
-            ]);
-            Log::info('🚀 Lambda will trigger (S3 event)', ['s3_key' => $s3Key, 'bucket' => $s3Bucket]);
-
-            // Determine pbx_provider_id from the call's PBX account if available
-            $pbxProviderId = null;
-            try {
-                $acct = \App\Models\CompanyPbxAccount::find($this->companyPbxAccountId);
-                if ($acct) {
-                    $pbxProviderId = $acct->pbx_provider_id ?? null;
-                }
-            } catch (\Throwable $ignore) {
-                // best-effort only
-            }
-
-            CallRecording::create([
-                'company_id' => $this->companyId,
-                'call_id' => $callId,
-                'pbx_provider_id' => $pbxProviderId,
-                'recording_url' => $result['ObjectURL'] ?? null,
-                'storage_provider' => 's3',
-                'storage_path' => $s3Key,
-                'status' => CallRecording::STATUS_UPLOADED,
-                'idempotency_key' => $recordingReference,
-                'file_size' => $result['ContentLength'] ?? null,
-            ]);
-        } catch (PbxwareClientException $e) {
-            Log::error('PBX client failed to download recording', [
-                'company_id' => $this->companyId,
-                'call_id' => $callId,
-                'call_uid' => $callUid,
-                'error' => $e->getMessage(),
-            ]);
-
-            CallRecording::updateOrCreate([
-                'call_id' => $callId,
-                'idempotency_key' => $recordingReference,
-            ], [
-                'company_id' => $this->companyId,
-                'storage_provider' => 's3',
-                'storage_path' => $s3Key,
-                'status' => CallRecording::STATUS_FAILED,
-                'error_message' => $e->getMessage(),
-            ]);
-            throw $e;
-        } catch (\Throwable $e) {
-            Log::error('Unexpected error ingesting recording', [
-                'company_id' => $this->companyId,
-                'call_id' => $callId,
-                'call_uid' => $callUid,
-                'error' => $e->getMessage(),
-            ]);
-
-            CallRecording::updateOrCreate([
-                'call_id' => $callId,
-                'idempotency_key' => $recordingReference,
-            ], [
-                'company_id' => $this->companyId,
-                'storage_provider' => 's3',
-                'storage_path' => $s3Key,
-                'status' => CallRecording::STATUS_FAILED,
-                'error_message' => $e->getMessage(),
-            ]);
-            throw $e;
-        }
     }
 }

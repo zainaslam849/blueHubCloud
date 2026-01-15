@@ -25,11 +25,10 @@ return [
             'timeout' => env('PBXWARE_TIMEOUT', 30),
             'aws_region' => env('PBXWARE_AWS_REGION', env('AWS_DEFAULT_REGION')),
 
-            // PBXware two-step CDR flow:
-            // 1) Fetch CDR CSV rows via a documented CDR list/export action (NOT pbxware.cdr.download)
-            // 2) Download individual recordings via pbxware.cdr.download&recording=<path>
-            // IMPORTANT: do not guess this action name; set it explicitly in the environment.
-            'cdr_csv_action' => env('PBXWARE_CDR_CSV_ACTION'),
+            // PBXware authoritative flow:
+            // - Discover tenant server IDs via pbxware.tenant.list
+            // - Fetch CDR records via pbxware.cdr.download (start/end/status/server)
+            // - Fetch transcription per call via pbxware.transcription.get
         ],
     ],
 ];

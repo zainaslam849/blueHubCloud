@@ -92,7 +92,8 @@ class PbxwareClient
         }
 
         // PBXware uses a query-based API. We require auth_type == 'query' and
-        // the presence of both `api_key` and `server_id` in Secrets Manager.
+        // the presence of `api_key` in Secrets Manager. Server IDs are discovered
+        // at runtime via pbxware.tenant.list and stored per account.
         $normalized = $creds;
         $authType = strtolower($creds['auth_type'] ?? $creds['auth'] ?? 'query');
         $normalized['type'] = $authType;
@@ -113,11 +114,6 @@ class PbxwareClient
             Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
             throw new PbxwareClientException($msg);
         }
-        if (empty($creds['server_id']) && ! isset($creds['server'])) {
-            $msg = 'Secrets validation failed: auth_type is "query" but server_id is missing.';
-            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds)]);
-            throw new PbxwareClientException($msg);
-        }
 
         // PBX base URL is intentionally centralized in Secrets Manager.
         if (empty($creds['base_url'])) {
@@ -127,7 +123,6 @@ class PbxwareClient
         }
 
         $normalized['api_key'] = $creds['api_key'];
-        $normalized['server_id'] = $creds['server_id'] ?? $creds['server'];
         $normalized['base_url'] = rtrim((string) $creds['base_url'], '/');
 
         return $normalized;
@@ -172,7 +167,7 @@ class PbxwareClient
 
             if ($response->failed()) {
                 $logBody = $this->redactForLog($response->body());
-                $logContext = ['method' => $method, 'url' => $redactedUrl, 'params' => $this->redactForLog($params), 'status' => $response->status(), 'body' => $logBody, 'latency_ms' => $latencyMs, 'action' => $path, 'server_id' => $this->credentials['server_id'] ?? null, 'base_url' => $this->baseUrl];
+                $logContext = ['method' => $method, 'url' => $redactedUrl, 'params' => $this->redactForLog($params), 'status' => $response->status(), 'body' => $logBody, 'latency_ms' => $latencyMs, 'action' => $path, 'server' => $params['server'] ?? null, 'base_url' => $this->baseUrl];
                 if (! empty($options['account_id'])) {
                     $logContext['account_id'] = $options['account_id'];
                 }
@@ -180,7 +175,7 @@ class PbxwareClient
                 throw new PbxwareClientException("PBX request failed with status {$response->status()}", $response->status());
             }
 
-            $logContext = ['method' => $method, 'url' => $redactedUrl, 'status' => $response->status(), 'latency_ms' => $latencyMs, 'action' => $path, 'server_id' => $this->credentials['server_id'] ?? null, 'base_url' => $this->baseUrl];
+            $logContext = ['method' => $method, 'url' => $redactedUrl, 'status' => $response->status(), 'latency_ms' => $latencyMs, 'action' => $path, 'server' => $params['server'] ?? null, 'base_url' => $this->baseUrl];
             if (! empty($options['account_id'])) {
                 $logContext['account_id'] = $options['account_id'];
             }
@@ -206,7 +201,6 @@ class PbxwareClient
         $query = array_merge([
             'apikey' => $this->credentials['api_key'] ?? '',
             'action' => $action,
-            'server' => $this->credentials['server_id'] ?? '',
         ], $params);
 
         return $base . '/?' . http_build_query($query);
@@ -246,167 +240,48 @@ class PbxwareClient
     }
 
     /**
-     * Fetch calls from PBX. Handles basic pagination.
-     * Returns an array of items.
-     */
-    public function fetchCalls(array $params = []): array
-    {
-        // PBXware CDR ingestion is implemented via CSV export on pbxware.cdr.download.
-        // This legacy helper is not used by the ingestion pipeline.
-        Log::warning('PbxwareClient: fetchCalls is deprecated; use fetchCdrCsv instead.');
-        return [];
-    }
-
-    /**
-     * Fetch recordings from PBX. Handles basic pagination.
-     */
-    public function fetchRecordings(array $params = []): array
-    {
-        // Recording downloads are performed via pbxware.cdr.download with recording=<path>.
-        // This legacy helper is not used by the ingestion pipeline.
-        Log::warning('PbxwareClient: fetchRecordings is deprecated; use fetchActionStream(pbxware.cdr.download, ...) instead.');
-        return [];
-    }
-
-    /**
-     * Generic paginated fetch. Tries to detect pagination tokens or next links.
-     */
-    protected function fetchPaginated(string $path, array $params = [], int $maxPages = 100): array
-    {
-        $results = [];
-        $page = 1;
-
-        while (true) {
-            $params['page'] = $params['page'] ?? $page;
-            // $path is the PBXware `action` name.
-            $response = $this->sendRequest('GET', $path, $params);
-            $json = $response->json();
-
-            // Try common locations for items
-            if (isset($json['data']) && is_array($json['data'])) {
-                $items = $json['data'];
-            } elseif (isset($json['items']) && is_array($json['items'])) {
-                $items = $json['items'];
-            } elseif (is_array($json)) {
-                $items = $json;
-            } else {
-                $items = [];
-            }
-
-            // If items is associative object that is not list, wrap it
-            if ($items !== [] && array_values($items) !== $items) {
-                // associative array: treat as single item
-                $results[] = $items;
-            } else {
-                $results = array_merge($results, $items);
-            }
-
-            // Detect next token or page
-            $next = null;
-            if (isset($json['next']) && $json['next']) {
-                $next = $json['next'];
-            } elseif (isset($json['meta']['next']) && $json['meta']['next']) {
-                $next = $json['meta']['next'];
-            } elseif (isset($json['links']['next']) && $json['links']['next']) {
-                $next = $json['links']['next'];
-            } elseif (isset($json['meta']['page']) && isset($json['meta']['total_pages'])) {
-                $current = (int)$json['meta']['page'];
-                $total = (int)$json['meta']['total_pages'];
-                if ($current < $total) {
-                    $next = $current + 1;
-                }
-            }
-
-            // If next is numeric, increment page
-            if ($next === null) {
-                // fallback: if items empty or less than page size, stop
-                if (empty($items)) {
-                    break;
-                }
-                // try naive single-page behavior
-                break;
-            }
-
-            $page++;
-            if ($page > $maxPages) {
-                Log::warning('PbxwareClient: reached max pages during pagination', ['path' => $path, 'max_pages' => $maxPages]);
-                break;
-            }
-        }
-
-        return $results;
-    }
-
-    /**
-     * Download a recording as a streamed response. The response streams directly from PBX through the server to the caller.
-     * Returns Symfony\Component\HttpFoundation\StreamedResponse
-     */
-    public function downloadRecording($params): StreamedResponse
-    {
-        // Accept either a string id (legacy) or an array of query params.
-        if (is_string($params)) {
-            $params = ['recording_id' => $params];
-        }
-        if (! is_array($params)) {
-            throw new PbxwareClientException('downloadRecording expects a recording id string or an array of query parameters');
-        }
-        return $this->downloadRecordingByParams($params);
-    }
-
-    /**
-     * Fetch CDR CSV (step 1 of PBXware two-step flow).
+     * Tenant discovery.
      *
-     * IMPORTANT: pbxware.cdr.download is NOT a CDR listing endpoint.
-     * This must call a documented PBXware CDR LIST/EXPORT action configured via:
-     *   config('pbx.providers.pbxware.cdr_csv_action') / env PBXWARE_CDR_CSV_ACTION
-     *
-     * Returns raw [header, rows] numeric arrays.
+     * Authoritative contract: pbxware.tenant.list returns an object whose keys
+     * are the available PBXware server IDs.
      */
-    public function fetchCdrCsv(array $params = []): array
+    public function fetchTenantServerIds(): array
     {
-        $action = (string) config('pbx.providers.pbxware.cdr_csv_action');
-        if ($action === '') {
-            $msg = 'PBXware CDR CSV action is not configured. Set PBXWARE_CDR_CSV_ACTION to the documented PBXware CDR list/export action (this must NOT be pbxware.cdr.download).';
-            Log::error('PbxwareClient: ' . $msg);
-            throw new PbxwareClientException($msg);
-        }
-        if (strtolower($action) === 'pbxware.cdr.download') {
-            $msg = 'Invalid PBXWARE_CDR_CSV_ACTION: pbxware.cdr.download is only for downloading a single recording and cannot be used to fetch CDR CSV rows.';
-            Log::error('PbxwareClient: ' . $msg);
-            throw new PbxwareClientException($msg);
-        }
-        if (array_key_exists('recording', $params)) {
-            $msg = 'fetchCdrCsv does not accept a recording parameter; use fetchActionStream("pbxware.cdr.download", ["recording" => ...]) for audio downloads.';
-            Log::error('PbxwareClient: ' . $msg, ['action' => $action]);
-            throw new PbxwareClientException($msg);
+        $result = $this->fetchAction('pbxware.tenant.list', []);
+
+        if (! is_array($result) || $result === []) {
+            return [];
         }
 
-        $response = $this->sendRequest('GET', $action, $params);
-        if ($response->failed()) {
-            $status = $response->status();
-            $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: fetchCdrCsv failed', ['action' => $action, 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
-            throw new PbxwareClientException("Failed to fetch CDR CSV, status {$status}");
+        // Authoritative rule: server IDs are the keys of the response object.
+        // If the response is a list, there are no usable keys.
+        if (array_values($result) === $result) {
+            return [];
         }
 
-        // PBXware CDR list responses are CSV. Return raw header + row arrays
-        // exactly as received (no associative remapping).
-        $csv = (string) $response->body();
-        [$header, $rows] = $this->parseCsv($csv);
+        $keys = array_keys($result);
+        $serverIds = [];
+        foreach ($keys as $k) {
+            if (! is_string($k)) {
+                continue;
+            }
+            $k = trim($k);
+            if ($k !== '') {
+                $serverIds[] = $k;
+            }
+        }
 
-        return [
-            'header' => $header,
-            'rows' => $rows,
-        ];
+        return array_values(array_unique($serverIds));
     }
 
-    /**
-     * Backward-compatible alias; do not use in new code.
-     */
-    public function fetchCdrList(array $params = []): array
+    public function fetchCdrRecords(array $params): array|string
     {
-        Log::warning('PbxwareClient: fetchCdrList is deprecated; use fetchCdrCsv instead.');
-        return $this->fetchCdrCsv($params);
+        return $this->fetchAction('pbxware.cdr.download', $params);
+    }
+
+    public function fetchTranscription(array $params): array|string
+    {
+        return $this->fetchAction('pbxware.transcription.get', $params);
     }
 
     /**
@@ -450,7 +325,7 @@ class PbxwareClient
     /**
      * Fetch any PBXware query action dynamically.
      *
-     * - Builds: base_url + /?apikey=...&action=...&server=...&{params}
+    * - Builds: base_url + /?apikey=...&action=...&{params}
      * - Supports JSON (returns array) and CSV (returns ['header'=>..., 'rows'=>...])
      * - Logs action name + response type (json/csv/empty)
      * - Throws PbxwareClientException on non-200 responses
@@ -532,7 +407,7 @@ class PbxwareClient
         if ($response->failed()) {
             $status = $response->status();
             $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: testConnection failed', ['action' => 'pbxware.ext.list', 'server_id' => $this->credentials['server_id'] ?? null, 'status' => $status, 'body' => $body]);
+            Log::error('PbxwareClient: testConnection failed', ['action' => 'pbxware.ext.list', 'status' => $status, 'body' => $body]);
             throw new PbxwareClientException("PBX testConnection failed, status {$status}");
         }
         return $response->json() ?: [];
@@ -557,7 +432,7 @@ class PbxwareClient
                 if ($response->failed()) {
                     $status = $response->status();
                     $body = $this->redactForLog($response->body());
-                    Log::error('PbxwareClient: downloadRecording failed', ['url' => $this->redactUrl($url), 'status' => $status, 'body' => $body, 'action' => 'pbxware.cdr.download', 'server_id' => $this->credentials['server_id'] ?? null]);
+                    Log::error('PbxwareClient: downloadRecording failed', ['url' => $this->redactUrl($url), 'status' => $status, 'body' => $body, 'action' => 'pbxware.cdr.download']);
                     throw new PbxwareClientException("Failed to download recording, status {$status}");
                 }
 
@@ -602,8 +477,7 @@ class PbxwareClient
     }
 
     /**
-     * Official PBXware contract: pbxware.cdr.download uses recording=<recording_path>
-     * where recording_path comes from CDR CSV row[8].
+     * Legacy recording helper (no longer used by ingestion).
      */
     public function downloadRecordingStreamByRecordingPath(string $recordingPath)
     {

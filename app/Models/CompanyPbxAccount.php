@@ -15,6 +15,7 @@ class CompanyPbxAccount extends Model
         'api_endpoint',
         'api_key',
         'api_secret',
+        'server_id',
         'status',
     ];
 

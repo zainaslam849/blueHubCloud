@@ -6,6 +6,7 @@ use App\Jobs\IngestPbxCallsJob;
 use App\Models\CompanyPbxAccount;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use App\Services\Pbx\PbxClientResolver;
 
 class PbxIngestTest extends Command
 {
@@ -14,26 +15,20 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--cdr_csv_action= : PBXware documented CDR CSV list/export action name (overrides PBXWARE_CDR_CSV_ACTION; must NOT be pbxware.cdr.download)} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
+    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--list_servers : List available PBXware server IDs via pbxware.tenant.list} {--server_id= : Persist PBXware server ID to company_pbx_accounts.server_id before ingesting} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Run PBXware ingestion for a given date range (CDR CSV via PBXWARE_CDR_CSV_ACTION; recordings via pbxware.cdr.download)';
+    protected $description = 'Run PBXware ingestion for a given date range (CDR via pbxware.cdr.download; transcription via pbxware.transcription.get)';
 
     public function handle(): int
     {
         if ($this->option('mock')) {
             config(['pbx.mode' => 'mock']);
             $this->info("Running with pbx.mode=mock (forced by --mock).");
-        }
-
-        $cdrCsvAction = $this->option('cdr_csv_action');
-        if (is_string($cdrCsvAction) && trim($cdrCsvAction) !== '') {
-            config(['pbx.providers.pbxware.cdr_csv_action' => trim($cdrCsvAction)]);
-            $this->info('Using CDR CSV action override from --cdr_csv_action.');
         }
 
         $accountQuery = CompanyPbxAccount::query();
@@ -47,6 +42,38 @@ class PbxIngestTest extends Command
         $acct = $accountQuery->first();
         if (! $acct) {
             $this->error('No matching PBX account found.');
+            return self::FAILURE;
+        }
+
+        if ($this->option('list_servers')) {
+            $client = PbxClientResolver::resolve();
+            if (! method_exists($client, 'fetchTenantServerIds')) {
+                $this->error('Client does not support tenant discovery in this mode.');
+                return self::FAILURE;
+            }
+
+            $serverIds = $client->fetchTenantServerIds();
+            if (! is_array($serverIds) || $serverIds === []) {
+                $this->warn('No server IDs returned from pbxware.tenant.list.');
+                return self::SUCCESS;
+            }
+
+            $this->info('Available PBXware server IDs:');
+            foreach ($serverIds as $id) {
+                $this->line('- ' . $id);
+            }
+            return self::SUCCESS;
+        }
+
+        $serverIdOpt = $this->option('server_id');
+        if (is_string($serverIdOpt) && trim($serverIdOpt) !== '') {
+            $acct->server_id = trim($serverIdOpt);
+            $acct->save();
+            $this->info('Saved server_id on PBX account: ' . $acct->server_id);
+        }
+
+        if (! is_string($acct->server_id) || trim($acct->server_id) === '') {
+            $this->error('PBX account is missing server_id. Run with --list_servers then pass --server_id=<id>.');
             return self::FAILURE;
         }
 
