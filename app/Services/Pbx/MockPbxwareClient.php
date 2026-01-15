@@ -69,9 +69,17 @@ class MockPbxwareClient
     /**
      * Authoritative-contract helper: return available PBXware server IDs.
      */
+    public function fetchTenantServers(): array
+    {
+        return [
+            ['id' => '2', 'name' => 'BHubcomms'],
+            ['id' => '3', 'name' => 'BHubAMWU'],
+        ];
+    }
+
     public function fetchTenantServerIds(): array
     {
-        return ['mock-server-1'];
+        return array_map(static fn ($s) => $s['id'], $this->fetchTenantServers());
     }
 
     /**

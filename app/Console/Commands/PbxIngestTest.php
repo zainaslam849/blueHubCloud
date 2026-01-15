@@ -47,20 +47,33 @@ class PbxIngestTest extends Command
 
         if ($this->option('list_servers')) {
             $client = PbxClientResolver::resolve();
-            if (! method_exists($client, 'fetchTenantServerIds')) {
+            if (! method_exists($client, 'fetchTenantServers') && ! method_exists($client, 'fetchTenantServerIds')) {
                 $this->error('Client does not support tenant discovery in this mode.');
                 return self::FAILURE;
             }
 
-            $serverIds = $client->fetchTenantServerIds();
-            if (! is_array($serverIds) || $serverIds === []) {
+            $servers = method_exists($client, 'fetchTenantServers')
+                ? $client->fetchTenantServers()
+                : array_map(static fn ($id) => ['id' => $id, 'name' => null], (array) $client->fetchTenantServerIds());
+
+            if (! is_array($servers) || $servers === []) {
                 $this->warn('No server IDs returned from pbxware.tenant.list.');
                 return self::SUCCESS;
             }
 
             $this->info('Available PBXware server IDs:');
-            foreach ($serverIds as $id) {
-                $this->line('- ' . $id);
+            foreach ($servers as $server) {
+                if (! is_array($server)) {
+                    continue;
+                }
+
+                $id = isset($server['id']) ? trim((string) $server['id']) : '';
+                if ($id === '' || ! ctype_digit($id)) {
+                    continue;
+                }
+
+                $name = isset($server['name']) && is_string($server['name']) ? trim($server['name']) : '';
+                $this->line($name !== '' ? "- {$id} ({$name})" : "- {$id}");
             }
             return self::SUCCESS;
         }

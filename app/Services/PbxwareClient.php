@@ -268,7 +268,7 @@ class PbxwareClient
      * Authoritative contract: pbxware.tenant.list returns an object whose keys
      * are the available PBXware server IDs.
      */
-    public function fetchTenantServerIds(): array
+    public function fetchTenantServers(): array
     {
         $result = $this->fetchAction('pbxware.tenant.list', []);
 
@@ -282,19 +282,47 @@ class PbxwareClient
             return [];
         }
 
-        $keys = array_keys($result);
-        $serverIds = [];
-        foreach ($keys as $k) {
-            if (! is_string($k)) {
+        $servers = [];
+        foreach ($result as $key => $value) {
+            $id = trim((string) $key);
+
+            // Ignore non-numeric keys (e.g. "error")
+            if ($id === '' || ! ctype_digit($id)) {
                 continue;
             }
-            $k = trim($k);
-            if ($k !== '') {
-                $serverIds[] = $k;
+
+            $name = null;
+            if (is_array($value) && isset($value['name']) && is_string($value['name'])) {
+                $name = trim($value['name']);
+                if ($name === '') {
+                    $name = null;
+                }
             }
+
+            $servers[] = [
+                'id' => $id,
+                'name' => $name,
+            ];
         }
 
-        return array_values(array_unique($serverIds));
+        return $servers;
+    }
+
+    /**
+     * Backwards-compatible helper: return only numeric server IDs.
+     *
+     * @return array<int,string>
+     */
+    public function fetchTenantServerIds(): array
+    {
+        $servers = $this->fetchTenantServers();
+        $ids = [];
+        foreach ($servers as $s) {
+            if (isset($s['id']) && is_string($s['id']) && $s['id'] !== '') {
+                $ids[] = $s['id'];
+            }
+        }
+        return array_values(array_unique($ids));
     }
 
     public function fetchCdrRecords(array $params): array|string
