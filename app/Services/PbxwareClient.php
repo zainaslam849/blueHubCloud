@@ -63,28 +63,43 @@ class PbxwareClient
 
     protected function getCachedCredentials(): array
     {
-        return Cache::remember($this->cacheKey(), $this->secretTtlSeconds, function () {
-            try {
-                $decoded = $this->secretsService->get($this->secretName);
-                return $decoded;
-            } catch (\Throwable $e) {
-                Log::error('PbxwareClient: failed to fetch secret via AwsSecretsService', [
-                    'secret' => $this->secretName,
-                    'error' => $e->getMessage(),
-                    'aws_region' => config('services.pbxware.aws_region') ?: env('PBXWARE_AWS_REGION') ?: env('AWS_DEFAULT_REGION'),
-                ]);
-                throw new PbxwareClientException(
-                    "Failed to fetch PBXware credentials secret '{$this->secretName}' from AWS Secrets Manager. Check AWS credentials + region (PBXWARE_AWS_REGION/AWS_DEFAULT_REGION).",
-                    0,
-                    $e
-                );
+        $cacheKey = $this->cacheKey();
+        $disableCache = filter_var(env('PBXWARE_DISABLE_SECRETS_CACHE', false), FILTER_VALIDATE_BOOLEAN);
+
+        if ($disableCache) {
+            Cache::forget($cacheKey);
+        } else {
+            // Self-heal: if a previous run cached an empty array, treat as a cache miss.
+            if (Cache::has($cacheKey)) {
+                $cached = Cache::get($cacheKey);
+                if (is_array($cached) && $cached !== []) {
+                    return $cached;
+                }
             }
-        });
+        }
+
+        try {
+            $decoded = $this->secretsService->get($this->secretName);
+            if (is_array($decoded) && $decoded !== [] && ! $disableCache) {
+                Cache::put($cacheKey, $decoded, $this->secretTtlSeconds);
+            }
+            return is_array($decoded) ? $decoded : [];
+        } catch (\Throwable $e) {
+            // IMPORTANT: do NOT cache failures/empty secrets.
+            Log::error('PbxwareClient: failed to fetch secret via AwsSecretsService', [
+                'secret' => $this->secretName,
+                'cache_key' => $cacheKey,
+                'disable_cache' => $disableCache,
+                'error' => $e->getMessage(),
+            ]);
+            return [];
+        }
     }
 
     protected function cacheKey(): string
     {
-        return 'pbxware_api_credentials_v1';
+        // v2: previous versions could cache an empty array on transient failures.
+        return 'pbxware_api_credentials_v2';
     }
 
     /**
