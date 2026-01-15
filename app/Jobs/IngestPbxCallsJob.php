@@ -59,7 +59,7 @@ class IngestPbxCallsJob implements ShouldQueue
 
             // Log mock mode active for developer clarity
             if (Config::get('pbx.mode') === 'mock') {
-                Log::info('🟢 Mock PBX mode active — using local test audio and mock client', ['company_id' => $this->companyId]);
+                Log::info('🟢 Mock PBX mode active — using mock PBXware client', ['company_id' => $this->companyId]);
             }
 
             // Authoritative PBXware flow:
@@ -73,6 +73,7 @@ class IngestPbxCallsJob implements ShouldQueue
             $callsCreated = 0;
             $callsSkipped = 0;
             $transcriptionsStored = 0;
+            $cdrRowsReturned = 0;
 
             foreach ($chunks as $chunk) {
                 $params = $this->buildCdrDownloadParams($chunk['from'], $chunk['to'], $serverId);
@@ -83,8 +84,7 @@ class IngestPbxCallsJob implements ShouldQueue
                     'server_id' => $serverId,
                     'start' => $params['start'],
                     'end' => $params['end'],
-                    'status' => $params['status'] ?? null,
-                    'limit' => $params['limit'],
+                    'status' => $params['status'],
                 ]);
 
                 $result = method_exists($client, 'fetchCdrRecords')
@@ -93,11 +93,14 @@ class IngestPbxCallsJob implements ShouldQueue
 
                 [, $rows] = $this->extractRows($result);
 
+                $chunkRowCount = is_array($rows) ? count($rows) : 0;
+                $cdrRowsReturned += $chunkRowCount;
+
                 Log::info('PBXware CDR rows received', [
                     'company_id' => $this->companyId,
                     'company_pbx_account_id' => $this->companyPbxAccountId,
                     'server_id' => $serverId,
-                    'rows' => is_array($rows) ? count($rows) : 0,
+                    'rows' => $chunkRowCount,
                 ]);
 
                 if (! is_array($rows)) {
@@ -119,13 +122,13 @@ class IngestPbxCallsJob implements ShouldQueue
                     }
 
                     // The calls table requires direction/status/started_at.
-                    // Do not guess; if the CSV doesn't provide these fields, skip the row.
+                    // Do not guess; if the CDR record doesn't provide these fields, skip the row.
                     $direction = $normalized['direction'] ?? null;
-                    $status = $normalized['status'] ?? (isset($params['status']) ? (string) $params['status'] : null);
+                    $status = $normalized['status'] ?? (string) $params['status'];
                     $startedAt = $normalized['started_at'] ?? null;
 
                     if (! is_string($direction) || trim($direction) === '' || ! is_string($status) || trim($status) === '' || ! is_string($startedAt) || trim($startedAt) === '') {
-                        Log::warning('Skipping PBX call: missing required call fields from CDR CSV', [
+                        Log::warning('Skipping PBX call: missing required call fields from CDR record', [
                             'company_id' => $this->companyId,
                             'company_pbx_account_id' => $this->companyPbxAccountId,
                             'call_uid' => $callUid,
@@ -200,7 +203,7 @@ class IngestPbxCallsJob implements ShouldQueue
                     }
 
                     if (is_string($transcriptText) && $transcriptText !== '') {
-                        CallTranscription::updateOrCreate(
+                        $created = CallTranscription::firstOrCreate(
                             [
                                 'call_id' => $call->id,
                                 'provider_name' => 'pbxware',
@@ -212,7 +215,10 @@ class IngestPbxCallsJob implements ShouldQueue
                                 'confidence_score' => $confidence,
                             ]
                         );
-                        $transcriptionsStored++;
+
+                        if ($created->wasRecentlyCreated) {
+                            $transcriptionsStored++;
+                        }
                     }
                 }
             }
@@ -221,6 +227,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'server_id' => $serverId,
+                'cdr_rows_returned' => $cdrRowsReturned,
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
                 'transcriptions_stored' => $transcriptionsStored,
@@ -252,11 +259,10 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function normalizePbxwareQueryParams(array $params): array
     {
-        // PBXware expects query params like start/end/status/server/limit.
-        // Do NOT guess or pass unknown keys.
+        // Official contract for this project: ONLY pass server/start/end/status.
         $out = [];
         foreach ($params as $key => $value) {
-            if (! in_array($key, ['start', 'end', 'starttime', 'endtime', 'status', 'server', 'limit', 'export'], true)) {
+            if (! in_array($key, ['start', 'end', 'status', 'server'], true)) {
                 continue;
             }
 
@@ -268,20 +274,11 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function buildCdrDownloadParams(\Carbon\Carbon $from, \Carbon\Carbon $to, string $serverId): array
     {
-        $limit = (int) ($this->params['limit'] ?? 1000);
-        if ($limit <= 0) {
-            $limit = 1000;
-        }
-        $limit = min($limit, 1000);
-
-        $status = $this->params['status'] ?? 8;
-
         $params = [
             'server' => $serverId,
             'start' => $from->format('M-d-Y'),
             'end' => $to->format('M-d-Y'),
-            'status' => $status,
-            'limit' => $limit,
+            'status' => 8,
         ];
 
         return $this->normalizePbxwareQueryParams($params);
@@ -348,31 +345,6 @@ class IngestPbxCallsJob implements ShouldQueue
         return $chunks;
     }
 
-    private function buildCdrCsvParams(\Carbon\Carbon $from, \Carbon\Carbon $to): array
-    {
-        $limit = (int) ($this->params['limit'] ?? 1000);
-        if ($limit <= 0) {
-            $limit = 1000;
-        }
-        $limit = min($limit, 1000);
-
-        $params = [
-            'start' => $from->format('M-d-Y'),
-            'end' => $to->format('M-d-Y'),
-            'starttime' => $from->format('H:i:s'),
-            'endtime' => $to->format('H:i:s'),
-            'limit' => $limit,
-        ];
-
-        // Some PBXware CDR export actions require an explicit export flag.
-        // Do not assume; allow the operator to pass it via params if required.
-        if (array_key_exists('export', $this->params)) {
-            $params['export'] = $this->params['export'];
-        }
-
-        return $this->normalizePbxwareQueryParams($params);
-    }
-
     /**
      * @return array{0: array<int,string>|null, 1: array<int, mixed>}
      */
@@ -380,10 +352,6 @@ class IngestPbxCallsJob implements ShouldQueue
     {
         if (is_string($result) || $result === []) {
             return [null, []];
-        }
-
-        if (isset($result['header'], $result['rows']) && is_array($result['rows'])) {
-            return [is_array($result['header']) ? $result['header'] : null, $result['rows']];
         }
 
         if (isset($result['data']) && is_array($result['data'])) {
@@ -416,98 +384,6 @@ class IngestPbxCallsJob implements ShouldQueue
      */
     private function normalizeCdrRow($row, ?array $header = null): array
     {
-        // CSV-style row: numeric array with optional header
-        if (is_array($row) && array_values($row) === $row) {
-            $byName = [];
-            if (is_array($header) && count($header) === count($row)) {
-                foreach ($header as $i => $name) {
-                    $byName[strtolower(trim((string) $name))] = $row[$i] ?? null;
-                }
-            }
-
-            $callUid = $this->firstNonEmpty([
-                $byName['uniqueid'] ?? null,
-                $byName['unique_id'] ?? null,
-                $byName['call_uid'] ?? null,
-                // Legacy fixed-index fallback (known PBXware CDR CSV layout)
-                $row[7] ?? null,
-            ]);
-
-            if ($callUid === null) {
-                Log::warning('Skipping PBX call: no unique identifier present', [
-                    'company_id' => $this->companyId,
-                    'company_pbx_account_id' => $this->companyPbxAccountId,
-                ]);
-                return ['call_uid' => null];
-            }
-
-            $startedAtRaw = $this->firstNonEmpty([
-                $byName['timestamp'] ?? null,
-                $byName['started_at'] ?? null,
-                $byName['start'] ?? null,
-                $byName['calldate'] ?? null,
-                $byName['call_date'] ?? null,
-                $row[2] ?? null,
-            ]);
-            $startedAt = $startedAtRaw !== null ? $this->parseDate($startedAtRaw) : null;
-
-            $direction = $this->firstNonEmpty([
-                $byName['direction'] ?? null,
-                $byName['call_direction'] ?? null,
-                $byName['calltype'] ?? null,
-                $byName['call_type'] ?? null,
-            ]);
-
-            $status = $this->firstNonEmpty([
-                $byName['status'] ?? null,
-                $byName['disposition'] ?? null,
-                $byName['call_status'] ?? null,
-            ]);
-
-            $fromNumber = $this->firstNonEmpty([
-                $byName['from_number'] ?? null,
-                $byName['src'] ?? null,
-                $byName['source'] ?? null,
-                $byName['callerid'] ?? null,
-                $byName['caller_id'] ?? null,
-            ]);
-
-            $toNumber = $this->firstNonEmpty([
-                $byName['to_number'] ?? null,
-                $byName['dst'] ?? null,
-                $byName['destination'] ?? null,
-                $byName['callee'] ?? null,
-            ]);
-
-            $endedAtRaw = $this->firstNonEmpty([
-                $byName['ended_at'] ?? null,
-                $byName['end'] ?? null,
-            ]);
-            $endedAt = $endedAtRaw !== null ? $this->parseDate($endedAtRaw) : null;
-
-            $durationRaw = $this->firstNonEmpty([
-                $byName['duration_seconds'] ?? null,
-                $byName['duration'] ?? null,
-                $byName['billsec'] ?? null,
-                $byName['bill_sec'] ?? null,
-            ]);
-            $durationSeconds = null;
-            if ($durationRaw !== null && is_numeric($durationRaw)) {
-                $durationSeconds = (int) $durationRaw;
-            }
-
-            return [
-                'call_uid' => (string) $callUid,
-                'started_at' => $startedAt,
-                'direction' => $direction !== null ? (string) $direction : null,
-                'status' => $status !== null ? (string) $status : null,
-                'from_number' => $fromNumber !== null ? (string) $fromNumber : null,
-                'to_number' => $toNumber !== null ? (string) $toNumber : null,
-                'ended_at' => $endedAt,
-                'duration_seconds' => $durationSeconds,
-            ];
-        }
-
         // JSON-style row: associative array
         if (is_array($row)) {
             $lower = [];
@@ -515,13 +391,8 @@ class IngestPbxCallsJob implements ShouldQueue
                 $lower[strtolower((string) $k)] = $v;
             }
 
-            $callUid = $this->firstNonEmpty([
-                $lower['call_uid'] ?? null,
-                $lower['uniqueid'] ?? null,
-                $lower['unique_id'] ?? null,
-                $lower['callid'] ?? null,
-                $lower['call_id'] ?? null,
-            ]);
+            // Official rule: uniqueid is the ONLY call UID.
+            $callUid = $this->firstNonEmpty([$lower['uniqueid'] ?? null]);
 
             if ($callUid === null) {
                 Log::warning('Skipping PBX call: no unique identifier present', [

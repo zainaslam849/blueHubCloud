@@ -7,8 +7,6 @@ use App\Services\AwsSecretsService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
-use Symfony\Component\HttpFoundation\StreamedResponse;
-use Psr\Http\Message\StreamInterface;
 
 class PbxwareClient
 {
@@ -109,6 +107,14 @@ class PbxwareClient
      */
     protected function normalizeAndValidateCredentials(array $creds): array
     {
+        // Normalize common variant key names from Secrets Manager.
+        if (! isset($creds['api_key']) && isset($creds['apikey'])) {
+            $creds['api_key'] = $creds['apikey'];
+        }
+        if (! isset($creds['base_url']) && isset($creds['baseUrl'])) {
+            $creds['base_url'] = $creds['baseUrl'];
+        }
+
         // Warn about unsupported legacy keys if present
         if (isset($creds['pbx_api_key']) || isset($creds['pbx_base_url'])) {
             Log::warning('PbxwareClient: unsupported secret keys found (pbx_api_key or pbx_base_url). These are not used. Use auth_type/access_token/api_key/token or username/password and base_url instead.', ['present_keys' => array_intersect_key($creds, array_flip(['pbx_api_key','pbx_base_url']))]);
@@ -327,58 +333,36 @@ class PbxwareClient
 
     public function fetchCdrRecords(array $params): array|string
     {
-        return $this->fetchAction('pbxware.cdr.download', $params);
+        // Official contract: ONLY action=pbxware.cdr.download and ALWAYS status=8.
+        // Only allow server/start/end/status params.
+        $out = [];
+        foreach (['server', 'start', 'end'] as $k) {
+            if (array_key_exists($k, $params)) {
+                $out[$k] = $params[$k];
+            }
+        }
+        $out['status'] = 8;
+        return $this->fetchAction('pbxware.cdr.download', $out);
     }
 
     public function fetchTranscription(array $params): array|string
     {
-        return $this->fetchAction('pbxware.transcription.get', $params);
-    }
-
-    /**
-     * Parse a CSV string into [header, rows] where both are numeric arrays.
-     * Preserves raw cell strings as received.
-     *
-     * @return array{0: array<int,string>, 1: array<int, array<int,string>>}
-     */
-    protected function parseCsv(string $csv): array
-    {
-        $handle = fopen('php://temp', 'r+');
-        fwrite($handle, $csv);
-        rewind($handle);
-
-        $header = [];
-        $rows = [];
-        $line = 0;
-        while (($data = fgetcsv($handle)) !== false) {
-            // Skip completely empty lines
-            if ($data === [null] || $data === []) {
-                continue;
+        // Official contract: server + uniqueid.
+        $out = [];
+        foreach (['server', 'uniqueid'] as $k) {
+            if (array_key_exists($k, $params)) {
+                $out[$k] = $params[$k];
             }
-
-            // Normalize nulls to empty strings to keep array shape predictable
-            $data = array_map(static function ($v) {
-                return $v === null ? '' : (string) $v;
-            }, $data);
-
-            if ($line === 0) {
-                $header = $data;
-            } else {
-                $rows[] = $data;
-            }
-            $line++;
         }
-
-        fclose($handle);
-        return [$header, $rows];
+        return $this->fetchAction('pbxware.transcription.get', $out);
     }
 
     /**
      * Fetch any PBXware query action dynamically.
      *
     * - Builds: base_url + /?apikey=...&action=...&{params}
-     * - Supports JSON (returns array) and CSV (returns ['header'=>..., 'rows'=>...])
-     * - Logs action name + response type (json/csv/empty)
+     * - Supports JSON (returns array) and plain text (returns string)
+     * - Logs action name + response type (json/text/empty)
      * - Throws PbxwareClientException on non-200 responses
      */
     public function fetchAction(string $action, array $params = []): array|string
@@ -411,150 +395,15 @@ class PbxwareClient
             return $json;
         }
 
-        // Default to CSV for PBXware export-style responses.
-        [$header, $rows] = $this->parseCsv($body);
-        Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'csv', 'rows' => count($rows)]);
-
-        return [
-            'header' => $header,
-            'rows' => $rows,
-        ];
-    }
-
-    /**
-     * Streaming variant for actions that return binary bodies (e.g. downloads).
-     * Returns a PSR-7 stream; caller can pipe directly to S3.
-     */
-    public function fetchActionStream(string $action, array $params = []): StreamInterface
-    {
-        $response = $this->sendRequest('GET', $action, $params, ['stream' => true]);
-
-        if ($response->status() !== 200) {
-            $body = $this->redactForLog((string) $response->body());
-            Log::error('PbxwareClient: non-200 stream response for action', [
-                'action' => $action,
-                'status' => $response->status(),
-                'body' => $body,
-            ]);
-            throw new PbxwareClientException("PBX action {$action} failed with status {$response->status()}", $response->status());
-        }
-
-        Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'stream']);
-        return $response->toPsrResponse()->getBody();
+        // PBXware transcription endpoint may return plain text.
+        $text = trim($body);
+        Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'text', 'len' => strlen($text)]);
+        return $text;
     }
 
     protected function looksLikeJson(string $body): bool
     {
         $trim = ltrim($body);
         return $trim !== '' && ($trim[0] === '{' || $trim[0] === '[');
-    }
-
-    /**
-     * Simple connectivity test against PBXware (lists extensions).
-     */
-    public function testConnection(): array
-    {
-        $response = $this->sendRequest('GET', 'pbxware.ext.list', []);
-        if ($response->failed()) {
-            $status = $response->status();
-            $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: testConnection failed', ['action' => 'pbxware.ext.list', 'status' => $status, 'body' => $body]);
-            throw new PbxwareClientException("PBX testConnection failed, status {$status}");
-        }
-        return $response->json() ?: [];
-    }
-
-    /**
-     * Preferable: download recording by passing an array of query params.
-     * Builds ?apikey=...&action=pbxware.cdr.download&server=...&{params}
-     */
-    public function downloadRecordingByParams(array $params): StreamedResponse
-    {
-        $action = 'pbxware.cdr.download';
-        $headers = $this->buildHeaders();
-        $url = $this->buildQueryUrl($action, $params);
-
-        // Choose a filename hint from params when available
-        $filenameHint = $params['recording_id'] ?? $params['id'] ?? ($params['file'] ?? 'recording');
-
-        return new StreamedResponse(function () use ($url, $headers, $filenameHint) {
-            try {
-                $response = Http::withHeaders($headers)->withOptions(['stream' => true])->get($url);
-                if ($response->failed()) {
-                    $status = $response->status();
-                    $body = $this->redactForLog($response->body());
-                    Log::error('PbxwareClient: downloadRecording failed', ['url' => $this->redactUrl($url), 'status' => $status, 'body' => $body, 'action' => 'pbxware.cdr.download']);
-                    throw new PbxwareClientException("Failed to download recording, status {$status}");
-                }
-
-                $psr = $response->toPsrResponse();
-                $body = $psr->getBody();
-                while (! $body->eof()) {
-                    echo $body->read(1024 * 16);
-                    if (function_exists('fastcgi_finish_request')) {
-                        @flush();
-                    } else {
-                        @flush();
-                        @ob_flush();
-                    }
-                }
-            } catch (\Throwable $e) {
-                Log::error('PbxwareClient: exception streaming recording', ['error' => $e->getMessage()]);
-                throw $e;
-            }
-        }, 200, $this->downloadHeaders($filenameHint));
-    }
-
-    /**
-     * Return the underlying PSR-7 stream for a recording download.
-     * Useful for server-side streaming to other sinks (S3).
-     * Returns \Psr\Http\Message\StreamInterface on success or throws PbxwareClientException.
-     */
-    public function downloadRecordingStream(string $recordingId)
-    {
-        // Map to pbxware.cdr.download action and return PSR stream
-        $params = ['recording_id' => $recordingId];
-        $response = $this->sendRequest('GET', 'pbxware.cdr.download', $params, ['stream' => true]);
-
-        if ($response->failed()) {
-            $status = $response->status();
-            $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: downloadRecordingStream failed', ['recording_id' => $recordingId, 'status' => $status, 'body' => $body, 'action' => 'pbxware.cdr.download']);
-            throw new PbxwareClientException("Failed to download recording, status {$status}");
-        }
-
-        $psr = $response->toPsrResponse();
-        return $psr->getBody();
-    }
-
-    /**
-     * Legacy recording helper (no longer used by ingestion).
-     */
-    public function downloadRecordingStreamByRecordingPath(string $recordingPath)
-    {
-        $params = ['recording' => $recordingPath];
-        $response = $this->sendRequest('GET', 'pbxware.cdr.download', $params, ['stream' => true]);
-
-        if ($response->failed()) {
-            $status = $response->status();
-            $body = $this->redactForLog($response->body());
-            Log::error('PbxwareClient: downloadRecordingStreamByRecordingPath failed', [
-                'status' => $status,
-                'body' => $body,
-                'action' => 'pbxware.cdr.download',
-            ]);
-            throw new PbxwareClientException("Failed to download recording, status {$status}");
-        }
-
-        return $response->toPsrResponse()->getBody();
-    }
-
-    protected function downloadHeaders(string $recordingId): array
-    {
-        // Allow caller to override if needed. Provide sensible defaults.
-        return [
-            'Content-Type' => 'application/octet-stream',
-            'Content-Disposition' => 'attachment; filename="recording-' . $recordingId . '.mp3"',
-        ];
     }
 }
