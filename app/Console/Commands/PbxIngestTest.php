@@ -15,7 +15,7 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--server_id= : Persist PBXware server ID to company_pbx_accounts.server_id before ingesting} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
+    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--server_id= : Persist PBXware server ID to company_pbx_accounts.server_id before ingesting} {--list_servers : (Disabled) Tenant discovery is not permitted for tenant-scoped API keys} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
 
     /**
      * The console command description.
@@ -42,6 +42,11 @@ class PbxIngestTest extends Command
         $acct = $accountQuery->first();
         if (! $acct) {
             $this->error('No matching PBX account found.');
+            return self::FAILURE;
+        }
+
+        if ($this->option('list_servers')) {
+            $this->error('Tenant discovery is disabled: PBXware API keys are tenant-scoped and pbxware.tenant.list is not permitted. Configure company_pbx_accounts.server_id instead.');
             return self::FAILURE;
         }
 
