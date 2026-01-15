@@ -24,7 +24,13 @@ class AwsSecretsService
 
     public function __construct()
     {
-        $region = env('AWS_DEFAULT_REGION') ?: config('filesystems.disks.s3.region') ?: 'us-east-1';
+        // PBX secrets may live in a different region than S3.
+        // Prefer explicit PBXware region config when present.
+        $region = config('services.pbxware.aws_region')
+            ?: env('PBXWARE_AWS_REGION')
+            ?: env('AWS_DEFAULT_REGION')
+            ?: config('filesystems.disks.s3.region')
+            ?: 'us-east-1';
 
         $clientConfig = [
             'version' => 'latest',

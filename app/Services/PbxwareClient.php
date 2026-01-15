@@ -68,8 +68,16 @@ class PbxwareClient
                 $decoded = $this->secretsService->get($this->secretName);
                 return $decoded;
             } catch (\Throwable $e) {
-                Log::error('PbxwareClient: failed to fetch secret via AwsSecretsService', ['secret' => $this->secretName, 'error' => $e->getMessage()]);
-                return [];
+                Log::error('PbxwareClient: failed to fetch secret via AwsSecretsService', [
+                    'secret' => $this->secretName,
+                    'error' => $e->getMessage(),
+                    'aws_region' => config('services.pbxware.aws_region') ?: env('PBXWARE_AWS_REGION') ?: env('AWS_DEFAULT_REGION'),
+                ]);
+                throw new PbxwareClientException(
+                    "Failed to fetch PBXware credentials secret '{$this->secretName}' from AWS Secrets Manager. Check AWS credentials + region (PBXWARE_AWS_REGION/AWS_DEFAULT_REGION).",
+                    0,
+                    $e
+                );
             }
         });
     }
