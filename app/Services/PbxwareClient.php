@@ -255,14 +255,6 @@ class PbxwareClient
         return $normalized;
     }
 
-    protected function buildHeaders(array $extra = []): array
-    {
-        $headers = array_merge([
-            'Accept' => 'application/json',
-        ], $extra);
-        return $headers;
-    }
-
     /**
      * Generic request wrapper with logging and error handling.
      * Returns Illuminate\Http\Client\Response on success or throws PbxwareClientException.
@@ -271,8 +263,6 @@ class PbxwareClient
     {
         // For PBXware query-based API we treat $path as the `action` name.
         // Build the full query URL including apikey and server params.
-        $headers = $this->buildHeaders($options['headers'] ?? []);
-
         // Determine timeout: secret-provided timeout (seconds) or default 30s
         $timeout = (int) ($this->credentials['timeout'] ?? $options['timeout'] ?? 30);
         try {
@@ -282,7 +272,7 @@ class PbxwareClient
             // Build full query URL for PBXware (apikey/action/server + extra params)
             $url = $this->buildQueryUrl($path, $params);
 
-            $request = Http::withHeaders($headers)->withOptions($requestOptions);
+            $request = Http::withOptions($requestOptions);
 
             // PBXware API is query-based and primarily uses GET for list/download
             $response = $request->get($url);
@@ -362,12 +352,6 @@ class PbxwareClient
     protected function redactUrl(string $url): string
     {
         return preg_replace('/(apikey=)([^&]+)/i', '$1REDACTED', $url);
-    }
-
-    protected function buildUrl(string $path): string
-    {
-        $path = ltrim($path, '/');
-        return $this->baseUrl ? ($this->baseUrl . '/' . $path) : $path;
     }
 
     protected function redactForLog($value)
