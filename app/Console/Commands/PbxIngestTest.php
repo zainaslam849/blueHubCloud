@@ -15,7 +15,7 @@ class PbxIngestTest extends Command
      *
      * @var string
      */
-    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--list_servers : List available PBXware server IDs via pbxware.tenant.list} {--server_id= : Persist PBXware server ID to company_pbx_accounts.server_id before ingesting} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
+    protected $signature = 'pbx:ingest-test {--company_id= : Company ID (optional)} {--account_id= : Company PBX account ID (optional)} {--from= : Start datetime (optional; parseable by Carbon)} {--to= : End datetime (optional; parseable by Carbon)} {--limit= : Max rows per request (optional; default 1000, max 1000)} {--server_id= : Persist PBXware server ID to company_pbx_accounts.server_id before ingesting} {--mock : Force PBXWARE_MOCK_MODE=true for this run}';
 
     /**
      * The console command description.
@@ -45,32 +45,6 @@ class PbxIngestTest extends Command
             return self::FAILURE;
         }
 
-        if ($this->option('list_servers')) {
-            $client = PbxClientResolver::resolve();
-            if (! method_exists($client, 'fetchAction') && ! method_exists($client, 'fetchTenantServers')) {
-                $this->error('Client does not support tenant.list in this mode.');
-                return self::FAILURE;
-            }
-
-            // TEMP DIAGNOSTIC: show the raw decoded response as-is.
-            $raw = method_exists($client, 'fetchAction')
-                ? $client->fetchAction('pbxware.tenant.list', [])
-                : $client->fetchTenantServers();
-
-            $keys = is_array($raw) ? array_keys($raw) : [];
-
-            $this->info('PBXware tenant.list raw response keys:');
-            $this->line(json_encode($keys, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-
-            $this->info('PBXware tenant.list raw response JSON:');
-            if (is_array($raw)) {
-                $this->line(json_encode($raw, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            } else {
-                $this->line((string) $raw);
-            }
-            return self::SUCCESS;
-        }
-
         $serverIdOpt = $this->option('server_id');
         if (is_string($serverIdOpt) && trim($serverIdOpt) !== '') {
             $acct->server_id = trim($serverIdOpt);
@@ -79,7 +53,7 @@ class PbxIngestTest extends Command
         }
 
         if (! is_string($acct->server_id) || trim($acct->server_id) === '') {
-            $this->error('PBX account is missing server_id. Run with --list_servers then pass --server_id=<id>.');
+            $this->error('PBX server_id must be configured for this account');
             return self::FAILURE;
         }
 

@@ -45,11 +45,7 @@ class IngestPbxCallsJob implements ShouldQueue
 
         $serverId = is_string($pbxAccount->server_id ?? null) ? trim((string) $pbxAccount->server_id) : '';
         if ($serverId === '') {
-            Log::error('PBX calls ingestion aborted: company_pbx_accounts.server_id is not set', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-            ]);
-            return;
+            throw new PbxwareClientException('PBX server_id must be configured for this account');
         }
 
         $client = PbxClientResolver::resolve();

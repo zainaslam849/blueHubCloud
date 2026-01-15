@@ -12,22 +12,6 @@ use Illuminate\Support\Facades\Log;
 class MockPbxwareClient
 {
     /**
-     * Authoritative-contract helper: return available PBXware server IDs.
-     */
-    public function fetchTenantServers(): array
-    {
-        return [
-            ['id' => '2', 'name' => 'BHubcomms'],
-            ['id' => '3', 'name' => 'BHubAMWU'],
-        ];
-    }
-
-    public function fetchTenantServerIds(): array
-    {
-        return array_map(static fn ($s) => $s['id'], $this->fetchTenantServers());
-    }
-
-    /**
      * Authoritative-contract helper: pbxware.cdr.download returns CDR records.
      */
     public function fetchCdrRecords(array $params): array
@@ -74,15 +58,6 @@ class MockPbxwareClient
      */
     public function fetchAction(string $action, array $params = []): array|string
     {
-        if ($action === 'pbxware.tenant.list') {
-            // Keys are server IDs per authoritative contract.
-            return [
-                '2' => ['name' => 'BHubcomms', 'tenantcode' => '501'],
-                '3' => ['name' => 'BHubAMWU', 'tenantcode' => '502'],
-                'error' => null,
-            ];
-        }
-
         if ($action === 'pbxware.cdr.download') {
             return $this->fetchCdrRecords($params);
         }

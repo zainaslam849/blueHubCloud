@@ -121,8 +121,7 @@ class PbxwareClient
         }
 
         // PBXware uses a query-based API. We require auth_type == 'query' and
-        // the presence of `api_key` in Secrets Manager. Server IDs are discovered
-        // at runtime via pbxware.tenant.list and stored per account.
+        // the presence of `api_key` in Secrets Manager.
         $normalized = $creds;
         $authType = strtolower($creds['auth_type'] ?? $creds['auth'] ?? 'query');
         $normalized['type'] = $authType;
@@ -289,34 +288,6 @@ class PbxwareClient
             return substr($value, 0, 1000) . '...';
         }
         return $value;
-    }
-
-    /**
-     * Tenant discovery.
-     *
-     * TEMP DIAGNOSTIC: return the raw decoded JSON exactly as received.
-     * Do not filter keys, do not map IDs.
-     */
-    public function fetchTenantServers(): mixed
-    {
-        return $this->fetchAction('pbxware.tenant.list', []);
-    }
-
-    /**
-     * Backwards-compatible helper: return only numeric server IDs.
-     *
-     * @return array<int,string>
-     */
-    public function fetchTenantServerIds(): array
-    {
-        $servers = $this->fetchTenantServers();
-        $ids = [];
-        foreach ($servers as $s) {
-            if (isset($s['id']) && is_string($s['id']) && $s['id'] !== '') {
-                $ids[] = $s['id'];
-            }
-        }
-        return array_values(array_unique($ids));
     }
 
     public function fetchCdrRecords(array $params): array|string
