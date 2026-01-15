@@ -26,9 +26,8 @@ return [
             'aws_region' => env('PBXWARE_AWS_REGION', env('AWS_DEFAULT_REGION')),
 
             // PBXware authoritative flow:
-            // - Discover tenant server IDs via pbxware.tenant.list
-            // - Fetch CDR records via pbxware.cdr.download (start/end/status/server)
-            // - Fetch transcription per call via pbxware.transcription.get
+            // - Fetch CDR records via pbxware.cdr.download (start/end/status=8/server)
+            // - Fetch transcription per call via pbxware.transcription.get (server/uniqueid)
         ],
     ],
 ];
