@@ -47,33 +47,26 @@ class PbxIngestTest extends Command
 
         if ($this->option('list_servers')) {
             $client = PbxClientResolver::resolve();
-            if (! method_exists($client, 'fetchTenantServers') && ! method_exists($client, 'fetchTenantServerIds')) {
-                $this->error('Client does not support tenant discovery in this mode.');
+            if (! method_exists($client, 'fetchAction') && ! method_exists($client, 'fetchTenantServers')) {
+                $this->error('Client does not support tenant.list in this mode.');
                 return self::FAILURE;
             }
 
-            $servers = method_exists($client, 'fetchTenantServers')
-                ? $client->fetchTenantServers()
-                : array_map(static fn ($id) => ['id' => $id, 'name' => null], (array) $client->fetchTenantServerIds());
+            // TEMP DIAGNOSTIC: show the raw decoded response as-is.
+            $raw = method_exists($client, 'fetchAction')
+                ? $client->fetchAction('pbxware.tenant.list', [])
+                : $client->fetchTenantServers();
 
-            if (! is_array($servers) || $servers === []) {
-                $this->warn('No server IDs returned from pbxware.tenant.list.');
-                return self::SUCCESS;
-            }
+            $keys = is_array($raw) ? array_keys($raw) : [];
 
-            $this->info('Available PBXware server IDs:');
-            foreach ($servers as $server) {
-                if (! is_array($server)) {
-                    continue;
-                }
+            $this->info('PBXware tenant.list raw response keys:');
+            $this->line(json_encode($keys, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
-                $id = isset($server['id']) ? trim((string) $server['id']) : '';
-                if ($id === '' || ! ctype_digit($id)) {
-                    continue;
-                }
-
-                $name = isset($server['name']) && is_string($server['name']) ? trim($server['name']) : '';
-                $this->line($name !== '' ? "- {$id} ({$name})" : "- {$id}");
+            $this->info('PBXware tenant.list raw response JSON:');
+            if (is_array($raw)) {
+                $this->line(json_encode($raw, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            } else {
+                $this->line((string) $raw);
             }
             return self::SUCCESS;
         }

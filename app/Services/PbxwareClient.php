@@ -189,6 +189,14 @@ class PbxwareClient
             // PBXware API is query-based and primarily uses GET for list/download
             $response = $request->get($url);
 
+            // TEMP DIAGNOSTIC: full raw PBX response logging for visibility.
+            // Always redact API keys if they ever appear.
+            Log::info('PBXWARE_RAW_RESPONSE', [
+                'action' => $path,
+                'status' => $response->status(),
+                'body' => $this->redactRawPbxResponseBody((string) $response->body()),
+            ]);
+
             $latencyMs = round((microtime(true) - $start) * 1000, 2);
 
             // Redact apikey when logging URL
@@ -217,6 +225,21 @@ class PbxwareClient
             Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $this->redactUrl($url ?? ''), 'base_url' => $this->baseUrl, 'timeout' => $timeout, 'error' => $e->getMessage()]);
             throw new PbxwareClientException('PBX request exception: ' . $e->getMessage() . ' (base_url=' . ($this->baseUrl ?? '[not set]') . ', timeout=' . $timeout . 's)', 0, $e);
         }
+    }
+
+    /**
+     * Redact sensitive tokens from raw PBX responses, without otherwise changing the payload.
+     */
+    protected function redactRawPbxResponseBody(string $rawBody): string
+    {
+        // Query string style: apikey=...
+        $rawBody = preg_replace('/(apikey=)([^&\s]+)/i', '$1REDACTED', $rawBody);
+
+        // JSON style: "api_key":"..." or "apikey":"..."
+        $rawBody = preg_replace('/("api_key"\s*:\s*")([^"]+)(")/i', '$1REDACTED$3', $rawBody);
+        $rawBody = preg_replace('/("apikey"\s*:\s*")([^"]+)(")/i', '$1REDACTED$3', $rawBody);
+
+        return is_string($rawBody) ? $rawBody : '';
     }
 
     /**
@@ -271,47 +294,12 @@ class PbxwareClient
     /**
      * Tenant discovery.
      *
-     * Authoritative contract: pbxware.tenant.list returns an object whose keys
-     * are the available PBXware server IDs.
+     * TEMP DIAGNOSTIC: return the raw decoded JSON exactly as received.
+     * Do not filter keys, do not map IDs.
      */
-    public function fetchTenantServers(): array
+    public function fetchTenantServers(): mixed
     {
-        $result = $this->fetchAction('pbxware.tenant.list', []);
-
-        if (! is_array($result) || $result === []) {
-            return [];
-        }
-
-        // Authoritative rule: server IDs are the keys of the response object.
-        // If the response is a list, there are no usable keys.
-        if (array_values($result) === $result) {
-            return [];
-        }
-
-        $servers = [];
-        foreach ($result as $key => $value) {
-            $id = trim((string) $key);
-
-            // Ignore non-numeric keys (e.g. "error")
-            if ($id === '' || ! ctype_digit($id)) {
-                continue;
-            }
-
-            $name = null;
-            if (is_array($value) && isset($value['name']) && is_string($value['name'])) {
-                $name = trim($value['name']);
-                if ($name === '') {
-                    $name = null;
-                }
-            }
-
-            $servers[] = [
-                'id' => $id,
-                'name' => $name,
-            ];
-        }
-
-        return $servers;
+        return $this->fetchAction('pbxware.tenant.list', []);
     }
 
     /**
