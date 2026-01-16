@@ -337,4 +337,18 @@ class IngestPbxCallsJob implements ShouldQueue
         $s = strtolower(trim((string) $value));
         return in_array($s, ['1', 'true', 'yes', 'y', 'on'], true);
     }
+
+    private function firstNonEmpty(array $values): ?string
+    {
+        foreach ($values as $v) {
+            if ($v === null) {
+                continue;
+            }
+            $s = trim((string) $v);
+            if ($s !== '') {
+                return $s;
+            }
+        }
+        return null;
+    }
 }
