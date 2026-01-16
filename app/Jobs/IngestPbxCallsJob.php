@@ -84,9 +84,8 @@ class IngestPbxCallsJob implements ShouldQueue
                 ? $client->fetchCdrRecords($params)
                 : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
 
-            [, $rows] = $this->extractRows($result);
-
-            $rowCount = is_array($rows) ? count($rows) : 0;
+            $csvRows = $this->extractCsvRows($result);
+            $rowCount = count($csvRows);
             $cdrRowsReturned += $rowCount;
 
             Log::info('PBXware CDR rows received', [
@@ -96,63 +95,66 @@ class IngestPbxCallsJob implements ShouldQueue
                 'rows' => $rowCount,
             ]);
 
-            if (is_array($rows)) {
-                foreach ($rows as $row) {
-                    if (! is_array($row)) {
-                        continue;
-                    }
+            foreach ($csvRows as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
 
-                    $normalized = $this->normalizeCdrRow($row, null);
-                    $callUid = $normalized['call_uid'] ?? null;
-                    if (! is_string($callUid) || trim($callUid) === '') {
-                        continue;
-                    }
+                // Bluehub PBXWare API contract (fixed column indexes):
+                // - csv[2] = Date/Time (epoch seconds)
+                // - csv[6] = Status
+                // - csv[7] = Unique ID (call_uid)
+                // - csv[9] = Recording Available
+                $epoch = $row[2] ?? null;
+                $status = $row[6] ?? null;
+                $callUid = $row[7] ?? null;
+                $recordingAvailableRaw = $row[9] ?? null;
 
-                    // The calls table requires direction/status/started_at.
-                    // Do not guess; if the CDR record doesn't provide these fields, skip the row.
-                    $direction = $normalized['direction'] ?? null;
-                    $status = $normalized['status'] ?? (string) $params['status'];
-                    $startedAt = $normalized['started_at'] ?? null;
+                $callUid = is_string($callUid) ? trim($callUid) : trim((string) $callUid);
+                $status = is_string($status) ? trim($status) : trim((string) $status);
 
-                    if (! is_string($direction) || trim($direction) === '' || ! is_string($status) || trim($status) === '' || ! is_string($startedAt) || trim($startedAt) === '') {
-                        Log::warning('Skipping PBX call: missing required call fields from CDR record', [
-                            'company_id' => $this->companyId,
-                            'company_pbx_account_id' => $this->companyPbxAccountId,
-                            'call_uid' => $callUid,
-                            'has_direction' => is_string($direction) && trim($direction) !== '',
-                            'has_status' => is_string($status) && trim($status) !== '',
-                            'has_started_at' => is_string($startedAt) && trim($startedAt) !== '',
-                        ]);
-                        continue;
-                    }
+                $hasEpoch = $epoch !== null && $epoch !== '' && is_numeric($epoch);
+                if ($callUid === '' || $status === '' || ! $hasEpoch) {
+                    continue;
+                }
 
-                    $call = Call::firstOrCreate(
-                        ['call_uid' => $callUid],
-                        array_filter([
-                            'company_id' => $this->companyId,
-                            'company_pbx_account_id' => $this->companyPbxAccountId,
-                            'direction' => trim($direction),
-                            'from_number' => $normalized['from_number'] ?? null,
-                            'to_number' => $normalized['to_number'] ?? null,
-                            'started_at' => $startedAt,
-                            'ended_at' => $normalized['ended_at'] ?? null,
-                            'duration_seconds' => $normalized['duration_seconds'] ?? null,
-                            'status' => trim($status),
-                        ], static function ($v) {
-                            return $v !== null && $v !== '';
-                        })
-                    );
+                $startedAt = \Carbon\Carbon::createFromTimestamp((int) $epoch)->toDateTimeString();
+                $recordingAvailable = $this->truthy($recordingAvailableRaw);
 
-                    if (! $call->wasRecentlyCreated) {
-                        $callsSkipped++;
-                        continue;
-                    }
+                $call = Call::firstOrCreate(
+                    ['call_uid' => $callUid],
+                    array_filter([
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        // Direction is not provided/required by the Bluehub PBXware CDR contract.
+                        // Use a stable placeholder to satisfy schema constraints.
+                        'direction' => 'unknown',
+                        'started_at' => $startedAt,
+                        'status' => $status,
+                        'recording_available' => $recordingAvailable,
+                    ], static function ($v) {
+                        return $v !== null && $v !== '';
+                    })
+                );
 
+                if ($call->wasRecentlyCreated) {
                     $callsCreated++;
+                } else {
+                    $callsSkipped++;
+                }
 
-                    $transcriptionResult = method_exists($client, 'fetchTranscription')
-                        ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
-                        : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
+                // If we already have a PBXware transcription for this call, skip.
+                $hasTranscription = CallTranscription::query()
+                    ->where('call_id', $call->id)
+                    ->where('provider_name', 'pbxware')
+                    ->exists();
+                if ($hasTranscription) {
+                    continue;
+                }
+
+                $transcriptionResult = method_exists($client, 'fetchTranscription')
+                    ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
+                    : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
 
                     $transcriptText = null;
                     $language = 'en';
@@ -207,7 +209,6 @@ class IngestPbxCallsJob implements ShouldQueue
                             $transcriptionsStored++;
                         }
                     }
-                }
             }
 
             Log::info('PBXware ingestion summary', [
@@ -308,143 +309,21 @@ class IngestPbxCallsJob implements ShouldQueue
     }
 
     /**
-     * @return array{0: array<int,string>|null, 1: array<int, mixed>}
+     * Bluehub PBXware contract: the only supported row source is response['csv'].
+     * @return array<int, array<int, mixed>>
      */
-    private function extractRows(array|string $result): array
+    private function extractCsvRows(array|string $result): array
     {
-        if (is_string($result) || $result === []) {
-            return [null, []];
+        if (! is_array($result)) {
+            return [];
         }
 
-        if (isset($result['data']) && is_array($result['data'])) {
-            return [null, $result['data']];
-        }
-        if (isset($result['items']) && is_array($result['items'])) {
-            return [null, $result['items']];
+        $csv = $result['csv'] ?? null;
+        if (! is_array($csv)) {
+            return [];
         }
 
-        // If it's a list, treat it as rows.
-        if (array_values($result) === $result) {
-            return [null, $result];
-        }
-
-        return [null, []];
-    }
-
-    /**
-     * Normalize a PBXware CDR record into the fields used by ingestion.
-     *
-     * Output:
-     * - call_uid (required)
-     * - started_at (string|null)
-        * - direction (string|null)
-        * - status (string|null)
-        * - from_number (string|null)
-        * - to_number (string|null)
-        * - ended_at (string|null)
-        * - duration_seconds (int|null)
-     */
-    private function normalizeCdrRow($row, ?array $header = null): array
-    {
-        // JSON-style row: associative array
-        if (is_array($row)) {
-            $lower = [];
-            foreach ($row as $k => $v) {
-                $lower[strtolower((string) $k)] = $v;
-            }
-
-            // Official rule: uniqueid is the ONLY call UID.
-            $callUid = $this->firstNonEmpty([$lower['uniqueid'] ?? null]);
-
-            if ($callUid === null) {
-                Log::warning('Skipping PBX call: no unique identifier present', [
-                    'company_id' => $this->companyId,
-                    'company_pbx_account_id' => $this->companyPbxAccountId,
-                ]);
-                return ['call_uid' => null];
-            }
-
-            $startedAtRaw = $this->firstNonEmpty([
-                $lower['started_at'] ?? null,
-                $lower['start'] ?? null,
-                $lower['timestamp'] ?? null,
-                $lower['date'] ?? null,
-                $lower['calldate'] ?? null,
-            ]);
-            $startedAt = $startedAtRaw !== null ? $this->parseDate($startedAtRaw) : null;
-
-            $direction = $this->firstNonEmpty([
-                $lower['direction'] ?? null,
-                $lower['call_direction'] ?? null,
-                $lower['calltype'] ?? null,
-                $lower['call_type'] ?? null,
-            ]);
-
-            $status = $this->firstNonEmpty([
-                $lower['status'] ?? null,
-                $lower['disposition'] ?? null,
-                $lower['call_status'] ?? null,
-            ]);
-
-            $fromNumber = $this->firstNonEmpty([
-                $lower['from_number'] ?? null,
-                $lower['src'] ?? null,
-                $lower['source'] ?? null,
-                $lower['callerid'] ?? null,
-                $lower['caller_id'] ?? null,
-            ]);
-
-            $toNumber = $this->firstNonEmpty([
-                $lower['to_number'] ?? null,
-                $lower['dst'] ?? null,
-                $lower['destination'] ?? null,
-                $lower['callee'] ?? null,
-            ]);
-
-            $endedAtRaw = $this->firstNonEmpty([
-                $lower['ended_at'] ?? null,
-                $lower['end'] ?? null,
-            ]);
-            $endedAt = $endedAtRaw !== null ? $this->parseDate($endedAtRaw) : null;
-
-            $durationRaw = $this->firstNonEmpty([
-                $lower['duration_seconds'] ?? null,
-                $lower['duration'] ?? null,
-                $lower['billsec'] ?? null,
-                $lower['bill_sec'] ?? null,
-            ]);
-            $durationSeconds = null;
-            if ($durationRaw !== null && is_numeric($durationRaw)) {
-                $durationSeconds = (int) $durationRaw;
-            }
-
-            return [
-                'call_uid' => (string) $callUid,
-                'started_at' => $startedAt,
-                'direction' => $direction !== null ? (string) $direction : null,
-                'status' => $status !== null ? (string) $status : null,
-                'from_number' => $fromNumber !== null ? (string) $fromNumber : null,
-                'to_number' => $toNumber !== null ? (string) $toNumber : null,
-                'ended_at' => $endedAt,
-                'duration_seconds' => $durationSeconds,
-            ];
-        }
-
-        return ['call_uid' => null];
-    }
-
-    private function firstNonEmpty(array $values): ?string
-    {
-        foreach ($values as $v) {
-            if ($v === null) {
-                continue;
-            }
-            $s = trim((string) $v);
-            if ($s !== '') {
-                return $s;
-            }
-        }
-        return null;
+        return $csv;
     }
 
     private function truthy($value): bool

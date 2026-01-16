@@ -18,21 +18,47 @@ class MockPbxwareClient
     {
         $now = time();
 
-        $rows = [];
+        // Bluehub PBXware API contract:
+        // - header: array of column names
+        // - csv: array of rows (array-of-arrays)
+        // Fixed indexes used by ingestion:
+        //   csv[2] = epoch seconds
+        //   csv[6] = status
+        //   csv[7] = uniqueid
+        //   csv[9] = recording available
+        $header = [
+            'col0',
+            'col1',
+            'date_time_epoch',
+            'col3',
+            'col4',
+            'col5',
+            'status',
+            'uniqueid',
+            'col8',
+            'recording_available',
+        ];
+
+        $csv = [];
         for ($i = 1; $i <= 3; $i++) {
-            $rows[] = [
-                'uniqueid' => "mock-uniqueid-{$i}",
-                'started_at' => date('c', $now - (60 * $i)),
-                'duration' => 30 * $i,
-                'direction' => $i % 2 === 0 ? 'inbound' : 'outbound',
-                'status' => '8',
-                'src' => '+611000000' . $i,
-                'dst' => '+612000000' . $i,
+            $epoch = $now - (60 * $i);
+            $uniqueid = "mock-uniqueid-{$i}";
+            $csv[] = [
+                '',
+                '',
+                $epoch,
+                '',
+                '',
+                '',
+                '8',
+                $uniqueid,
+                '',
+                $i % 2 === 0 ? '1' : '0',
             ];
         }
 
-        Log::info('MockPbxwareClient: fetchCdrRecords', ['params' => $params, 'count' => count($rows)]);
-        return $rows;
+        Log::info('MockPbxwareClient: fetchCdrRecords', ['params' => $params, 'count' => count($csv)]);
+        return ['header' => $header, 'csv' => $csv];
     }
 
     /**

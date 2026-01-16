@@ -18,6 +18,7 @@ class Call extends Model
         'started_at',
         'ended_at',
         'duration_seconds',
+        'recording_available',
         'status',
     ];
 
