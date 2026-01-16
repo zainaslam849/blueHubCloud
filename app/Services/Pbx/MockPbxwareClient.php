@@ -20,8 +20,8 @@ class MockPbxwareClient
 
         $rows = [];
         for ($i = 1; $i <= 3; $i++) {
-            $uniqueid = "mock-uniqueid-{$i}";
-            $rows[$uniqueid] = [
+            $rows[] = [
+                'uniqueid' => "mock-uniqueid-{$i}",
                 'started_at' => date('c', $now - (60 * $i)),
                 'duration' => 30 * $i,
                 'direction' => $i % 2 === 0 ? 'inbound' : 'outbound',

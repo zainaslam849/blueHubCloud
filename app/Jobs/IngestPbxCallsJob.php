@@ -5,7 +5,6 @@ namespace App\Jobs;
 use App\Models\Call;
 use App\Models\CompanyPbxAccount;
 use App\Models\CallTranscription;
-use App\Services\PbxwareClient;
 use App\Services\Pbx\PbxClientResolver;
 use Illuminate\Support\Facades\Config;
 use App\Exceptions\PbxwareClientException;
@@ -64,48 +63,40 @@ class IngestPbxCallsJob implements ShouldQueue
             // - No recording downloads
 
             $range = $this->determineRequestedRange();
-            $chunks = $this->monthChunks($range['from'], $range['to']);
 
             $callsCreated = 0;
             $callsSkipped = 0;
             $transcriptionsStored = 0;
             $cdrRowsReturned = 0;
 
-            foreach ($chunks as $chunk) {
-                $params = $this->buildCdrDownloadParams($chunk['from'], $chunk['to'], $serverId);
+            $params = $this->buildCdrDownloadParams($range['from'], $range['to'], $serverId);
 
-                Log::info('PBXware CDR date range used', [
-                    'company_id' => $this->companyId,
-                    'company_pbx_account_id' => $this->companyPbxAccountId,
-                    'server_id' => $serverId,
-                    'start' => $params['start'],
-                    'end' => $params['end'],
-                    'status' => $params['status'],
-                ]);
+            Log::info('PBXware CDR date range used', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'server_id' => $serverId,
+                'start' => $params['start'],
+                'end' => $params['end'],
+                'status' => $params['status'],
+            ]);
 
-                $result = method_exists($client, 'fetchCdrRecords')
-                    ? $client->fetchCdrRecords($params)
-                    : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
+            $result = method_exists($client, 'fetchCdrRecords')
+                ? $client->fetchCdrRecords($params)
+                : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
 
-                [, $rows] = $this->extractRows($result);
+            [, $rows] = $this->extractRows($result);
 
-                $chunkRowCount = is_array($rows) ? count($rows) : 0;
-                $cdrRowsReturned += $chunkRowCount;
+            $rowCount = is_array($rows) ? count($rows) : 0;
+            $cdrRowsReturned += $rowCount;
 
-                Log::info('PBXware CDR rows received', [
-                    'company_id' => $this->companyId,
-                    'company_pbx_account_id' => $this->companyPbxAccountId,
-                    'server_id' => $serverId,
-                    'rows' => $chunkRowCount,
-                ]);
+            Log::info('PBXware CDR rows received', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'server_id' => $serverId,
+                'rows' => $rowCount,
+            ]);
 
-                if (! is_array($rows)) {
-                    continue;
-                }
-
-                // Pagination support depends on the configured PBXware CDR action contract.
-                // Do not auto-paginate unless the vendor documentation explicitly requires it.
-
+            if (is_array($rows)) {
                 foreach ($rows as $row) {
                     if (! is_array($row)) {
                         continue;
@@ -117,60 +108,48 @@ class IngestPbxCallsJob implements ShouldQueue
                         continue;
                     }
 
-                    $call = Call::query()->where('call_uid', $callUid)->first();
-                    if (! $call) {
-                        // The calls table requires direction/status/started_at.
-                        // Do not guess; if the CDR record doesn't provide these fields, skip the row.
-                        $direction = $normalized['direction'] ?? null;
-                        $status = $normalized['status'] ?? (string) $params['status'];
-                        $startedAt = $normalized['started_at'] ?? null;
+                    // The calls table requires direction/status/started_at.
+                    // Do not guess; if the CDR record doesn't provide these fields, skip the row.
+                    $direction = $normalized['direction'] ?? null;
+                    $status = $normalized['status'] ?? (string) $params['status'];
+                    $startedAt = $normalized['started_at'] ?? null;
 
-                        if (! is_string($direction) || trim($direction) === '' || ! is_string($status) || trim($status) === '' || ! is_string($startedAt) || trim($startedAt) === '') {
-                            Log::warning('Skipping PBX call: missing required call fields from CDR record', [
-                                'company_id' => $this->companyId,
-                                'company_pbx_account_id' => $this->companyPbxAccountId,
-                                'call_uid' => $callUid,
-                                'has_direction' => is_string($direction) && trim($direction) !== '',
-                                'has_status' => is_string($status) && trim($status) !== '',
-                                'has_started_at' => is_string($startedAt) && trim($startedAt) !== '',
-                            ]);
-                            continue;
-                        }
-
-                        $call = Call::firstOrCreate(
-                            ['call_uid' => $callUid],
-                            array_filter([
-                                'company_id' => $this->companyId,
-                                'company_pbx_account_id' => $this->companyPbxAccountId,
-                                'direction' => trim($direction),
-                                'from_number' => $normalized['from_number'] ?? null,
-                                'to_number' => $normalized['to_number'] ?? null,
-                                'started_at' => $startedAt,
-                                'ended_at' => $normalized['ended_at'] ?? null,
-                                'duration_seconds' => $normalized['duration_seconds'] ?? null,
-                                'status' => trim($status),
-                            ], static function ($v) {
-                                return $v !== null && $v !== '';
-                            })
-                        );
-
-                        if ($call->wasRecentlyCreated) {
-                            $callsCreated++;
-                        } else {
-                            $callsSkipped++;
-                        }
-                    } else {
-                        $callsSkipped++;
-                    }
-
-                    // If we already have a PBXware transcription for this call, skip.
-                    $hasTranscription = CallTranscription::query()
-                        ->where('call_id', $call->id)
-                        ->where('provider_name', 'pbxware')
-                        ->exists();
-                    if ($hasTranscription) {
+                    if (! is_string($direction) || trim($direction) === '' || ! is_string($status) || trim($status) === '' || ! is_string($startedAt) || trim($startedAt) === '') {
+                        Log::warning('Skipping PBX call: missing required call fields from CDR record', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'call_uid' => $callUid,
+                            'has_direction' => is_string($direction) && trim($direction) !== '',
+                            'has_status' => is_string($status) && trim($status) !== '',
+                            'has_started_at' => is_string($startedAt) && trim($startedAt) !== '',
+                        ]);
                         continue;
                     }
+
+                    $call = Call::firstOrCreate(
+                        ['call_uid' => $callUid],
+                        array_filter([
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'direction' => trim($direction),
+                            'from_number' => $normalized['from_number'] ?? null,
+                            'to_number' => $normalized['to_number'] ?? null,
+                            'started_at' => $startedAt,
+                            'ended_at' => $normalized['ended_at'] ?? null,
+                            'duration_seconds' => $normalized['duration_seconds'] ?? null,
+                            'status' => trim($status),
+                        ], static function ($v) {
+                            return $v !== null && $v !== '';
+                        })
+                    );
+
+                    if (! $call->wasRecentlyCreated) {
+                        $callsSkipped++;
+                        continue;
+                    }
+
+                    $callsCreated++;
+
                     $transcriptionResult = method_exists($client, 'fetchTranscription')
                         ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
                         : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
@@ -329,31 +308,6 @@ class IngestPbxCallsJob implements ShouldQueue
     }
 
     /**
-     * @return array<int, array{from: \Carbon\Carbon, to: \Carbon\Carbon}>
-     */
-    private function monthChunks(\Carbon\Carbon $from, \Carbon\Carbon $to): array
-    {
-        $chunks = [];
-
-        $cursor = $from->copy()->startOfMonth();
-        $endMonth = $to->copy()->startOfMonth();
-
-        while ($cursor->lessThanOrEqualTo($endMonth)) {
-            $monthStart = $cursor->copy()->startOfMonth();
-            $monthEnd = $cursor->copy()->endOfMonth();
-
-            $chunkFrom = $from->copy()->greaterThan($monthStart) ? $from->copy() : $monthStart;
-            $chunkTo = $to->copy()->lessThan($monthEnd) ? $to->copy() : $monthEnd;
-
-            $chunks[] = ['from' => $chunkFrom, 'to' => $chunkTo];
-
-            $cursor = $cursor->copy()->addMonth()->startOfMonth();
-        }
-
-        return $chunks;
-    }
-
-    /**
      * @return array{0: array<int,string>|null, 1: array<int, mixed>}
      */
     private function extractRows(array|string $result): array
@@ -372,24 +326,6 @@ class IngestPbxCallsJob implements ShouldQueue
         // If it's a list, treat it as rows.
         if (array_values($result) === $result) {
             return [null, $result];
-        }
-
-        // PBXware contract: pbxware.cdr.download returns a JSON object where each key is a uniqueid.
-        // Convert that keyed map into a list of row arrays, injecting uniqueid if missing.
-        $rows = [];
-        foreach ($result as $uniqueid => $row) {
-            if (! is_string($uniqueid) || trim($uniqueid) === '') {
-                continue;
-            }
-            if (is_array($row)) {
-                if (! array_key_exists('uniqueid', $row)) {
-                    $row['uniqueid'] = $uniqueid;
-                }
-                $rows[] = $row;
-            }
-        }
-        if ($rows !== []) {
-            return [null, $rows];
         }
 
         return [null, []];

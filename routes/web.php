@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
-use App\Http\Controllers\Admin\AdminRecordingsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
 use Illuminate\Support\Facades\Route;
 
@@ -18,8 +17,6 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::get('/calls', [AdminCallsController::class, 'index']);
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
-        Route::get('/recordings', [AdminRecordingsController::class, 'index']);
-        Route::get('/recordings/{id}', [AdminRecordingsController::class, 'show']);
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);
         Route::get('/transcriptions/{id}', [AdminTranscriptionsController::class, 'show']);
         Route::post('/logout', [AuthController::class, 'logout']);
