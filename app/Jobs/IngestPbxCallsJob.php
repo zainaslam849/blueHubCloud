@@ -121,6 +121,26 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
 
                 $startedAt = \Carbon\Carbon::createFromTimestamp((int) $epoch)->toDateTimeString();
+
+                // Map PBX CDR disposition/status to final internal status
+                $rawDisposition = is_string($status) ? strtoupper(trim($status)) : strtoupper((string) $status);
+                if ($rawDisposition === 'ANSWERED') {
+                    $finalStatus = 'ANSWERED';
+                } elseif (in_array($rawDisposition, ['NO ANSWER', 'NO_ANSWER', 'BUSY', 'FAILED'], true)) {
+                    $finalStatus = 'MISSED';
+                } else {
+                    $finalStatus = 'UNKNOWN';
+                }
+
+                // Ensure duration is an integer billsec
+                $billsec = is_numeric($durationSeconds) ? (int) $durationSeconds : 0;
+
+                // Compute ended_at when possible (started epoch + billsec)
+                $endedAt = null;
+                if ($billsec > 0 && is_numeric($epoch)) {
+                    $endedAt = \Carbon\Carbon::createFromTimestamp((int) $epoch + $billsec)->toDateTimeString();
+                }
+
                 $call = Call::updateOrCreate(
                     [
                         'company_pbx_account_id' => $this->companyPbxAccountId,
@@ -135,13 +155,24 @@ class IngestPbxCallsJob implements ShouldQueue
                         'from' => null,
                         'to' => null,
                         'started_at' => $startedAt,
-                        'status' => $status,
-                        // Best-effort: if a numeric duration column exists in the CDR row, persist it.
-                        'duration_seconds' => $durationSeconds,
+                        // Final mapped status (do not set PROCESSING for CDR-based calls)
+                        'status' => $finalStatus,
+                        // Final duration from CDR billsec
+                        'duration_seconds' => $billsec,
                     ], static function ($v) {
                         return $v !== null && $v !== '';
                     })
                 );
+
+                // Persist ended_at if available (not mass assignable in model fillable)
+                if ($endedAt !== null) {
+                    try {
+                        $call->ended_at = $endedAt;
+                        $call->save();
+                    } catch (\Throwable $e) {
+                        // non-fatal
+                    }
+                }
 
                 if ($call->wasRecentlyCreated) {
                     $callsCreated++;
