@@ -264,6 +264,9 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     ],
                     [
                         'week_end_date' => $weekEnd->toDateString(),
+                        // Legacy columns kept for compatibility with older schema consumers.
+                        'reporting_period_start' => $weekStart->toDateString(),
+                        'reporting_period_end' => $weekEnd->toDateString(),
                         'total_calls' => $totalCalls,
                         'answered_calls' => (int) $weekly['answered_calls'],
                         'missed_calls' => (int) $weekly['missed_calls'],
