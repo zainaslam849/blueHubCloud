@@ -101,11 +101,11 @@ class AdminCallsController extends Controller
                 $statusRaw = (string) ($call->status ?? '');
                 $status = strtolower($statusRaw);
 
-                $category = in_array($status, ['completed', 'complete', 'success'], true)
+                $category = in_array($status, ['completed', 'complete', 'success', 'answered'], true)
                     ? 'completed'
                     : (in_array($status, ['processing', 'queued', 'running', 'in_progress'], true)
                         ? 'processing'
-                        : (in_array($status, ['failed', 'error'], true) ? 'failed' : $status));
+                        : (in_array($status, ['failed', 'error', 'missed'], true) ? 'failed' : $status));
 
                 if (! in_array($category, ['completed', 'processing', 'failed'], true)) {
                     // Default unknown statuses to processing (neutral-but-informative).
@@ -160,11 +160,11 @@ class AdminCallsController extends Controller
 
         $callStatusRaw = (string) ($call->status ?? '');
         $callStatus = strtolower($callStatusRaw);
-        $callStatusCategory = in_array($callStatus, ['completed', 'complete', 'success'], true)
+        $callStatusCategory = in_array($callStatus, ['completed', 'complete', 'success', 'answered'], true)
             ? 'completed'
             : (in_array($callStatus, ['processing', 'queued', 'running', 'in_progress'], true)
                 ? 'processing'
-                : (in_array($callStatus, ['failed', 'error'], true) ? 'failed' : 'processing'));
+                : (in_array($callStatus, ['failed', 'error', 'missed'], true) ? 'failed' : 'processing'));
 
         $transcriptionStatus = (bool) ($call->has_transcription ?? false) ? 'completed' : 'none';
         $transcriptionProvider = (bool) ($call->has_transcription ?? false) ? 'pbxware' : null;

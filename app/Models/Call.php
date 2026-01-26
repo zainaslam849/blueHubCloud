@@ -21,6 +21,8 @@ class Call extends Model
         'status',
         'started_at',
         'duration_seconds',
+        'ended_at',
+        'weekly_call_report_id',
         'has_transcription',
         'transcript_text',
     ];

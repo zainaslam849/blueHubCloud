@@ -125,11 +125,11 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Map PBX CDR disposition/status to final internal status
                 $rawDisposition = is_string($status) ? strtoupper(trim($status)) : strtoupper((string) $status);
                 if ($rawDisposition === 'ANSWERED') {
-                    $finalStatus = 'ANSWERED';
+                    $finalStatus = 'answered';
                 } elseif (in_array($rawDisposition, ['NO ANSWER', 'NO_ANSWER', 'BUSY', 'FAILED'], true)) {
-                    $finalStatus = 'MISSED';
+                    $finalStatus = 'missed';
                 } else {
-                    $finalStatus = 'UNKNOWN';
+                    $finalStatus = 'unknown';
                 }
 
                 // Ensure duration is an integer billsec
