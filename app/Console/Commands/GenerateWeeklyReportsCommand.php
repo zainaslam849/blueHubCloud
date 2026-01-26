@@ -22,7 +22,7 @@ class GenerateWeeklyReportsCommand extends Command
             return self::FAILURE;
         }
 
-        GenerateWeeklyPbxReportsJob::dispatch(
+        GenerateWeeklyPbxReportsJob::dispatchSync(
             $fromDate->toDateString(),
             $toDate->toDateString(),
         );
