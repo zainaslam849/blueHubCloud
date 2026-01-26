@@ -3,9 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\CallRecording;
-use App\Models\CallSpeakerSegment;
-use App\Models\CallTranscription;
+use App\Models\Call;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
@@ -29,10 +27,7 @@ class AdminTranscriptionsController extends Controller
         $allowedSort = [
             'id',
             'created_at',
-            'provider_name',
-            'language',
-            'duration_seconds',
-            'call_uid',
+            'pbx_unique_id',
             'company',
         ];
 
@@ -40,36 +35,34 @@ class AdminTranscriptionsController extends Controller
             $sort = 'created_at';
         }
 
-        $query = CallTranscription::query()
+        $query = Call::query()
             ->select([
-                'call_transcriptions.*',
-                'calls.call_uid as call_uid',
+                'calls.*',
                 'companies.name as company_name',
             ])
-            ->leftJoin('calls', 'calls.id', '=', 'call_transcriptions.call_id')
-            ->leftJoin('companies', 'companies.id', '=', 'calls.company_id');
+            ->leftJoin('companies', 'companies.id', '=', 'calls.company_id')
+            ->where('calls.has_transcription', true);
 
-        if ($sort === 'call_uid') {
-            $query->orderBy('calls.call_uid', $direction);
+        if ($sort === 'pbx_unique_id') {
+            $query->orderBy('calls.pbx_unique_id', $direction);
         } elseif ($sort === 'company') {
             $query->orderBy('companies.name', $direction);
         } else {
-            $query->orderBy("call_transcriptions.{$sort}", $direction);
+            $query->orderBy("calls.{$sort}", $direction);
         }
 
-        $query->orderBy('call_transcriptions.id', 'desc');
+        $query->orderBy('calls.id', 'desc');
 
         $paginator = $query->paginate($perPage)->appends($request->query());
 
-        $items = collect($paginator->items())->map(function (CallTranscription $t) {
+        $items = collect($paginator->items())->map(function (Call $call) {
             return [
-                'id' => $t->id,
-                'callId' => $t->getAttribute('call_uid'),
-                'company' => $t->getAttribute('company_name'),
-                'provider' => (string) ($t->provider_name ?? ''),
-                'language' => (string) ($t->language ?? ''),
-                'durationSeconds' => (int) ($t->duration_seconds ?? 0),
-                'createdAt' => optional($t->created_at)->toISOString(),
+                'id' => $call->id,
+                'callId' => (string) ($call->pbx_unique_id ?? ''),
+                'company' => (string) ($call->getAttribute('company_name') ?? ''),
+                'provider' => 'pbxware',
+                'durationSeconds' => (int) ($call->duration_seconds ?? 0),
+                'createdAt' => optional($call->created_at)->toISOString(),
             ];
         })->values();
 
@@ -95,79 +88,37 @@ class AdminTranscriptionsController extends Controller
             throw new ModelNotFoundException();
         }
 
-        $t = CallTranscription::query()
-            ->with(['call.company'])
+        $call = Call::query()
+            ->with(['company:id,name'])
             ->findOrFail($idInt);
 
-        $call = $t->call;
-        $company = $call?->company;
-
-        $segments = [];
-        if ($call) {
-            $segments = CallSpeakerSegment::query()
-                ->where('call_id', $call->id)
-                ->orderBy('start_second')
-                ->orderBy('id')
-                ->get()
-                ->map(function (CallSpeakerSegment $s) {
-                    return [
-                        'id' => $s->id,
-                        'speaker' => (string) ($s->speaker_label ?? ''),
-                        'startSecond' => (int) ($s->start_second ?? 0),
-                        'endSecond' => (int) ($s->end_second ?? 0),
-                        'text' => (string) ($s->text ?? ''),
-                        'createdAt' => optional($s->created_at)->toISOString(),
-                    ];
-                })
-                ->values()
-                ->all();
+        if (! (bool) ($call->has_transcription ?? false)) {
+            throw new ModelNotFoundException();
         }
 
-        $recording = null;
-        if ($call) {
-            $rec = CallRecording::query()
-                ->where('call_id', $call->id)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->first();
-
-            if ($rec) {
-                $recording = [
-                    'id' => $rec->id,
-                    'status' => (string) ($rec->status ?? ''),
-                    'durationSeconds' => (int) ($rec->recording_duration ?? 0),
-                    'createdAt' => optional($rec->created_at)->toISOString(),
-                ];
-            }
-        }
+        $company = $call->company;
 
         return response()->json([
             'transcription' => [
-                'id' => $t->id,
-                'provider' => (string) ($t->provider_name ?? ''),
-                'language' => (string) ($t->language ?? ''),
-                'durationSeconds' => (int) ($t->duration_seconds ?? 0),
-                'confidenceScore' => $t->confidence_score,
-                'createdAt' => optional($t->created_at)->toISOString(),
-                'updatedAt' => optional($t->updated_at)->toISOString(),
-                'text' => (string) ($t->transcript_text ?? ''),
+                'provider' => 'pbxware',
+                'durationSeconds' => (int) ($call->duration_seconds ?? 0),
+                'createdAt' => optional($call->created_at)->toISOString(),
+                'updatedAt' => optional($call->updated_at)->toISOString(),
+                'text' => (string) ($call->transcript_text ?? ''),
             ],
             'call' => $call ? [
                 'id' => $call->id,
-                'callId' => (string) ($call->call_uid ?? ''),
+                'callId' => (string) ($call->pbx_unique_id ?? ''),
                 'direction' => (string) ($call->direction ?? ''),
-                'fromNumber' => (string) ($call->from_number ?? ''),
-                'toNumber' => (string) ($call->to_number ?? ''),
+                'from' => (string) ($call->from ?? ''),
+                'to' => (string) ($call->to ?? ''),
                 'startedAt' => optional($call->started_at)->toISOString(),
-                'endedAt' => optional($call->ended_at)->toISOString(),
                 'durationSeconds' => (int) ($call->duration_seconds ?? 0),
             ] : null,
             'company' => $company ? [
                 'id' => $company->id,
                 'name' => (string) ($company->name ?? ''),
             ] : null,
-            'recording' => $recording,
-            'segments' => $segments,
         ]);
     }
 }

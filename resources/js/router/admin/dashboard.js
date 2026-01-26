@@ -5,7 +5,7 @@ import adminApi from "./api";
 //
 // Expected response shape:
 // {
-//   kpis: { calls, recordings, jobs, users },
+//   kpis: { calls, jobs, users },
 //   statuses: { active, processing, failed },
 //   queue: { workers, jobs, failures },
 //   recentActivity: Array<...>,
@@ -28,13 +28,6 @@ export async function fetchAdminDashboard() {
                 value: 12480,
                 period: "Last 7 days",
                 status: "active",
-            },
-            recordings: {
-                key: "recordings",
-                label: "Recordings",
-                value: 3217,
-                period: "Stored securely",
-                status: "processing",
             },
             jobs: {
                 key: "jobs",
@@ -84,18 +77,10 @@ export async function fetchAdminDashboard() {
                 occurredAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
             },
             {
-                id: "rec-9911",
-                type: "recording",
-                title: "Recording saved",
-                description: "duration: 03:14 • codec: opus",
-                status: "active",
-                occurredAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-            },
-            {
                 id: "job-1839",
                 type: "job",
                 title: "Transcription job #1839",
-                description: "source: recordings • language: en",
+                description: "source: calls",
                 status: "failed",
                 occurredAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
             },

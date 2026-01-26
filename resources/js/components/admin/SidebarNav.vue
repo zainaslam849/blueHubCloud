@@ -106,25 +106,6 @@
                     </svg>
 
                     <svg
-                        v-else-if="item.icon === 'recordings'"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <path
-                            d="M12 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                        />
-                        <path
-                            d="M4 12s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6Z"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            stroke-linejoin="round"
-                        />
-                    </svg>
-
-                    <svg
                         v-else-if="item.icon === 'transcriptions'"
                         viewBox="0 0 24 24"
                         fill="none"
@@ -144,6 +125,37 @@
                         />
                         <path
                             d="M6 17h10"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                    </svg>
+
+                    <svg
+                        v-else-if="item.icon === 'reports'"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path
+                            d="M4 4h16v16H4V4Z"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                        />
+                        <path
+                            d="M8 14v2"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M12 11v5"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M16 8v8"
                             stroke="currentColor"
                             stroke-width="1.8"
                             stroke-linecap="round"

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Mock PBX client for local development.
  *
- * Deterministic, returns tenant servers, CDR records, and transcriptions.
+ * Deterministic, returns CDR records and transcriptions.
  */
 class MockPbxwareClient
 {
@@ -25,7 +25,6 @@ class MockPbxwareClient
         //   csv[2] = epoch seconds
         //   csv[6] = status
         //   csv[7] = uniqueid
-        //   csv[9] = recording available
         $header = [
             'col0',
             'col1',
@@ -36,7 +35,7 @@ class MockPbxwareClient
             'status',
             'uniqueid',
             'col8',
-            'recording_available',
+            'col9',
         ];
 
         $csv = [];
@@ -53,7 +52,7 @@ class MockPbxwareClient
                 '8',
                 $uniqueid,
                 '',
-                $i % 2 === 0 ? '1' : '0',
+                '',
             ];
         }
 
@@ -70,10 +69,6 @@ class MockPbxwareClient
         $uniqueid = trim($uniqueid);
 
         return [
-            'provider_name' => 'pbxware',
-            'language' => 'en',
-            'confidence_score' => 0.9,
-            'duration_seconds' => 60,
             'transcript_text' => $uniqueid !== '' ? "Mock transcript for {$uniqueid}" : 'Mock transcript',
         ];
     }
@@ -90,13 +85,6 @@ class MockPbxwareClient
 
         if ($action === 'pbxware.transcription.get') {
             return $this->fetchTranscription($params);
-        }
-
-        if ($action === 'pbxware.ext.list') {
-            return [
-                ['extension' => '1001', 'name' => 'Mock User 1'],
-                ['extension' => '1002', 'name' => 'Mock User 2'],
-            ];
         }
 
         // Unknown action

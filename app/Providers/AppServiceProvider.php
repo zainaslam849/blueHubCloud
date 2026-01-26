@@ -2,8 +2,9 @@
 
 namespace App\Providers;
 
-use App\Contracts\TranscriptionService;
-use App\Services\OpenAIWhisperTranscriptionService;
+use App\Models\WeeklyCallReport;
+use App\Policies\WeeklyCallReportPolicy;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,7 +14,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(TranscriptionService::class, OpenAIWhisperTranscriptionService::class);
+        // Intentionally empty.
     }
 
     /**
@@ -21,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Register policies
+        Gate::policy(WeeklyCallReport::class, WeeklyCallReportPolicy::class);
     }
 }

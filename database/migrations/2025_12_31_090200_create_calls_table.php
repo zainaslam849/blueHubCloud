@@ -22,14 +22,22 @@ return new class extends Migration
                 ->constrained('company_pbx_accounts')
                 ->cascadeOnDelete();
 
-            $table->string('call_uid')->unique();
-            $table->string('direction')->index();
-            $table->string('from_number')->nullable();
-            $table->string('to_number')->nullable();
-            $table->timestamp('started_at')->index();
-            $table->timestamp('ended_at')->nullable();
-            $table->integer('duration_seconds')->default(0);
+            // PBXware does not expose call media downloads. This system relies on PBX-provided transcriptions only.
+            $table->string('server_id')->index();
+            $table->string('pbx_unique_id');
+
+            $table->string('from')->nullable();
+            $table->string('to')->nullable();
+
+            $table->string('direction')->default('unknown')->index();
             $table->string('status')->index();
+            $table->timestamp('started_at')->index();
+            $table->integer('duration_seconds')->default(0);
+
+            $table->boolean('has_transcription')->default(false)->index();
+            $table->longText('transcript_text')->nullable();
+
+            $table->unique(['company_pbx_account_id', 'server_id', 'pbx_unique_id'], 'calls_account_server_pbx_unique');
 
             $table->timestamps();
         });

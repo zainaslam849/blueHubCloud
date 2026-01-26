@@ -39,8 +39,8 @@ class WeeklyReportAggregationService
                 'company_id',
                 'duration_seconds',
                 'status',
-                'from_number',
-                'to_number',
+                'from',
+                'to',
                 'started_at',
             ])
             ->where('company_id', $companyId);
@@ -92,7 +92,7 @@ class WeeklyReportAggregationService
                     $accumulators[$key]['short_calls_count']++;
                 }
 
-                $extension = $this->extractExtension($call->from_number) ?? $this->extractExtension($call->to_number);
+                $extension = $this->extractExtension($call->from) ?? $this->extractExtension($call->to);
                 if ($extension) {
                     $accumulators[$key]['top_extensions'][$extension] = ($accumulators[$key]['top_extensions'][$extension] ?? 0) + 1;
                 }
@@ -189,10 +189,11 @@ class WeeklyReportAggregationService
 
         $counts = [];
 
-        DB::table('call_transcriptions')
+        DB::table('calls')
             ->select(['transcript_text'])
-            ->whereIn('call_id', $callIds)
-            ->orderBy('call_id')
+            ->whereIn('id', $callIds)
+            ->where('has_transcription', true)
+            ->orderBy('id')
             ->chunk(200, function ($rows) use (&$counts, $stop) {
                 foreach ($rows as $row) {
                     $text = is_string($row->transcript_text ?? null) ? $row->transcript_text : '';

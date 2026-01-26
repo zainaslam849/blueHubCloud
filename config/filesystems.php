@@ -24,7 +24,7 @@ return [
     | may even configure multiple disks for the same driver. Examples for
     | most supported storage drivers are configured here for reference.
     |
-    | Supported Drivers: "local", "ftp", "sftp", "s3"
+    | Supported Drivers: "local", "ftp", "sftp"
     |
     */
 
@@ -41,19 +41,6 @@ return [
             'root' => storage_path('app/public'),
             'url' => env('APP_URL').'/storage',
             'visibility' => 'public',
-            'throw' => false,
-        ],
-
-        's3' => [
-            'driver' => 's3',
-            // Use IAM role when keys are not provided. Avoid passing empty strings.
-            'key' => env('AWS_ACCESS_KEY_ID') ?: null,
-            'secret' => env('AWS_SECRET_ACCESS_KEY') ?: null,
-            'region' => env('AWS_DEFAULT_REGION', 'ap-southeast-2'),
-            'bucket' => env('AWS_BUCKET', 'bluehubcloud-pbx-s3'),
-            'url' => env('AWS_URL'),
-            'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
         ],
 

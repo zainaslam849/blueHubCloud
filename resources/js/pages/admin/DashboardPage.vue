@@ -19,13 +19,13 @@
 
         <section class="admin-kpiGrid" aria-label="Key performance indicators">
             <template v-if="loading">
-                <KpiCardSkeleton v-for="i in 4" :key="i" />
+                <KpiCardSkeleton v-for="i in 3" :key="i" />
             </template>
 
             <template v-else-if="kpis.length === 0">
                 <EmptyState
                     title="No KPI data yet"
-                    description="Once calls, recordings, jobs, and users are tracked, the overview cards will appear here."
+                    description="Once calls, jobs, and users are tracked, the overview cards will appear here."
                 />
             </template>
 
@@ -139,6 +139,6 @@ onMounted(() => {
 });
 
 const queueMeta = computed(() =>
-    loading.value ? "Loading…" : "Last 15 minutes"
+    loading.value ? "Loading…" : "Last 15 minutes",
 );
 </script>

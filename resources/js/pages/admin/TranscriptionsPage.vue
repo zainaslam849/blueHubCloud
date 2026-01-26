@@ -119,7 +119,6 @@ const columns = ref([
     { key: "callId", label: "Call ID" },
     { key: "company", label: "Company" },
     { key: "provider", label: "Provider" },
-    { key: "language", label: "Language" },
     {
         key: "durationSeconds",
         label: "Duration",
@@ -139,7 +138,6 @@ function normalizeRow(item) {
         callId: item.callId,
         company: item.company,
         provider: item.provider,
-        language: item.language,
         durationSeconds: item.durationSeconds,
         createdAt: item.createdAt,
     };
@@ -156,7 +154,7 @@ function formatDuration(seconds) {
     if (hh > 0) {
         return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(
             2,
-            "0"
+            "0",
         )}`;
     }
 
@@ -206,7 +204,7 @@ watch(
     () => {
         page.value = 1;
         fetchTranscriptions();
-    }
+    },
 );
 
 onMounted(() => {

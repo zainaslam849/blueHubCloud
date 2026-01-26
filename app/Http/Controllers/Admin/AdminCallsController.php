@@ -4,8 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Call;
-use App\Models\CallRecording;
-use App\Models\CallTranscription;
 use Illuminate\Http\Request;
 
 class AdminCallsController extends Controller
@@ -28,7 +26,7 @@ class AdminCallsController extends Controller
 
         $allowedSort = [
             'id',
-            'call_uid',
+            'pbx_unique_id',
             'duration_seconds',
             'status',
             'created_at',
@@ -68,11 +66,11 @@ class AdminCallsController extends Controller
                     $q->orWhere('calls.id', $numericId);
                 }
 
-                $q->orWhere('calls.call_uid', 'like', "%{$search}%")
+                $q->orWhere('calls.pbx_unique_id', 'like', "%{$search}%")
                     ->orWhere('calls.status', 'like', "%{$search}%")
                     ->orWhere('calls.direction', 'like', "%{$search}%")
-                    ->orWhere('calls.from_number', 'like', "%{$search}%")
-                    ->orWhere('calls.to_number', 'like', "%{$search}%");
+                    ->orWhere('calls.from', 'like', "%{$search}%")
+                    ->orWhere('calls.to', 'like', "%{$search}%");
 
                 // If companies join is present, allow company-name searching.
                 $q->orWhere('companies.name', 'like', "%{$search}%");
@@ -116,7 +114,7 @@ class AdminCallsController extends Controller
 
                 return [
                     'id' => $call->id,
-                    'callId' => $call->call_uid,
+                    'callId' => $call->pbx_unique_id,
                     'company' => $call->company?->name ?? '—',
                     'provider' => $providerName,
                     'durationSeconds' => (int) ($call->duration_seconds ?? 0),
@@ -144,13 +142,11 @@ class AdminCallsController extends Controller
                 'company:id,name,timezone,status',
                 'companyPbxAccount:id,pbx_provider_id,pbx_name,company_id',
                 'companyPbxAccount.pbxProvider:id,name,slug,status',
-                'callRecordings',
-                'callTranscriptions',
             ]);
 
         $call = ctype_digit($idOrUid)
             ? $callQuery->find((int) $idOrUid)
-            : $callQuery->where('call_uid', $idOrUid)->first();
+            : $callQuery->where('pbx_unique_id', $idOrUid)->first();
 
         if (! $call) {
             return response()->json([
@@ -170,30 +166,8 @@ class AdminCallsController extends Controller
                 ? 'processing'
                 : (in_array($callStatus, ['failed', 'error'], true) ? 'failed' : 'processing'));
 
-        /** @var \Illuminate\Support\Collection<int,CallRecording> $recordings */
-        $recordings = $call->callRecordings
-            ->sortByDesc(fn (CallRecording $r) => $r->created_at?->getTimestamp() ?? 0)
-            ->values();
-
-        /** @var \Illuminate\Support\Collection<int,CallTranscription> $transcriptions */
-        $transcriptions = $call->callTranscriptions
-            ->sortByDesc(fn (CallTranscription $t) => $t->created_at?->getTimestamp() ?? 0)
-            ->values();
-
-        $transcriptionStatus = 'processing';
-        $transcriptionProvider = $transcriptions->first()?->provider_name;
-
-        if ($recordings->contains(fn (CallRecording $r) => $r->status === CallRecording::STATUS_FAILED)) {
-            $transcriptionStatus = 'failed';
-        }
-
-        if ($recordings->contains(fn (CallRecording $r) => in_array($r->status, [CallRecording::STATUS_TRANSCRIBED], true))) {
-            $transcriptionStatus = 'completed';
-        } elseif ($recordings->contains(fn (CallRecording $r) => in_array($r->status, [CallRecording::STATUS_TRANSCRIBING], true))) {
-            $transcriptionStatus = 'processing';
-        } elseif ($transcriptions->count() > 0) {
-            $transcriptionStatus = 'completed';
-        }
+        $transcriptionStatus = (bool) ($call->has_transcription ?? false) ? 'completed' : 'none';
+        $transcriptionProvider = (bool) ($call->has_transcription ?? false) ? 'pbxware' : null;
 
         $jobHistory = collect();
 
@@ -206,31 +180,14 @@ class AdminCallsController extends Controller
             'detail' => $call->direction ? "Direction: {$call->direction}" : null,
         ]);
 
-        foreach ($recordings as $rec) {
-            $status = match ($rec->status) {
-                CallRecording::STATUS_FAILED => 'failed',
-                CallRecording::STATUS_COMPLETED, CallRecording::STATUS_TRANSCRIBED => 'completed',
-                default => 'processing',
-            };
-
+        if ((bool) ($call->has_transcription ?? false)) {
             $jobHistory->push([
-                'key' => "recording-{$rec->id}",
-                'type' => 'recording',
-                'label' => 'Recording pipeline',
-                'status' => $status,
-                'occurredAt' => optional($rec->updated_at ?? $rec->created_at)->toISOString(),
-                'detail' => $rec->status,
-            ]);
-        }
-
-        foreach ($transcriptions as $tr) {
-            $jobHistory->push([
-                'key' => "transcription-{$tr->id}",
+                'key' => 'transcription',
                 'type' => 'transcription',
                 'label' => 'Transcription generated',
                 'status' => 'completed',
-                'occurredAt' => optional($tr->created_at)->toISOString(),
-                'detail' => $tr->provider_name ? "Provider: {$tr->provider_name}" : null,
+                'occurredAt' => optional($call->updated_at ?? $call->created_at)->toISOString(),
+                'detail' => 'Provider: pbxware',
             ]);
         }
 
@@ -239,36 +196,22 @@ class AdminCallsController extends Controller
         return response()->json([
             'call' => [
                 'id' => $call->id,
-                'callId' => $call->call_uid,
+                'callId' => $call->pbx_unique_id,
                 'company' => $call->company?->name ?? '—',
                 'provider' => $providerName,
                 'durationSeconds' => (int) ($call->duration_seconds ?? 0),
                 'status' => $callStatusCategory,
                 'createdAt' => optional($call->created_at)->toISOString(),
                 'startedAt' => optional($call->started_at)->toISOString(),
-                'endedAt' => optional($call->ended_at)->toISOString(),
                 'direction' => $call->direction,
-                'fromNumber' => $call->from_number,
-                'toNumber' => $call->to_number,
+                'from' => $call->from,
+                'to' => $call->to,
             ],
-            'recordings' => $recordings->map(function (CallRecording $rec) {
-                return [
-                    'id' => $rec->id,
-                    'status' => (string) $rec->status,
-                    'recordingUrl' => $rec->recording_url,
-                    'storagePath' => $rec->storage_path,
-                    'fileSize' => $rec->file_size,
-                    'durationSeconds' => (int) ($rec->recording_duration ?? 0),
-                    'errorMessage' => $rec->error_message,
-                    'createdAt' => optional($rec->created_at)->toISOString(),
-                    'updatedAt' => optional($rec->updated_at)->toISOString(),
-                ];
-            })->values(),
             'transcription' => [
                 'status' => $transcriptionStatus,
                 'provider' => $transcriptionProvider,
-                'count' => $transcriptions->count(),
-                'lastCreatedAt' => optional($transcriptions->first()?->created_at)->toISOString(),
+                'hasTranscription' => (bool) ($call->has_transcription ?? false),
+                'text' => $call->transcript_text,
             ],
             'jobHistory' => $jobHistory->values(),
             'metadata' => [
@@ -278,7 +221,8 @@ class AdminCallsController extends Controller
                 'pbxAccountId' => $call->company_pbx_account_id,
                 'pbxProviderId' => $call->companyPbxAccount?->pbx_provider_id,
                 'pbxProviderSlug' => $call->companyPbxAccount?->pbxProvider?->slug,
-                'callUid' => $call->call_uid,
+                'pbxUniqueId' => $call->pbx_unique_id,
+                'serverId' => $call->server_id,
             ],
         ]);
     }

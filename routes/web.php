@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
+use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
 use Illuminate\Support\Facades\Route;
 
@@ -19,6 +20,9 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);
         Route::get('/transcriptions/{id}', [AdminTranscriptionsController::class, 'show']);
+        Route::get('/weekly-call-reports', [AdminWeeklyCallReportsController::class, 'index']);
+        Route::get('/weekly-call-reports/{id}', [AdminWeeklyCallReportsController::class, 'show'])
+            ->whereNumber('id');
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/pbx/ingest', [\App\Http\Controllers\Admin\PbxIngestController::class, 'trigger']);
     });

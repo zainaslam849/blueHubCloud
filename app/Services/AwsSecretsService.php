@@ -36,7 +36,6 @@ class AwsSecretsService
         $region = env('PBXWARE_AWS_REGION')
             ?: (config('services.pbxware.aws_region') ?: null)
             ?: (env('AWS_DEFAULT_REGION') ?: null)
-            ?: (config('filesystems.disks.s3.region') ?: null)
             ?: 'ap-southeast-2';
 
         $clientConfig = [

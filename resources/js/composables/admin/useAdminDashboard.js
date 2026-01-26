@@ -61,7 +61,7 @@ export function useAdminDashboard() {
         const k = data.value?.kpis;
         if (!k) return [];
 
-        const list = [k.calls, k.recordings, k.jobs, k.users].filter(Boolean);
+        const list = [k.calls, k.jobs, k.users].filter(Boolean);
 
         return list.map((item) => ({
             key: item.key,
@@ -72,8 +72,8 @@ export function useAdminDashboard() {
                 item.status === "active"
                     ? "Active"
                     : item.status === "processing"
-                    ? "Processing"
-                    : "Failed",
+                      ? "Processing"
+                      : "Failed",
             badgeVariant: item.status,
             icon: item.key,
         }));
@@ -155,8 +155,8 @@ export function useAdminDashboard() {
                 it.status === "active"
                     ? "Active"
                     : it.status === "processing"
-                    ? "Processing"
-                    : "Failed",
+                      ? "Processing"
+                      : "Failed",
             statusVariant: it.status,
             time: formatRelativeTime(it.occurredAt),
         }));

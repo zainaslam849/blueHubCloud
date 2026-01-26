@@ -91,111 +91,45 @@
             </BaseCard>
 
             <BaseCard
-                title="Recording"
-                description="Audio assets for this call"
-                variant="glass"
-            >
-                <div v-if="loading" class="admin-skeletonLines">
-                    <div class="admin-skeleton admin-skeleton--line" />
-                    <div class="admin-skeleton admin-skeleton--line" />
-                </div>
-
-                <div v-else-if="recordings.length === 0" class="admin-empty">
-                    <div class="admin-empty__title">No recording</div>
-                    <div class="admin-empty__desc">
-                        No recording has been attached to this call yet.
-                    </div>
-                </div>
-
-                <div v-else class="admin-list">
-                    <div
-                        v-for="rec in recordings"
-                        :key="rec.id"
-                        class="admin-list__row"
-                    >
-                        <div class="admin-list__main">
-                            <div class="admin-list__title">
-                                Recording #{{ rec.id }}
-                                <BaseBadge
-                                    :variant="recordingBadgeVariant(rec.status)"
-                                >
-                                    {{ String(rec.status || "").toUpperCase() }}
-                                </BaseBadge>
-                            </div>
-                            <div class="admin-list__sub admin-callsMono">
-                                {{ formatDuration(rec.durationSeconds) }}
-                                <span v-if="rec.storagePath"
-                                    >• {{ rec.storagePath }}</span
-                                >
-                            </div>
-                            <div
-                                v-if="rec.errorMessage"
-                                class="admin-alert admin-alert--error"
-                                style="margin-top: 10px"
-                            >
-                                {{ rec.errorMessage }}
-                            </div>
-                        </div>
-
-                        <div class="admin-list__actions">
-                            <BaseButton
-                                v-if="rec.recordingUrl"
-                                variant="ghost"
-                                size="sm"
-                                :href="rec.recordingUrl"
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                View
-                            </BaseButton>
-                        </div>
-                    </div>
-                </div>
-            </BaseCard>
-
-            <BaseCard
                 title="Transcription"
-                description="Speech-to-text pipeline status"
+                description="PBX-provided transcript"
                 variant="glass"
             >
                 <div v-if="loading" class="admin-skeletonLines">
                     <div class="admin-skeleton admin-skeleton--line" />
+                </div>
+
+                <div
+                    v-else-if="!transcription?.hasTranscription"
+                    class="admin-empty"
+                >
+                    <div class="admin-empty__title">No transcription</div>
+                    <div class="admin-empty__desc">
+                        This call does not have a PBX-provided transcript.
+                    </div>
                 </div>
 
                 <div v-else class="admin-kvGrid">
                     <div class="admin-kv">
                         <div class="admin-kv__k">Status</div>
                         <div class="admin-kv__v">
-                            <BaseBadge
-                                :variant="badgeVariant(transcription?.status)"
-                            >
-                                {{
-                                    String(
-                                        transcription?.status || ""
-                                    ).toUpperCase() || "—"
-                                }}
-                            </BaseBadge>
+                            <BaseBadge variant="active">COMPLETED</BaseBadge>
                         </div>
                     </div>
 
                     <div class="admin-kv">
                         <div class="admin-kv__k">Provider</div>
                         <div class="admin-kv__v">
-                            {{ transcription?.provider ?? "—" }}
+                            {{ transcription?.provider ?? "pbxware" }}
                         </div>
                     </div>
 
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Count</div>
+                    <div class="admin-kv" style="grid-column: 1 / -1">
+                        <div class="admin-kv__k">Text</div>
                         <div class="admin-kv__v">
-                            {{ transcription?.count ?? 0 }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Last update</div>
-                        <div class="admin-kv__v admin-callsMono">
-                            {{ formatDate(transcription?.lastCreatedAt) }}
+                            <pre class="admin-transcriptText">{{
+                                transcription?.text || ""
+                            }}</pre>
                         </div>
                     </div>
                 </div>
@@ -203,7 +137,7 @@
 
             <BaseCard
                 title="Job History"
-                description="Ingestion, transcription, and AI jobs"
+                description="Ingestion and transcription events"
                 variant="glass"
             >
                 <div v-if="loading" class="admin-skeletonLines">
@@ -287,7 +221,6 @@ const loading = ref(true);
 const error = ref("");
 
 const call = ref(null);
-const recordings = ref([]);
 const transcription = ref(null);
 const jobHistory = ref([]);
 const metadata = ref({});
@@ -296,13 +229,6 @@ function badgeVariant(status) {
     const s = String(status || "").toLowerCase();
     if (s === "completed") return "active";
     if (s === "failed") return "failed";
-    return "processing";
-}
-
-function recordingBadgeVariant(status) {
-    const s = String(status || "").toLowerCase();
-    if (["failed"].includes(s)) return "failed";
-    if (["completed", "transcribed"].includes(s)) return "active";
     return "processing";
 }
 
@@ -317,7 +243,7 @@ function formatDuration(seconds) {
     if (hh > 0) {
         return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(
             2,
-            "0"
+            "0",
         )}`;
     }
 
@@ -342,9 +268,6 @@ async function fetchDetail() {
         const data = res?.data;
 
         call.value = data?.call ?? null;
-        recordings.value = Array.isArray(data?.recordings)
-            ? data.recordings
-            : [];
         transcription.value = data?.transcription ?? null;
         jobHistory.value = Array.isArray(data?.jobHistory)
             ? data.jobHistory
@@ -352,7 +275,6 @@ async function fetchDetail() {
         metadata.value = data?.metadata ?? {};
     } catch (e) {
         call.value = null;
-        recordings.value = [];
         transcription.value = null;
         jobHistory.value = [];
         metadata.value = {};
@@ -403,7 +325,16 @@ const metadataRows = computed(() => {
             label: "PBX provider slug",
             value: String(m.pbxProviderSlug ?? "—"),
         },
-        { key: "callUid", label: "Call UID", value: String(m.callUid ?? "—") },
+        {
+            key: "pbxUniqueId",
+            label: "PBX unique ID",
+            value: String(m.pbxUniqueId ?? "—"),
+        },
+        {
+            key: "serverId",
+            label: "Server ID",
+            value: String(m.serverId ?? "—"),
+        },
     ];
 });
 
@@ -411,7 +342,7 @@ watch(
     () => route.params.id,
     () => {
         fetchDetail();
-    }
+    },
 );
 
 onMounted(() => {

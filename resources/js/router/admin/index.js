@@ -39,19 +39,6 @@ const router = createRouter({
             component: () => import("../../pages/admin/CallDetailPage.vue"),
         },
         {
-            path: "/recordings",
-            name: "admin.recordings",
-            meta: { title: "Recordings", breadcrumb: "Recordings" },
-            component: () => import("../../pages/admin/RecordingsPage.vue"),
-        },
-        {
-            path: "/recordings/:id",
-            name: "admin.recordings.detail",
-            meta: { title: "Recording Detail", breadcrumb: "Recording" },
-            component: () =>
-                import("../../pages/admin/RecordingDetailPage.vue"),
-        },
-        {
             path: "/transcriptions",
             name: "admin.transcriptions",
             meta: { title: "Transcriptions", breadcrumb: "Transcriptions" },
@@ -63,6 +50,20 @@ const router = createRouter({
             meta: { title: "Transcription", breadcrumb: "Transcription" },
             component: () =>
                 import("../../pages/admin/TranscriptionDetailPage.vue"),
+        },
+        {
+            path: "/weekly-call-reports",
+            name: "admin.weeklyReports",
+            meta: { title: "Weekly Call Reports", breadcrumb: "Weekly Reports" },
+            component: () =>
+                import("../../pages/admin/WeeklyCallReportsPage.vue"),
+        },
+        {
+            path: "/weekly-call-reports/:id",
+            name: "admin.weeklyReports.detail",
+            meta: { title: "Weekly Report", breadcrumb: "Weekly Report" },
+            component: () =>
+                import("../../pages/admin/WeeklyReportDetailPage.vue"),
         },
         {
             path: "/jobs",

@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\Call;
 use App\Models\CompanyPbxAccount;
-use App\Models\CallTranscription;
 use App\Services\Pbx\PbxClientResolver;
 use Illuminate\Support\Facades\Config;
 use App\Exceptions\PbxwareClientException;
@@ -60,7 +59,7 @@ class IngestPbxCallsJob implements ShouldQueue
             // Authoritative PBXware flow:
             // - pbxware.cdr.download returns CDR records for a server/date range
             // - For each NEW call, pull transcription via pbxware.transcription.get
-            // - No recording downloads
+            // PBXware does not expose call media downloads. This system relies on PBX-provided transcriptions only.
 
             $range = $this->determineRequestedRange();
 
@@ -103,12 +102,15 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Bluehub PBXWare API contract (fixed column indexes):
                 // - csv[2] = Date/Time (epoch seconds)
                 // - csv[6] = Status
-                // - csv[7] = Unique ID (call_uid)
-                // - csv[9] = Recording Available
+                // - csv[7] = Unique ID
                 $epoch = $row[2] ?? null;
                 $status = $row[6] ?? null;
                 $callUid = $row[7] ?? null;
-                $recordingAvailableRaw = $row[9] ?? null;
+
+                $durationSeconds = null;
+                if (array_key_exists(3, $row) && is_numeric($row[3])) {
+                    $durationSeconds = (int) $row[3];
+                }
 
                 $callUid = is_string($callUid) ? trim($callUid) : trim((string) $callUid);
                 $status = is_string($status) ? trim($status) : trim((string) $status);
@@ -119,19 +121,23 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
 
                 $startedAt = \Carbon\Carbon::createFromTimestamp((int) $epoch)->toDateTimeString();
-                $recordingAvailable = $this->truthy($recordingAvailableRaw);
-
-                $call = Call::firstOrCreate(
-                    ['call_uid' => $callUid],
+                $call = Call::updateOrCreate(
+                    [
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        'server_id' => $serverId,
+                        'pbx_unique_id' => $callUid,
+                    ],
                     array_filter([
                         'company_id' => $this->companyId,
-                        'company_pbx_account_id' => $this->companyPbxAccountId,
-                        // Direction is not provided/required by the Bluehub PBXware CDR contract.
-                        // Use a stable placeholder to satisfy schema constraints.
+                        // Direction/from/to are not provided by the authoritative Bluehub PBXware CDR contract.
+                        // Use stable placeholders to satisfy schema constraints.
                         'direction' => 'unknown',
+                        'from' => null,
+                        'to' => null,
                         'started_at' => $startedAt,
                         'status' => $status,
-                        'recording_available' => $recordingAvailable,
+                        // Best-effort: if a numeric duration column exists in the CDR row, persist it.
+                        'duration_seconds' => $durationSeconds,
                     ], static function ($v) {
                         return $v !== null && $v !== '';
                     })
@@ -143,72 +149,71 @@ class IngestPbxCallsJob implements ShouldQueue
                     $callsSkipped++;
                 }
 
-                // If we already have a PBXware transcription for this call, skip.
-                $hasTranscription = CallTranscription::query()
-                    ->where('call_id', $call->id)
-                    ->where('provider_name', 'pbxware')
-                    ->exists();
-                if ($hasTranscription) {
+                // If we already have transcription stored on the call, skip.
+                if ((bool) ($call->has_transcription ?? false) && is_string($call->transcript_text ?? null) && trim((string) $call->transcript_text) !== '') {
                     continue;
                 }
 
-                $transcriptionResult = method_exists($client, 'fetchTranscription')
-                    ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
-                    : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
+                // Important: "No transcription found" is not an error. Do not throw/retry.
+                try {
+                    $transcriptionResult = method_exists($client, 'fetchTranscription')
+                        ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
+                        : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
+                } catch (PbxwareClientException $e) {
+                    Log::info('PBXware transcription not available (non-fatal)', [
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        'server_id' => $serverId,
+                        'pbx_unique_id' => $callUid,
+                        'message' => $e->getMessage(),
+                    ]);
+                    continue;
+                }
 
-                    $transcriptText = null;
-                    $language = 'en';
-                    $confidence = null;
-                    $durationSeconds = $call->duration_seconds ?? 0;
+                $transcriptText = null;
 
-                    if (is_string($transcriptionResult)) {
-                        $transcriptText = trim($transcriptionResult);
-                    } elseif (is_array($transcriptionResult)) {
-                        $lower = [];
-                        foreach ($transcriptionResult as $k => $v) {
-                            $lower[strtolower((string) $k)] = $v;
-                        }
-
-                        if (isset($lower['language']) && is_string($lower['language']) && trim($lower['language']) !== '') {
-                            $language = trim($lower['language']);
-                        }
-                        if (isset($lower['confidence']) && is_numeric($lower['confidence'])) {
-                            $confidence = (float) $lower['confidence'];
-                        }
-                        if (isset($lower['confidence_score']) && is_numeric($lower['confidence_score'])) {
-                            $confidence = (float) $lower['confidence_score'];
-                        }
-                        if (isset($lower['duration_seconds']) && is_numeric($lower['duration_seconds'])) {
-                            $durationSeconds = (int) $lower['duration_seconds'];
-                        }
-
-                        $transcriptText = $this->firstNonEmpty([
-                            $lower['transcript_text'] ?? null,
-                            $lower['transcription'] ?? null,
-                            $lower['transcript'] ?? null,
-                            $lower['text'] ?? null,
-                        ]);
-                        $transcriptText = is_string($transcriptText) ? trim($transcriptText) : null;
+                if (is_string($transcriptionResult)) {
+                    $transcriptText = trim($transcriptionResult);
+                } elseif (is_array($transcriptionResult)) {
+                    $lower = [];
+                    foreach ($transcriptionResult as $k => $v) {
+                        $lower[strtolower((string) $k)] = $v;
                     }
 
-                    if (is_string($transcriptText) && $transcriptText !== '') {
-                        $created = CallTranscription::firstOrCreate(
-                            [
-                                'call_id' => $call->id,
-                                'provider_name' => 'pbxware',
-                                'language' => $language,
-                            ],
-                            [
-                                'transcript_text' => $transcriptText,
-                                'duration_seconds' => (int) $durationSeconds,
-                                'confidence_score' => $confidence,
-                            ]
-                        );
-
-                        if ($created->wasRecentlyCreated) {
-                            $transcriptionsStored++;
-                        }
+                    if (
+                        (! is_numeric($call->duration_seconds ?? null) || (int) $call->duration_seconds === 0)
+                        && isset($lower['duration_seconds'])
+                        && is_numeric($lower['duration_seconds'])
+                    ) {
+                        $call->duration_seconds = (int) $lower['duration_seconds'];
                     }
+
+                    $transcriptText = $this->firstNonEmpty([
+                        $lower['transcript_text'] ?? null,
+                        $lower['transcription'] ?? null,
+                        $lower['transcript'] ?? null,
+                        $lower['text'] ?? null,
+                    ]);
+                    $transcriptText = is_string($transcriptText) ? trim($transcriptText) : null;
+                }
+
+                if (is_string($transcriptText)) {
+                    $normalized = trim($transcriptText);
+                    if ($normalized !== '' && stripos($normalized, 'no transcription') === false) {
+                        $call->has_transcription = true;
+                        $call->transcript_text = $normalized;
+                        $call->save();
+                        $transcriptionsStored++;
+                    } else {
+                        // Explicitly mark as no transcription when the API returns a sentinel string.
+                        $call->has_transcription = false;
+                        $call->save();
+                    }
+                } else {
+                    // No transcription provided (non-fatal).
+                    $call->has_transcription = false;
+                    $call->save();
+                }
             }
 
             Log::info('PBXware ingestion summary', [
@@ -324,18 +329,6 @@ class IngestPbxCallsJob implements ShouldQueue
         }
 
         return $csv;
-    }
-
-    private function truthy($value): bool
-    {
-        if ($value === null) {
-            return false;
-        }
-        if (is_bool($value)) {
-            return $value;
-        }
-        $s = strtolower(trim((string) $value));
-        return in_array($s, ['1', 'true', 'yes', 'y', 'on'], true);
     }
 
     private function firstNonEmpty(array $values): ?string

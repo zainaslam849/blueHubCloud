@@ -95,15 +95,6 @@ const navItems = [
         featureKey: "admin_calls",
     },
     {
-        key: "recordings",
-        label: "Recordings",
-        icon: "recordings",
-        to: { name: "admin.recordings" },
-        requiredRoles: ["admin"],
-        requiredPermissions: ["admin.recordings.view"],
-        featureKey: "admin_recordings",
-    },
-    {
         key: "transcriptions",
         label: "Transcriptions",
         icon: "transcriptions",
@@ -111,6 +102,19 @@ const navItems = [
         requiredRoles: ["admin"],
         requiredPermissions: ["admin.transcriptions.view"],
         featureKey: "admin_transcriptions",
+    },
+    {
+        key: "weeklyReports",
+        label: "Weekly Call Reports",
+        icon: "reports",
+        to: { name: "admin.weeklyReports" },
+        // Mark active for both list and detail
+        active: (route) => {
+            return route.path.startsWith("/admin/weekly-call-reports");
+        },
+        requiredRoles: ["admin"],
+        requiredPermissions: ["admin.weeklyReports.view"],
+        featureKey: "admin_weekly_reports",
     },
     {
         key: "jobs",

@@ -4,9 +4,7 @@
             <div>
                 <p class="admin-page__kicker">Insights</p>
                 <h1 class="admin-page__title">Transcription</h1>
-                <p class="admin-page__subtitle">
-                    Read-only viewer with speakers and time markers.
-                </p>
+                <p class="admin-page__subtitle">Read-only transcript viewer.</p>
             </div>
 
             <div class="admin-callsDetailHeader__actions">
@@ -47,23 +45,9 @@
                     </div>
 
                     <div class="admin-kv">
-                        <div class="admin-kv__k">Language</div>
-                        <div class="admin-kv__v admin-transcriptionMono">
-                            {{ t?.language || "—" }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
                         <div class="admin-kv__k">Duration</div>
                         <div class="admin-kv__v admin-transcriptionMono">
                             {{ formatDuration(t?.durationSeconds) }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Segments</div>
-                        <div class="admin-kv__v">
-                            {{ segments.length }}
                         </div>
                     </div>
 
@@ -93,18 +77,6 @@
                         }"
                     >
                         View Call
-                    </BaseButton>
-
-                    <BaseButton
-                        v-if="recording?.id"
-                        variant="ghost"
-                        size="sm"
-                        :to="{
-                            name: 'admin.recordings.detail',
-                            params: { id: recording.id },
-                        }"
-                    >
-                        View Recording
                     </BaseButton>
                 </div>
             </BaseCard>
@@ -144,14 +116,14 @@
                     <div class="admin-kv">
                         <div class="admin-kv__k">From</div>
                         <div class="admin-kv__v admin-transcriptionMono">
-                            {{ call?.fromNumber || "—" }}
+                            {{ call?.from || "—" }}
                         </div>
                     </div>
 
                     <div class="admin-kv">
                         <div class="admin-kv__k">To</div>
                         <div class="admin-kv__v admin-transcriptionMono">
-                            {{ call?.toNumber || "—" }}
+                            {{ call?.to || "—" }}
                         </div>
                     </div>
                 </div>
@@ -177,46 +149,17 @@
                 </div>
 
                 <div v-else class="admin-transcriptPanel">
-                    <template v-if="segments.length">
-                        <div
-                            v-for="seg in segments"
-                            :key="seg.id"
-                            class="admin-transcriptBlock"
-                        >
-                            <div class="admin-transcriptBlock__top">
-                                <span
-                                    class="admin-speakerTag"
-                                    :class="speakerClass(seg.speaker)"
-                                >
-                                    {{ seg.speaker || "Speaker" }}
-                                </span>
-                                <span class="admin-transcriptTime">
-                                    {{ formatMMSS(seg.startSecond) }}–{{
-                                        formatMMSS(seg.endSecond)
-                                    }}
-                                </span>
-                            </div>
-                            <pre class="admin-transcriptText">{{
-                                seg.text
-                            }}</pre>
+                    <div class="admin-transcriptBlock">
+                        <div class="admin-transcriptBlock__top">
+                            <span
+                                class="admin-speakerTag admin-speakerTag--neutral"
+                            >
+                                Transcript
+                            </span>
+                            <span class="admin-transcriptTime">—</span>
                         </div>
-                    </template>
-
-                    <template v-else>
-                        <div class="admin-transcriptBlock">
-                            <div class="admin-transcriptBlock__top">
-                                <span
-                                    class="admin-speakerTag admin-speakerTag--neutral"
-                                >
-                                    Transcript
-                                </span>
-                                <span class="admin-transcriptTime">—</span>
-                            </div>
-                            <pre class="admin-transcriptText">{{
-                                t?.text
-                            }}</pre>
-                        </div>
-                    </template>
+                        <pre class="admin-transcriptText">{{ t?.text }}</pre>
+                    </div>
                 </div>
             </BaseCard>
         </div>
@@ -238,14 +181,10 @@ const error = ref("");
 const t = ref(null);
 const call = ref(null);
 const company = ref(null);
-const recording = ref(null);
-const segments = ref([]);
 
 const transcriptionId = computed(() => String(route.params.id || "").trim());
 
 const hasNoContent = computed(() => {
-    const segs = segments.value;
-    if (Array.isArray(segs) && segs.length > 0) return false;
     return !String(t.value?.text || "").trim();
 });
 
@@ -267,29 +206,11 @@ function formatDuration(seconds) {
     if (hh > 0) {
         return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(
             2,
-            "0"
+            "0",
         )}`;
     }
 
     return `${mm}:${String(ss).padStart(2, "0")}`;
-}
-
-function formatMMSS(seconds) {
-    const s = Number(seconds);
-    if (!Number.isFinite(s) || s < 0) return "—";
-    const mm = Math.floor(s / 60);
-    const ss = Math.floor(s % 60);
-    return `${mm}:${String(ss).padStart(2, "0")}`;
-}
-
-function speakerClass(label) {
-    const v = String(label || "");
-    let hash = 0;
-    for (let i = 0; i < v.length; i += 1) {
-        hash = (hash * 31 + v.charCodeAt(i)) >>> 0;
-    }
-    const idx = (hash % 4) + 1;
-    return `admin-speakerTag--${idx}`;
 }
 
 async function fetchTranscription() {
@@ -301,23 +222,17 @@ async function fetchTranscription() {
 
     try {
         const res = await adminApi.get(
-            `/transcriptions/${encodeURIComponent(id)}`
+            `/transcriptions/${encodeURIComponent(id)}`,
         );
         const payload = res?.data;
 
         t.value = payload?.transcription ?? null;
         call.value = payload?.call ?? null;
         company.value = payload?.company ?? null;
-        recording.value = payload?.recording ?? null;
-        segments.value = Array.isArray(payload?.segments)
-            ? payload.segments
-            : [];
     } catch (e) {
         t.value = null;
         call.value = null;
         company.value = null;
-        recording.value = null;
-        segments.value = [];
         error.value = "Failed to load transcription.";
     } finally {
         loading.value = false;
@@ -332,7 +247,7 @@ watch(
     () => transcriptionId.value,
     () => {
         fetchTranscription();
-    }
+    },
 );
 
 onMounted(() => {

@@ -4,22 +4,25 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Call extends Model
 {
     protected $fillable = [
         'company_id',
         'company_pbx_account_id',
-        'call_uid',
+        'server_id',
+        'pbx_unique_id',
+        'from',
+        'to',
+        'did',
+        'category',
+        'sub_category',
         'direction',
-        'from_number',
-        'to_number',
-        'started_at',
-        'ended_at',
-        'duration_seconds',
-        'recording_available',
         'status',
+        'started_at',
+        'duration_seconds',
+        'has_transcription',
+        'transcript_text',
     ];
 
     public function company(): BelongsTo
@@ -32,18 +35,11 @@ class Call extends Model
         return $this->belongsTo(CompanyPbxAccount::class);
     }
 
-    public function callRecordings(): HasMany
+    /**
+     * Scope to filter calls by weekly report id
+     */
+    public function scopeWhereWeeklyReport($query, $reportId)
     {
-        return $this->hasMany(CallRecording::class);
-    }
-
-    public function callTranscriptions(): HasMany
-    {
-        return $this->hasMany(CallTranscription::class);
-    }
-
-    public function callSpeakerSegments(): HasMany
-    {
-        return $this->hasMany(CallSpeakerSegment::class);
+        return $query->where('weekly_call_report_id', $reportId);
     }
 }

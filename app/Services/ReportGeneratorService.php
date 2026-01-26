@@ -15,7 +15,7 @@ use Throwable;
 class ReportGeneratorService
 {
     /**
-     * Generate a weekly report PDF and store it in object storage.
+    * Generate a weekly report PDF and store it in the configured filesystem disk.
      *
      * @return array{disk:string,path:string,url:string,mime:string}
      */
@@ -30,7 +30,7 @@ class ReportGeneratorService
 
         $pdfBytes = $this->renderPdf($html);
 
-        $disk = (string) config('services.reports.storage_disk', 's3');
+        $disk = (string) config('services.reports.storage_disk', 'local');
         $path = $this->buildStoragePath($report['company_id'], $report['reporting_period_start'], $weeklyReportId, 'pdf');
 
         Storage::disk($disk)->put($path, $pdfBytes, [
@@ -46,7 +46,7 @@ class ReportGeneratorService
     }
 
     /**
-     * Generate a weekly report CSV and store it in object storage.
+        * Generate a weekly report CSV and store it in the configured filesystem disk.
      *
      * @return array{disk:string,path:string,url:string,mime:string}
      */
@@ -56,7 +56,7 @@ class ReportGeneratorService
 
         $csv = $this->renderCsv($report);
 
-        $disk = (string) config('services.reports.storage_disk', 's3');
+        $disk = (string) config('services.reports.storage_disk', 'local');
         $path = $this->buildStoragePath($report['company_id'], $report['reporting_period_start'], $weeklyReportId, 'csv');
 
         Storage::disk($disk)->put($path, $csv, [
@@ -221,7 +221,12 @@ class ReportGeneratorService
             return Storage::disk($disk)->temporaryUrl($path, now()->addMinutes($minutes));
         } catch (Throwable $e) {
             // Fallback for disks that don't support temporary URLs.
-            return Storage::disk($disk)->url($path);
+            try {
+                return Storage::disk($disk)->url($path);
+            } catch (Throwable $e2) {
+                // Local/private disks may not be URL-addressable; return an absolute path.
+                return Storage::disk($disk)->path($path);
+            }
         }
     }
 }

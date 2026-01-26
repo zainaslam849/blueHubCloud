@@ -25,7 +25,8 @@
     --admin-accent-hover-bg: rgba(37, 99, 235, 0.08);
     --admin-accent-hover-ring: rgba(37, 99, 235, 0.1);
 
-    --admin-body-bg: radial-gradient(
+    --admin-body-bg:
+        radial-gradient(
             1100px 500px at 20% -10%,
             rgba(37, 99, 235, 0.12),
             transparent 60%
@@ -48,11 +49,12 @@
     --admin-text-on-accent: #ffffff;
 
     /* Shadows (tokens only; no literal colors in rules) */
-    --admin-shadow-elev-1: 0 1px 0 rgba(15, 23, 42, 0.04),
-        0 10px 30px rgba(15, 23, 42, 0.08);
-    --admin-shadow-elev-2: 0 1px 0 rgba(15, 23, 42, 0.05),
-        0 16px 44px rgba(15, 23, 42, 0.14);
-    --admin-shadow-pop: 0 0 0 3px var(--admin-accent-hover-ring),
+    --admin-shadow-elev-1:
+        0 1px 0 rgba(15, 23, 42, 0.04), 0 10px 30px rgba(15, 23, 42, 0.08);
+    --admin-shadow-elev-2:
+        0 1px 0 rgba(15, 23, 42, 0.05), 0 16px 44px rgba(15, 23, 42, 0.14);
+    --admin-shadow-pop:
+        0 0 0 3px var(--admin-accent-hover-ring),
         0 18px 54px rgba(15, 23, 42, 0.16);
 
     --admin-radius: 14px;
@@ -132,7 +134,8 @@ html[data-theme="dark"] {
     --admin-accent-hover-bg: rgba(110, 168, 255, 0.08);
     --admin-accent-hover-ring: rgba(110, 168, 255, 0.1);
 
-    --admin-body-bg: radial-gradient(
+    --admin-body-bg:
+        radial-gradient(
             1100px 500px at 20% -10%,
             rgba(110, 168, 255, 0.22),
             transparent 60%
@@ -154,11 +157,12 @@ html[data-theme="dark"] {
 
     --admin-text-on-accent: #0b0f1a;
 
-    --admin-shadow-elev-1: 0 1px 0 rgba(0, 0, 0, 0.25),
-        0 12px 34px rgba(0, 0, 0, 0.42);
-    --admin-shadow-elev-2: 0 1px 0 rgba(0, 0, 0, 0.28),
-        0 18px 46px rgba(0, 0, 0, 0.55);
-    --admin-shadow-pop: 0 0 0 3px var(--admin-accent-hover-ring),
+    --admin-shadow-elev-1:
+        0 1px 0 rgba(0, 0, 0, 0.25), 0 12px 34px rgba(0, 0, 0, 0.42);
+    --admin-shadow-elev-2:
+        0 1px 0 rgba(0, 0, 0, 0.28), 0 18px 46px rgba(0, 0, 0, 0.55);
+    --admin-shadow-pop:
+        0 0 0 3px var(--admin-accent-hover-ring),
         0 22px 58px rgba(0, 0, 0, 0.58);
 
     --status-active-bg: rgba(16, 185, 129, 0.16);
@@ -190,8 +194,15 @@ body.admin-body {
     margin: 0;
     background: var(--admin-body-bg);
     color: var(--admin-text);
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
-        Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    font-family:
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Arial,
+        "Apple Color Emoji",
+        "Segoe UI Emoji";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -247,8 +258,12 @@ body.admin-body {
     border-radius: 12px;
     padding: 8px;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-sidebar__collapseBtn:hover {
@@ -286,7 +301,8 @@ body.admin-body {
     width: 34px;
     height: 34px;
     border-radius: 12px;
-    background: radial-gradient(
+    background:
+        radial-gradient(
             16px 16px at 30% 30%,
             var(--admin-logo-glint),
             transparent 60%
@@ -332,8 +348,12 @@ body.admin-body {
     color: var(--admin-text-soft);
     border: 1px solid var(--admin-border-faint);
     background: var(--admin-surface-faint);
-    transition: box-shadow 180ms ease, border-color 180ms ease,
-        transform 180ms ease, background-color 180ms ease, color 180ms ease;
+    transition:
+        box-shadow 180ms ease,
+        border-color 180ms ease,
+        transform 180ms ease,
+        background-color 180ms ease,
+        color 180ms ease;
 }
 
 .admin-nav__link:hover {
@@ -444,8 +464,12 @@ body.admin-body {
     border-radius: 12px;
     padding: 8px;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-iconBtn:hover {
@@ -534,8 +558,12 @@ body.admin-body {
     align-items: center;
     gap: 10px;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-userBtn:hover {
@@ -610,7 +638,9 @@ body.admin-body {
     border-radius: 12px;
     padding: 10px 10px;
     cursor: pointer;
-    transition: background-color 140ms ease, border-color 140ms ease,
+    transition:
+        background-color 140ms ease,
+        border-color 140ms ease,
         transform 140ms ease;
 }
 
@@ -633,8 +663,12 @@ body.admin-body {
     border-radius: 12px;
     padding: 8px;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-themeToggle:hover {
@@ -764,7 +798,9 @@ body.admin-body {
         var(--admin-surface-2)
     );
     padding: 14px;
-    transition: transform 180ms ease, box-shadow 180ms ease,
+    transition:
+        transform 180ms ease,
+        box-shadow 180ms ease,
         border-color 180ms ease;
 }
 
@@ -776,7 +812,9 @@ body.admin-body {
 
 .admin-route-enter-active,
 .admin-route-leave-active {
-    transition: opacity 160ms ease, transform 160ms ease;
+    transition:
+        opacity 160ms ease,
+        transform 160ms ease;
 }
 
 .admin-route-enter-from {
@@ -803,7 +841,8 @@ body.admin-body {
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background: radial-gradient(
+    background:
+        radial-gradient(
             900px 460px at 20% 0%,
             var(--accent-soft),
             transparent 62%
@@ -906,7 +945,9 @@ body.admin-body {
     background: var(--bg-surface-2);
     color: var(--text-primary);
     padding: 10px 12px;
-    transition: box-shadow 160ms ease, border-color 160ms ease,
+    transition:
+        box-shadow 160ms ease,
+        border-color 160ms ease,
         background-color 160ms ease;
 }
 
@@ -922,7 +963,9 @@ body.admin-body {
     background: var(--bg-surface-2);
     color: var(--text-primary);
     padding: 18px 12px 10px;
-    transition: box-shadow 160ms ease, border-color 160ms ease,
+    transition:
+        box-shadow 160ms ease,
+        border-color 160ms ease,
         background-color 160ms ease;
 }
 
@@ -944,7 +987,10 @@ body.admin-body {
     font-weight: 650;
     color: var(--text-secondary);
     transform-origin: left top;
-    transition: transform 160ms ease, color 160ms ease, top 160ms ease,
+    transition:
+        transform 160ms ease,
+        color 160ms ease,
+        top 160ms ease,
         opacity 160ms ease;
     pointer-events: none;
     opacity: 0.92;
@@ -972,8 +1018,12 @@ body.admin-body {
     font-size: 12px;
     font-weight: 650;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-floatField__action:hover {
@@ -1032,7 +1082,10 @@ body.admin-body {
     padding: 10px 12px;
     font-weight: 750;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        filter 160ms ease;
 }
 
 .admin-btn--wide {
@@ -1082,7 +1135,9 @@ body.admin-body {
     display: inline-flex;
     align-items: center;
     padding: 2px;
-    transition: background-color 160ms ease, border-color 160ms ease,
+    transition:
+        background-color 160ms ease,
+        border-color 160ms ease,
         box-shadow 160ms ease;
 }
 
@@ -1157,7 +1212,9 @@ body.admin-body {
 }
 
 .admin-card--hover {
-    transition: transform 160ms ease, box-shadow 160ms ease,
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
         border-color 160ms ease;
 }
 
@@ -1312,8 +1369,12 @@ body.admin-body {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-dropdown__trigger:hover {
@@ -1366,7 +1427,9 @@ body.admin-body {
     border-radius: 12px;
     padding: 10px 10px;
     cursor: pointer;
-    transition: background-color 140ms ease, border-color 140ms ease,
+    transition:
+        background-color 140ms ease,
+        border-color 140ms ease,
         transform 140ms ease;
 }
 
@@ -1436,8 +1499,12 @@ html[data-theme="dark"] .admin-modalOverlay {
     border-radius: 12px;
     padding: 8px;
     cursor: pointer;
-    transition: transform 160ms ease, box-shadow 160ms ease,
-        border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+    transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease;
 }
 
 .admin-modal__close:hover {
@@ -1476,7 +1543,9 @@ html[data-theme="dark"] .admin-modalOverlay {
 
 .admin-modal-enter-active,
 .admin-modal-leave-active {
-    transition: opacity 160ms ease, transform 160ms ease;
+    transition:
+        opacity 160ms ease,
+        transform 160ms ease;
 }
 
 .admin-modal-enter-from,
@@ -1596,8 +1665,12 @@ html[data-theme="dark"] .admin-modalOverlay {
     font-size: 12px;
     font-weight: 750;
     cursor: pointer;
-    transition: transform 140ms ease, background-color 140ms ease,
-        border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+    transition:
+        transform 140ms ease,
+        background-color 140ms ease,
+        border-color 140ms ease,
+        box-shadow 140ms ease,
+        color 140ms ease;
 }
 
 .admin-pagination__page:hover {
@@ -1872,8 +1945,11 @@ html[data-theme="dark"] .admin-modalOverlay {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    transition: background-color 140ms ease, border-color 140ms ease,
-        color 140ms ease, transform 140ms ease;
+    transition:
+        background-color 140ms ease,
+        border-color 140ms ease,
+        color 140ms ease,
+        transform 140ms ease;
 }
 
 .admin-callsSortBtn:hover {
@@ -1902,96 +1978,6 @@ html[data-theme="dark"] .admin-modalOverlay {
 }
 
 .admin-callsFooter {
-    margin-top: 12px;
-}
-
-/* Recordings module */
-.admin-recordingsToolbar {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 12px;
-}
-
-.admin-recordingsToolbar__left {
-    display: inline-flex;
-    align-items: flex-end;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.admin-recordingsToolbar__right {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.admin-recordingsFilters {
-    display: inline-flex;
-    align-items: flex-end;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.admin-recordingsFilters__company {
-    min-width: min(420px, 92vw);
-}
-
-.admin-recordingsFilters__duration {
-    min-width: 160px;
-}
-
-.admin-recordingsSortBtn {
-    appearance: none;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--text-faint);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    font-weight: 750;
-    padding: 6px 8px;
-    border-radius: 12px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    transition: background-color 140ms ease, border-color 140ms ease,
-        color 140ms ease, transform 140ms ease;
-}
-
-.admin-recordingsSortBtn:hover {
-    color: var(--text-primary);
-    background: var(--accent-hover-bg);
-    border-color: var(--accent-border);
-    transform: translateY(-1px);
-}
-
-.admin-recordingsSortBtn:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px var(--focus-ring);
-}
-
-.admin-recordingsSortBtn__chev {
-    color: var(--text-muted);
-    font-size: 11px;
-}
-
-.admin-recordingsCol--right {
-    text-align: right;
-}
-
-.admin-recordingsCol--icon {
-    width: 42px;
-}
-
-.admin-recordingsMono {
-    font-variant-numeric: tabular-nums;
-}
-
-.admin-recordingsFooter {
     margin-top: 12px;
 }
 
@@ -2091,7 +2077,8 @@ html[data-theme="dark"] .admin-modalOverlay {
 
 .admin-transcriptText {
     margin: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
         "Liberation Mono", "Courier New", monospace;
     font-size: 13px;
     line-height: 1.55;
@@ -2138,35 +2125,6 @@ html[data-theme="dark"] .admin-modalOverlay {
 .admin-speakerTag--4 {
     border-color: var(--status-failed-border);
     background: var(--status-failed-bg);
-}
-
-.admin-recordingsAudio {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border-radius: 999px;
-    border: 1px solid var(--border-soft);
-    background: var(--bg-faint);
-}
-
-.admin-recordingsAudio--available {
-    border-color: var(--accent-border);
-    background: var(--accent-soft);
-}
-
-.admin-recordingsActions {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    opacity: 0;
-    transform: translateY(1px);
-    transition: opacity 140ms ease, transform 140ms ease;
-}
-
-.admin-table__tr:hover .admin-recordingsActions,
-.admin-vtable__row:hover .admin-recordingsActions {
-    opacity: 1;
-    transform: translateY(0);
 }
 
 .admin-callsDetailHeader__actions {
@@ -2473,7 +2431,9 @@ html[data-theme="dark"] .admin-modalOverlay {
     border-radius: 14px;
     border: 1px solid var(--admin-border-faint);
     background: var(--admin-surface-faint);
-    transition: transform 180ms ease, border-color 180ms ease,
+    transition:
+        transform 180ms ease,
+        border-color 180ms ease,
         box-shadow 180ms ease;
 }
 
@@ -2719,5 +2679,543 @@ html[data-theme="dark"] .admin-modalOverlay {
         scroll-behavior: auto !important;
         transition: none !important;
         animation: none !important;
+    }
+}
+
+/* ========================================
+   Weekly Report Viewer
+   ======================================== */
+
+.admin-reportHeader__actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.admin-reportSections {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Executive Summary */
+.admin-executiveSummary {
+    padding: 0.5rem 0;
+}
+
+.admin-executiveSummary__text {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: var(--admin-text);
+}
+
+/* Metrics Grid */
+.admin-metricsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.admin-metricCard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: var(--admin-surface-soft);
+    border-radius: 10px;
+    border: 1px solid var(--admin-border-faint);
+}
+
+.admin-metricCard--success {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.2);
+}
+
+.admin-metricCard--warning {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.2);
+}
+
+.admin-metricCard__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.admin-metricCard__icon {
+    width: 20px;
+    height: 20px;
+    color: var(--admin-muted);
+}
+
+.admin-metricCard__icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.admin-metricCard__label {
+    font-size: 0.8rem;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.admin-metricCard__value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--admin-text);
+    line-height: 1.2;
+}
+
+.admin-metricCard__sub {
+    font-size: 0.8rem;
+    color: var(--admin-muted);
+}
+
+.admin-reportTimeRange {
+    display: flex;
+    gap: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--admin-border-faint);
+}
+
+/* Report Section Headers */
+.admin-reportSection {
+    margin-top: 1.5rem;
+}
+
+.admin-reportSection:first-child {
+    margin-top: 0;
+}
+
+.admin-reportSection__title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--admin-text);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.admin-reportSection__icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.admin-reportSection__icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.admin-reportSection__icon--opportunity {
+    color: var(--admin-accent);
+}
+
+.admin-reportSection__icon--recommendation {
+    color: #f59e0b;
+}
+
+/* Tables */
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--admin-border-faint);
+}
+
+.admin-table th {
+    font-weight: 600;
+    color: var(--admin-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: var(--admin-surface-soft);
+}
+
+.admin-table__num {
+    text-align: right;
+}
+
+.admin-table--compact th,
+.admin-table--compact td {
+    padding: 0.5rem 0.75rem;
+}
+
+.admin-table--mini {
+    font-size: 0.8rem;
+}
+
+.admin-table--mini th,
+.admin-table--mini td {
+    padding: 0.35rem 0.5rem;
+}
+
+/* Percent Bar */
+.admin-percentBar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 100px;
+}
+
+.admin-percentBar__fill {
+    height: 6px;
+    background: var(--admin-accent);
+    border-radius: 3px;
+    min-width: 2px;
+}
+
+.admin-percentBar__label {
+    font-size: 0.8rem;
+    color: var(--admin-muted);
+    min-width: 3em;
+    text-align: right;
+}
+
+/* Sub-category Grid */
+.admin-subCategoryGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.admin-subCategoryCard {
+    background: var(--admin-surface-soft);
+    border-radius: 10px;
+    padding: 1rem;
+    border: 1px solid var(--admin-border-faint);
+}
+
+.admin-subCategoryCard__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--admin-border-faint);
+}
+
+.admin-subCategoryCard__name {
+    font-weight: 600;
+    color: var(--admin-text);
+}
+
+.admin-subCategoryCard__count {
+    font-size: 0.8rem;
+    color: var(--admin-muted);
+}
+
+/* Hourly Distribution Grid */
+.admin-hourlyGrid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+}
+
+@media (max-width: 900px) {
+    .admin-hourlyGrid {
+        grid-template-columns: repeat(8, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .admin-hourlyGrid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+}
+
+.admin-hourlyCell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem 0.25rem;
+    background: var(--admin-surface-soft);
+    border-radius: 6px;
+    border: 1px solid var(--admin-border-faint);
+}
+
+.admin-hourlyCell--peak {
+    background: rgba(37, 99, 235, 0.12);
+    border-color: rgba(37, 99, 235, 0.25);
+}
+
+.admin-hourlyCell__hour {
+    font-size: 0.7rem;
+    color: var(--admin-muted);
+    text-transform: lowercase;
+}
+
+.admin-hourlyCell__count {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text);
+}
+
+/* Sample Calls */
+.admin-sampleCallsSection {
+    margin-bottom: 1.5rem;
+}
+
+.admin-sampleCallsSection:last-child {
+    margin-bottom: 0;
+}
+
+.admin-sampleCallsSection__title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--admin-text);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--admin-border-faint);
+}
+
+.admin-sampleCallsList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.admin-sampleCall {
+    background: var(--admin-surface-soft);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--admin-border-faint);
+}
+
+.admin-sampleCall__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.8rem;
+    color: var(--admin-muted);
+    margin-bottom: 0.5rem;
+}
+
+.admin-sampleCall__did,
+.admin-sampleCall__src {
+    color: var(--admin-text-soft);
+}
+
+.admin-sampleCall__transcript {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--admin-text);
+}
+
+/* Insights Container */
+.admin-insightsContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.admin-insightsList {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.admin-insightCard {
+    background: var(--admin-surface-soft);
+    border-radius: 10px;
+    padding: 1rem;
+    border: 1px solid var(--admin-border-faint);
+}
+
+.admin-insightCard--opportunity {
+    background: rgba(37, 99, 235, 0.06);
+    border-color: rgba(37, 99, 235, 0.15);
+}
+
+.admin-insightCard__header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.admin-insightCard__category {
+    font-weight: 600;
+    color: var(--admin-text);
+}
+
+.admin-insightCard__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.admin-insightCard__reason {
+    font-size: 0.9rem;
+    color: var(--admin-text-soft);
+    line-height: 1.5;
+}
+
+.admin-insightCard__metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+}
+
+.admin-insightMetric {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.admin-insightMetric__label {
+    font-size: 0.75rem;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.admin-insightMetric__value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--admin-text);
+}
+
+.admin-insightMetric__sub {
+    font-weight: 400;
+    color: var(--admin-muted);
+}
+
+/* Recommendations */
+.admin-recommendationsList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.admin-recommendationCard {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--admin-surface-soft);
+    border-radius: 10px;
+    border: 1px solid var(--admin-border-faint);
+}
+
+.admin-recommendationCard--warning {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.2);
+}
+
+.admin-recommendationCard--info {
+    background: rgba(37, 99, 235, 0.06);
+    border-color: rgba(37, 99, 235, 0.15);
+}
+
+.admin-recommendationCard__icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    color: var(--admin-muted);
+}
+
+.admin-recommendationCard--warning .admin-recommendationCard__icon {
+    color: #f59e0b;
+}
+
+.admin-recommendationCard--info .admin-recommendationCard__icon {
+    color: var(--admin-accent);
+}
+
+.admin-recommendationCard__icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.admin-recommendationCard__content {
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-recommendationCard__type {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--admin-text);
+    margin-bottom: 0.25rem;
+}
+
+.admin-recommendationCard__message {
+    font-size: 0.9rem;
+    color: var(--admin-text-soft);
+    line-height: 1.5;
+}
+
+.admin-recommendationCard__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.admin-recommendationTag {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--admin-accent-soft);
+    color: var(--admin-accent);
+    border-radius: 4px;
+}
+
+/* Mono utility */
+.admin-mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9em;
+}
+
+/* 3-column KV grid */
+.admin-kvGrid--3col {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 768px) {
+    .admin-kvGrid--3col {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .admin-kvGrid--3col {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Print styles */
+@media print {
+    .admin-reportHeader__actions {
+        display: none;
+    }
+
+    .admin-reportSections {
+        gap: 1rem;
+    }
+
+    .admin-card {
+        box-shadow: none;
+        border: 1px solid #ddd;
+        break-inside: avoid;
+    }
+
+    .admin-metricCard,
+    .admin-subCategoryCard,
+    .admin-insightCard,
+    .admin-recommendationCard {
+        break-inside: avoid;
     }
 }

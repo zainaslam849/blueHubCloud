@@ -16,24 +16,6 @@
                     />
                 </svg>
                 <svg
-                    v-else-if="icon === 'recordings'"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                >
-                    <path
-                        d="M9 7.5A3.5 3.5 0 0 1 12.5 4H16a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-3.5A3.5 3.5 0 0 1 9 16.5v-9Z"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                    />
-                    <path
-                        d="M6 9.2v5.6c0 .8-.9 1.3-1.6.8l-1.5-1.2a1 1 0 0 1-.4-.8v-3.2c0-.3.1-.6.4-.8l1.5-1.2c.7-.5 1.6 0 1.6.8Z"
-                        stroke="currentColor"
-                        stroke-width="1.8"
-                        stroke-linejoin="round"
-                    />
-                </svg>
-                <svg
                     v-else-if="icon === 'jobs'"
                     viewBox="0 0 24 24"
                     fill="none"
@@ -120,7 +102,7 @@ defineProps({
     icon: {
         type: String,
         required: true,
-        validator: (v) => ["calls", "recordings", "jobs", "users"].includes(v),
+        validator: (v) => ["calls", "jobs", "users"].includes(v),
     },
 });
 </script>
