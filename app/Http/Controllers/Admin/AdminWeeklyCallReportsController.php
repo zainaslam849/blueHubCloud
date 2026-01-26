@@ -14,10 +14,24 @@ class AdminWeeklyCallReportsController extends Controller
     public function index(Request $request, WeeklyCallReportQueryService $service): JsonResponse
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'min:1'],
+            'company_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $companyId = (int) $validated['company_id'];
+        $companyId = $validated['company_id'] ?? null;
+
+        // If no company_id provided from the client, default to the first
+        // company that has an existing weekly report so the admin UI can
+        // display reports without requiring an explicit company selection.
+        if (! $companyId) {
+            $first = WeeklyCallReport::select('company_id')->first();
+            if (! $first) {
+                return response()->json(['data' => []]);
+            }
+
+            $companyId = $first->company_id;
+        }
+
+        $companyId = (int) $companyId;
 
         return response()->json([
             'data' => $service->getByCompanyId($companyId),

@@ -412,7 +412,47 @@ class PbxwareClient
                 $out[$k] = $params[$k];
             }
         }
-        return $this->fetchAction('pbxware.transcription.get', $out);
+        // Targeted logging: record server + uniqueid + redacted request URL
+        $server = $out['server'] ?? null;
+        $uniqueid = $out['uniqueid'] ?? null;
+        $url = $this->buildQueryUrl('pbxware.transcription.get', $out);
+        Log::info('PbxwareClient: transcription.request', ['server' => $server, 'uniqueid' => $uniqueid, 'url' => $this->redactUrl($url)]);
+
+        try {
+            $response = $this->sendRequest('GET', 'pbxware.transcription.get', $out);
+        } catch (PbxwareClientException $e) {
+            Log::error('PbxwareClient: transcription.request.failed', ['server' => $server, 'uniqueid' => $uniqueid, 'error' => $e->getMessage()]);
+            throw $e;
+        }
+
+        // Capture a short redacted preview of the raw PBX response for diagnostics.
+        $rawBody = (string) $response->body();
+        $preview = substr($this->redactRawPbxResponseBody($rawBody), 0, 200);
+        Log::info('PbxwareClient: transcription.response_preview', ['server' => $server, 'uniqueid' => $uniqueid, 'preview' => $preview, 'len' => strlen($rawBody), 'status' => $response->status()]);
+
+        // Parse and return following the existing fetchAction semantics
+        if ($response->status() !== 200) {
+            $body = $this->redactForLog($rawBody);
+            Log::error('PbxwareClient: non-200 transcription response', ['status' => $response->status(), 'body' => $body, 'server' => $server, 'uniqueid' => $uniqueid]);
+            throw new PbxwareClientException("PBX transcription request failed with status {$response->status()}", $response->status());
+        }
+
+        if (trim($rawBody) === '') {
+            Log::info('PbxwareClient: transcription response type', ['response_type' => 'empty', 'server' => $server, 'uniqueid' => $uniqueid]);
+            return '';
+        }
+
+        $contentType = strtolower((string) ($response->header('Content-Type') ?? ''));
+        if (str_contains($contentType, 'json') || $this->looksLikeJson($rawBody)) {
+            $json = $response->json();
+            $json = is_array($json) ? $json : [];
+            Log::info('PbxwareClient: transcription response type', ['response_type' => 'json', 'server' => $server, 'uniqueid' => $uniqueid]);
+            return $json;
+        }
+
+        $text = trim($rawBody);
+        Log::info('PbxwareClient: transcription response type', ['response_type' => 'text', 'len' => strlen($text), 'server' => $server, 'uniqueid' => $uniqueid]);
+        return $text;
     }
 
     /**
