@@ -54,7 +54,10 @@ const router = createRouter({
         {
             path: "/weekly-call-reports",
             name: "admin.weeklyReports",
-            meta: { title: "Weekly Call Reports", breadcrumb: "Weekly Reports" },
+            meta: {
+                title: "Weekly Call Reports",
+                breadcrumb: "Weekly Reports",
+            },
             component: () =>
                 import("../../pages/admin/WeeklyCallReportsPage.vue"),
         },
@@ -82,6 +85,18 @@ const router = createRouter({
             name: "admin.settings",
             meta: { title: "Settings", breadcrumb: "Settings" },
             component: () => import("../../pages/admin/SettingsPage.vue"),
+        },
+        {
+            path: "/settings/ai",
+            name: "admin.settings.ai",
+            meta: { title: "AI Settings", breadcrumb: "AI Settings" },
+            component: () => import("../../pages/admin/AiSettingsPage.vue"),
+        },
+        {
+            path: "/categories",
+            name: "admin.categories",
+            meta: { title: "Categories", breadcrumb: "Categories" },
+            component: () => import("../../pages/admin/CategoriesPage.vue"),
         },
         {
             path: "/:pathMatch(.*)*",

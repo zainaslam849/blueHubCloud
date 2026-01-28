@@ -16,6 +16,10 @@ class AdminCallsController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'sort' => ['nullable', 'string', 'max:40'],
             'direction' => ['nullable', 'in:asc,desc'],
+            'category_id' => ['nullable', 'integer', 'exists:call_categories,id'],
+            'source' => ['nullable', 'in:ai,manual,default'],
+            'confidence_min' => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'confidence_max' => ['nullable', 'numeric', 'min:0', 'max:1'],
         ]);
 
         $perPage = (int) ($validated['per_page'] ?? 25);
@@ -44,6 +48,8 @@ class AdminCallsController extends Controller
                 'company:id,name',
                 'companyPbxAccount:id,pbx_provider_id,pbx_name',
                 'companyPbxAccount.pbxProvider:id,name',
+                'category:id,name',
+                'subCategory:id,name',
             ]);
 
         $needsCompanyJoin = $sort === 'company' || $search !== '';
@@ -75,6 +81,23 @@ class AdminCallsController extends Controller
                 // If companies join is present, allow company-name searching.
                 $q->orWhere('companies.name', 'like', "%{$search}%");
             });
+        }
+
+        // Category filters
+        if (isset($validated['category_id'])) {
+            $query->where('calls.category_id', $validated['category_id']);
+        }
+
+        if (isset($validated['source'])) {
+            $query->where('calls.category_source', $validated['source']);
+        }
+
+        if (isset($validated['confidence_min'])) {
+            $query->where('calls.category_confidence', '>=', $validated['confidence_min']);
+        }
+
+        if (isset($validated['confidence_max'])) {
+            $query->where('calls.category_confidence', '<=', $validated['confidence_max']);
         }
 
         if ($sort === 'company') {
@@ -119,7 +142,14 @@ class AdminCallsController extends Controller
                     'provider' => $providerName,
                     'durationSeconds' => (int) ($call->duration_seconds ?? 0),
                     'status' => $category,
+                    'hasTranscription' => (bool) ($call->has_transcription ?? false),
+                    'transcriptSnippet' => $call->transcript_text ? mb_substr($call->transcript_text, 0, 160) : null,
                     'createdAt' => optional($call->created_at)->toISOString(),
+                    'category' => $call->category?->name,
+                    'categoryId' => $call->category_id,
+                    'subCategory' => $call->subCategory?->name ?? $call->sub_category_label,
+                    'categorySource' => $call->category_source,
+                    'categoryConfidence' => $call->category_confidence,
                 ];
             })->values(),
             'meta' => [

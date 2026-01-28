@@ -1,5 +1,5 @@
 <template>
-    <header class="admin-topbar">
+    <header class="admin-topbar admin-topbar--desktop">
         <div class="admin-topbar__left">
             <button
                 type="button"
@@ -106,6 +106,93 @@
             </div>
         </div>
     </header>
+
+    <header class="admin-topbar admin-topbar--mobile">
+        <div class="admin-topbar__left">
+            <button
+                type="button"
+                class="admin-iconBtn"
+                :aria-label="sidebarCollapsed ? 'Open menu' : 'Close menu'"
+                :title="sidebarCollapsed ? 'Open menu' : 'Close menu'"
+                @click="$emit('toggle-sidebar')"
+            >
+                <span class="admin-icon" aria-hidden="true">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path
+                            d="M4 7h16"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M4 12h16"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M4 17h12"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                    </svg>
+                </span>
+            </button>
+
+            <div class="admin-topbar__title" aria-label="Page title">
+                {{ title }}
+            </div>
+        </div>
+
+        <div class="admin-topbar__right">
+            <ThemeToggle />
+
+            <div class="admin-menu" ref="menuElMobile">
+                <button
+                    type="button"
+                    class="admin-userBtn admin-userBtn--compact"
+                    :aria-expanded="menuOpen ? 'true' : 'false'"
+                    aria-haspopup="menu"
+                    @click="menuOpen = !menuOpen"
+                >
+                    <div class="admin-avatar" aria-hidden="true">
+                        {{ initials }}
+                    </div>
+                    <span class="admin-icon" aria-hidden="true">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                        >
+                            <path
+                                d="M7 10l5 5 5-5"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </span>
+                </button>
+
+                <div v-if="menuOpen" class="admin-menu__panel" role="menu">
+                    <button
+                        type="button"
+                        class="admin-menu__item"
+                        role="menuitem"
+                        @click="logout"
+                    >
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
 </template>
 
 <script setup>
@@ -135,6 +222,7 @@ const router = useRouter();
 
 const menuOpen = ref(false);
 const menuEl = ref(null);
+const menuElMobile = ref(null);
 
 const user = ref(null);
 
@@ -145,8 +233,10 @@ onMounted(async () => {
 });
 
 const onDocClick = (e) => {
-    if (!menuEl.value) return;
-    if (menuEl.value.contains(e.target)) return;
+    const desktopEl = menuEl.value;
+    const mobileEl = menuElMobile.value;
+    if (desktopEl && desktopEl.contains(e.target)) return;
+    if (mobileEl && mobileEl.contains(e.target)) return;
     menuOpen.value = false;
 };
 

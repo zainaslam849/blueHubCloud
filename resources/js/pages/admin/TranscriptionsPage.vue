@@ -38,7 +38,7 @@
                 row-key="id"
                 :loading="loading"
                 :skeleton-rows="10"
-                :virtualized="true"
+                :virtualized="isDesktop"
                 height="lg"
                 :row-height="48"
                 :overscan="8"
@@ -87,7 +87,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 
 import adminApi from "../../router/admin/api";
 import {
@@ -113,6 +113,8 @@ const meta = ref({
     perPage: 25,
     total: 0,
 });
+
+const isDesktop = ref(true);
 
 const columns = ref([
     { key: "id", label: "ID" },
@@ -199,6 +201,10 @@ function refresh() {
     fetchTranscriptions();
 }
 
+function updateViewport() {
+    isDesktop.value = window.innerWidth > 768;
+}
+
 watch(
     () => pageSize.value,
     () => {
@@ -208,6 +214,12 @@ watch(
 );
 
 onMounted(() => {
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
     fetchTranscriptions();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener("resize", updateViewport);
 });
 </script>

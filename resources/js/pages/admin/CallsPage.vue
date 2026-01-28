@@ -44,6 +44,81 @@
                 </div>
             </div>
 
+            <!-- Category Filters -->
+            <div class="admin-callsFilters">
+                <div class="admin-field">
+                    <label class="admin-field__label" for="filter-category">
+                        Category
+                    </label>
+                    <select
+                        id="filter-category"
+                        v-model="filterCategory"
+                        class="admin-input"
+                    >
+                        <option value="">All Categories</option>
+                        <option
+                            v-for="cat in categories"
+                            :key="cat.id"
+                            :value="cat.id"
+                        >
+                            {{ cat.name }}
+                        </option>
+                    </select>
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-field__label" for="filter-source">
+                        Source
+                    </label>
+                    <select
+                        id="filter-source"
+                        v-model="filterSource"
+                        class="admin-input"
+                    >
+                        <option value="">All Sources</option>
+                        <option value="ai">AI</option>
+                        <option value="manual">Manual</option>
+                        <option value="default">Default</option>
+                    </select>
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-field__label" for="filter-conf-min">
+                        Min Confidence
+                    </label>
+                    <input
+                        id="filter-conf-min"
+                        v-model.number="filterConfidenceMin"
+                        class="admin-input"
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        placeholder="0.0"
+                    />
+                </div>
+
+                <div class="admin-field">
+                    <label class="admin-field__label" for="filter-conf-max">
+                        Max Confidence
+                    </label>
+                    <input
+                        id="filter-conf-max"
+                        v-model.number="filterConfidenceMax"
+                        class="admin-input"
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        placeholder="1.0"
+                    />
+                </div>
+
+                <BaseButton variant="ghost" size="sm" @click="clearFilters">
+                    Clear Filters
+                </BaseButton>
+            </div>
+
             <div v-if="error" class="admin-alert admin-alert--error">
                 {{ error }}
             </div>
@@ -54,7 +129,7 @@
                 row-key="id"
                 :loading="loading"
                 :skeleton-rows="10"
-                :virtualized="true"
+                :virtualized="isDesktop"
                 height="lg"
                 :row-height="48"
                 :overscan="8"
@@ -126,6 +201,14 @@
                     </button>
                 </template>
 
+                <template #header-category> Category </template>
+
+                <template #header-subCategory> Sub-Category </template>
+
+                <template #header-categorySource> Source </template>
+
+                <template #header-categoryConfidence> Confidence </template>
+
                 <template #header-createdAt>
                     <button
                         type="button"
@@ -149,6 +232,37 @@
                     <BaseBadge :variant="badgeVariant(value)">
                         {{ String(value || "").toUpperCase() }}
                     </BaseBadge>
+                </template>
+
+                <template #cell-category="{ value }">
+                    <span class="admin-callsCategory">{{ value || "—" }}</span>
+                </template>
+
+                <template #cell-subCategory="{ value }">
+                    <span class="admin-callsSubCategory">{{
+                        value || "—"
+                    }}</span>
+                </template>
+
+                <template #cell-categorySource="{ value }">
+                    <BaseBadge
+                        v-if="value"
+                        :variant="sourceVariant(value)"
+                        size="sm"
+                    >
+                        {{ String(value || "").toUpperCase() }}
+                    </BaseBadge>
+                    <span v-else>—</span>
+                </template>
+
+                <template #cell-categoryConfidence="{ value }">
+                    <span
+                        v-if="value !== null && value !== undefined"
+                        class="admin-callsConfidence"
+                    >
+                        {{ formatConfidence(value) }}
+                    </span>
+                    <span v-else>—</span>
                 </template>
 
                 <template #cell-createdAt="{ value }">
@@ -182,7 +296,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import adminApi from "../../router/admin/api";
@@ -205,6 +319,13 @@ const pageSize = ref(25);
 const sortBy = ref("created_at");
 const sortDirection = ref("desc");
 
+// Category filters
+const filterCategory = ref("");
+const filterSource = ref("");
+const filterConfidenceMin = ref(null);
+const filterConfidenceMax = ref(null);
+const categories = ref([]);
+
 const rows = ref([]);
 const meta = ref({
     currentPage: 1,
@@ -213,12 +334,22 @@ const meta = ref({
     total: 0,
 });
 
+const isDesktop = ref(true);
+
 const columns = ref([
     { key: "callId", label: "Call ID" },
     { key: "company", label: "Company" },
     { key: "provider", label: "Provider" },
     { key: "duration", label: "Duration", cellClass: "admin-callsCol--right" },
     { key: "status", label: "Status" },
+    { key: "category", label: "Category" },
+    { key: "subCategory", label: "Sub-Category" },
+    { key: "categorySource", label: "Source" },
+    {
+        key: "categoryConfidence",
+        label: "Confidence",
+        cellClass: "admin-callsCol--right",
+    },
     { key: "createdAt", label: "Created" },
     { key: "actions", label: "Actions", cellClass: "admin-callsCol--right" },
 ]);
@@ -232,6 +363,11 @@ function normalizeRow(item) {
         durationSeconds: item.durationSeconds,
         status: item.status,
         createdAt: item.createdAt,
+        category: item.category,
+        categoryId: item.categoryId,
+        subCategory: item.subCategory,
+        categorySource: item.categorySource,
+        categoryConfidence: item.categoryConfidence,
     };
 }
 
@@ -246,7 +382,7 @@ function formatDuration(seconds) {
     if (hh > 0) {
         return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(
             2,
-            "0"
+            "0",
         )}`;
     }
 
@@ -265,6 +401,20 @@ function badgeVariant(status) {
     if (s === "completed") return "active";
     if (s === "failed") return "failed";
     return "processing";
+}
+
+function sourceVariant(source) {
+    const s = String(source || "").toLowerCase();
+    if (s === "ai") return "info";
+    if (s === "manual") return "warning";
+    if (s === "default") return "secondary";
+    return "secondary";
+}
+
+function formatConfidence(value) {
+    if (value === null || value === undefined) return "—";
+    const percent = Math.round(value * 100);
+    return `${percent}%`;
 }
 
 function sortGlyph(key) {
@@ -288,15 +438,35 @@ async function fetchCalls() {
     error.value = "";
 
     try {
-        const res = await adminApi.get("/calls", {
-            params: {
-                page: page.value,
-                per_page: pageSize.value,
-                search: search.value || undefined,
-                sort: sortBy.value,
-                direction: sortDirection.value,
-            },
-        });
+        const params = {
+            page: page.value,
+            per_page: pageSize.value,
+            search: search.value || undefined,
+            sort: sortBy.value,
+            direction: sortDirection.value,
+        };
+
+        // Add category filters
+        if (filterCategory.value) {
+            params.category_id = filterCategory.value;
+        }
+        if (filterSource.value) {
+            params.source = filterSource.value;
+        }
+        if (
+            filterConfidenceMin.value !== null &&
+            filterConfidenceMin.value !== ""
+        ) {
+            params.confidence_min = filterConfidenceMin.value;
+        }
+        if (
+            filterConfidenceMax.value !== null &&
+            filterConfidenceMax.value !== ""
+        ) {
+            params.confidence_max = filterConfidenceMax.value;
+        }
+
+        const res = await adminApi.get("/calls", { params });
 
         const payload = res?.data;
         rows.value = Array.isArray(payload?.data)
@@ -311,6 +481,24 @@ async function fetchCalls() {
     }
 }
 
+async function loadCategories() {
+    try {
+        const res = await adminApi.get("/categories/enabled");
+        categories.value = res?.data?.data || [];
+    } catch (e) {
+        console.error("Failed to load categories", e);
+    }
+}
+
+function clearFilters() {
+    filterCategory.value = "";
+    filterSource.value = "";
+    filterConfidenceMin.value = null;
+    filterConfidenceMax.value = null;
+    page.value = 1;
+    fetchCalls();
+}
+
 function refresh() {
     fetchCalls();
 }
@@ -322,6 +510,10 @@ function viewRow(row) {
 }
 
 let searchTimer = 0;
+
+function updateViewport() {
+    isDesktop.value = window.innerWidth > 768;
+}
 watch(
     () => search.value,
     () => {
@@ -330,7 +522,7 @@ watch(
             page.value = 1;
             fetchCalls();
         }, 250);
-    }
+    },
 );
 
 watch(
@@ -338,10 +530,26 @@ watch(
     () => {
         page.value = 1;
         fetchCalls();
-    }
+    },
+);
+
+// Watch filter changes
+watch(
+    [filterCategory, filterSource, filterConfidenceMin, filterConfidenceMax],
+    () => {
+        page.value = 1;
+        fetchCalls();
+    },
 );
 
 onMounted(() => {
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    loadCategories();
     fetchCalls();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener("resize", updateViewport);
 });
 </script>

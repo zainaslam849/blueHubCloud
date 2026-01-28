@@ -51,9 +51,16 @@ const SIDEBAR_KEY = "admin_sidebar_collapsed";
 const sidebarCollapsed = ref(false);
 
 try {
-    sidebarCollapsed.value = localStorage.getItem(SIDEBAR_KEY) === "1";
+    const stored = localStorage.getItem(SIDEBAR_KEY);
+    if (stored !== null) {
+        sidebarCollapsed.value = stored === "1";
+    } else {
+        // default collapsed on small screens so content is usable
+        sidebarCollapsed.value = window.innerWidth < 768;
+    }
 } catch (e) {
     // ignore
+    sidebarCollapsed.value = window.innerWidth < 768;
 }
 
 function toggleSidebar() {
@@ -135,10 +142,30 @@ const navItems = [
         featureKey: "admin_users",
     },
     {
+        key: "categories",
+        label: "Categories",
+        icon: "categories",
+        to: { name: "admin.categories" },
+        requiredRoles: ["admin"],
+        requiredPermissions: ["admin.categories.view"],
+        featureKey: "admin_categories",
+    },
+    {
         key: "settings",
         label: "Settings",
         icon: "settings",
-        to: { name: "admin.settings" },
+        children: [
+            {
+                key: "settings-general",
+                label: "General",
+                to: { name: "admin.settings" },
+            },
+            {
+                key: "settings-ai",
+                label: "AI Settings",
+                to: { name: "admin.settings.ai" },
+            },
+        ],
         requiredRoles: ["admin"],
         requiredPermissions: ["admin.settings.view"],
         featureKey: "admin_settings",

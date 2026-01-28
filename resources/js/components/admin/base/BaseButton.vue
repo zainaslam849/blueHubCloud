@@ -34,6 +34,7 @@
         :type="type"
         :disabled="disabled || loading"
         :aria-busy="loading ? 'true' : 'false'"
+        @click="onButtonClick"
     >
         <span v-if="loading" class="admin-btn__spinner" aria-hidden="true" />
         <span class="admin-btnBase__content"><slot /></span>
@@ -73,6 +74,15 @@ const props = defineProps({
 const emit = defineEmits(["click"]);
 
 function onLinkClick(e) {
+    if (props.disabled || props.loading) {
+        e.preventDefault();
+        return;
+    }
+
+    emit("click", e);
+}
+
+function onButtonClick(e) {
     if (props.disabled || props.loading) {
         e.preventDefault();
         return;

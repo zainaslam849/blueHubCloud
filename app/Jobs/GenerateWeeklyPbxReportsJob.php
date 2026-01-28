@@ -86,11 +86,14 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     $weekStart = $startedAtLocal->startOfWeek(CarbonImmutable::MONDAY);
                     $weekStartDate = $weekStart->toDateString();
 
-                    $key = $companyPbxAccountId.'|'.$weekStartDate;
+                    $serverId = is_string($call->server_id) && $call->server_id !== '' ? $call->server_id : null;
+
+                    $key = $companyPbxAccountId.'|'.($serverId ?? '').'|'.$weekStartDate;
 
                     if (! isset($accumulators[$key])) {
                         $accumulators[$key] = [
                             'company_pbx_account_id' => $companyPbxAccountId,
+                            'server_id' => $serverId,
                             'week_start_date' => $weekStartDate,
                             'total_calls' => 0,
                             'answered_calls' => 0,
@@ -263,8 +266,10 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         'week_start_date' => $weekStart->toDateString(),
                     ],
                     [
-                        'week_end_date' => $weekEnd->toDateString(),
+                        // Persist server_id for visibility and accurate PBX mapping
+                        'server_id' => $weekly['server_id'] ?? null,
                         // Legacy columns kept for compatibility with older schema consumers.
+                        'week_end_date' => $weekEnd->toDateString(),
                         'reporting_period_start' => $weekStart->toDateString(),
                         'reporting_period_end' => $weekEnd->toDateString(),
                         'total_calls' => $totalCalls,
@@ -286,13 +291,18 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
 
                 // Mark included calls as belonging to this weekly report
                 try {
-                    DB::table('calls')
+                    $markQuery = DB::table('calls')
                         ->where('company_id', $companyId)
                         ->where('company_pbx_account_id', (int) $weekly['company_pbx_account_id'])
                         ->whereDate('started_at', '>=', $weekStart->toDateString())
                         ->whereDate('started_at', '<=', $weekEnd->toDateString())
-                        ->whereNull('weekly_call_report_id')
-                        ->update(['weekly_call_report_id' => $reportModel->id]);
+                        ->whereNull('weekly_call_report_id');
+
+                    if (! empty($weekly['server_id'])) {
+                        $markQuery->where('server_id', $weekly['server_id']);
+                    }
+
+                    $markQuery->update(['weekly_call_report_id' => $reportModel->id]);
                 } catch (\Throwable $e) {
                     // Non-fatal: indexing of calls to reports should not stop report generation
                 }
@@ -307,6 +317,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     {
         return DB::table('calls')
             ->select([
+                'server_id',
                 'company_pbx_account_id',
                 'status',
                 'started_at',

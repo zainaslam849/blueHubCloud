@@ -73,6 +73,7 @@
                         v-for="col in columns"
                         :key="col.key"
                         class="admin-table__td"
+                        :data-label="col.label"
                     >
                         <div
                             class="admin-skeleton admin-skeleton--line"
@@ -115,6 +116,7 @@
                         :key="col.key"
                         class="admin-table__td"
                         :class="col.cellClass"
+                        :data-label="col.label"
                     >
                         <slot
                             :name="`cell-${col.key}`"

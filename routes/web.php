@@ -4,6 +4,9 @@ use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
 use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
+use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\SubCategoryController;
+use App\Http\Controllers\Admin\CallCategorizationController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -20,9 +23,40 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);
         Route::get('/transcriptions/{id}', [AdminTranscriptionsController::class, 'show']);
+            Route::get('/ai-settings', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'index']);
+            Route::post('/ai-settings', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'store']);
         Route::get('/weekly-call-reports', [AdminWeeklyCallReportsController::class, 'index']);
         Route::get('/weekly-call-reports/{id}', [AdminWeeklyCallReportsController::class, 'show'])
             ->whereNumber('id');
+        
+        // Category routes
+        Route::get('/categories', [CategoryController::class, 'index']);
+        Route::get('/categories/enabled', [CategoryController::class, 'enabled']);
+        Route::post('/categories', [CategoryController::class, 'store']);
+        Route::get('/categories/{category}', [CategoryController::class, 'show']);
+        Route::put('/categories/{category}', [CategoryController::class, 'update']);
+        Route::patch('/categories/{category}/toggle', [CategoryController::class, 'toggle']);
+        Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
+        Route::post('/categories/{id}/restore', [CategoryController::class, 'restore']);
+        Route::delete('/categories/{id}/force-delete', [CategoryController::class, 'forceDelete']);
+
+        // Sub-category routes
+        Route::get('/categories/{categoryId}/sub-categories', [SubCategoryController::class, 'index']);
+        Route::post('/categories/{categoryId}/sub-categories', [SubCategoryController::class, 'store']);
+        Route::put('/categories/{categoryId}/sub-categories/{subCategoryId}', [SubCategoryController::class, 'update']);
+        Route::patch('/categories/{categoryId}/sub-categories/{subCategoryId}/toggle', [SubCategoryController::class, 'toggle']);
+        Route::delete('/categories/{categoryId}/sub-categories/{subCategoryId}', [SubCategoryController::class, 'destroy']);
+        Route::post('/categories/{categoryId}/sub-categories/{subCategoryId}/restore', [SubCategoryController::class, 'restore']);
+        Route::delete('/categories/{categoryId}/sub-categories/{subCategoryId}/force-delete', [SubCategoryController::class, 'forceDelete']);
+
+        // AI Categorization routes
+        Route::get('/categorization/enabled-categories', [CallCategorizationController::class, 'getEnabledCategories']);
+        Route::get('/categorization/prompt', [CallCategorizationController::class, 'generatePrompt']);
+        Route::post('/categorization/build-prompt', [CallCategorizationController::class, 'buildCallPrompt']);
+        Route::post('/categorization/validate', [CallCategorizationController::class, 'validateCategorization']);
+        Route::post('/categorization/persist', [CallCategorizationController::class, 'persistCategorization']);
+        Route::post('/categorization/bulk-persist', [CallCategorizationController::class, 'bulkPersistCategorizations']);
+        
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/pbx/ingest', [\App\Http\Controllers\Admin\PbxIngestController::class, 'trigger']);
     });

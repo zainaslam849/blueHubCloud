@@ -13,7 +13,9 @@
         <section class="admin-card admin-card--glass">
             <div class="admin-reportsToolbar">
                 <div class="admin-reportsToolbar__left">
-                    <BaseBadge variant="info">{{ rows.length }} reports</BaseBadge>
+                    <BaseBadge variant="info"
+                        >{{ rows.length }} reports</BaseBadge
+                    >
                 </div>
 
                 <div class="admin-reportsToolbar__right">
@@ -62,16 +64,23 @@
                 </template>
 
                 <template #cell-actions="{ row }">
-                    <BaseButton
-                        variant="ghost"
-                        size="sm"
-                        :to="{
-                            name: 'admin.weeklyReports.detail',
-                            params: { id: row?.id },
-                        }"
-                    >
-                        View
-                    </BaseButton>
+                    <template v-if="row?.id">
+                        <BaseButton
+                            variant="ghost"
+                            size="sm"
+                            :to="{
+                                name: 'admin.weeklyReports.detail',
+                                params: { id: row.id },
+                            }"
+                        >
+                            View
+                        </BaseButton>
+                    </template>
+                    <template v-else>
+                        <BaseButton variant="ghost" size="sm" disabled>
+                            View
+                        </BaseButton>
+                    </template>
                 </template>
             </BaseTable>
         </section>
@@ -82,11 +91,7 @@
 import { onMounted, ref } from "vue";
 
 import adminApi from "../../router/admin/api";
-import {
-    BaseBadge,
-    BaseButton,
-    BaseTable,
-} from "../../components/admin/base";
+import { BaseBadge, BaseButton, BaseTable } from "../../components/admin/base";
 
 const loading = ref(true);
 const error = ref("");
@@ -162,17 +167,16 @@ async function fetchReports() {
     try {
         // First get user info to get company_id
         const meRes = await adminApi.get("/me");
-        const companyId = meRes?.data?.company_id;
+        // Accept several possible shapes of /me response
+        const companyId =
+            meRes?.data?.company_id ||
+            meRes?.data?.company?.id ||
+            meRes?.data?.companyId ||
+            null;
 
-        if (!companyId) {
-            error.value = "Unable to determine company.";
-            rows.value = [];
-            return;
-        }
-
-        const res = await adminApi.get("/weekly-call-reports", {
-            params: { company_id: companyId },
-        });
+        // If companyId is not present, request reports without params; controller will fallback to first company with reports
+        const params = companyId ? { company_id: companyId } : undefined;
+        const res = await adminApi.get("/weekly-call-reports", { params });
 
         const data = res?.data?.data;
         rows.value = Array.isArray(data) ? data.map(normalizeRow) : [];

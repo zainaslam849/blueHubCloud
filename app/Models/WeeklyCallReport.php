@@ -11,6 +11,7 @@ class WeeklyCallReport extends Model
 
     protected $fillable = [
         'company_id',
+        'server_id',
         'company_pbx_account_id',
         'reporting_period_start',
         'reporting_period_end',
@@ -42,6 +43,7 @@ class WeeklyCallReport extends Model
         'reporting_period_end' => 'date',
         'week_start_date' => 'date',
         'week_end_date' => 'date',
+        'server_id' => 'string',
         'first_call_at' => 'datetime',
         'last_call_at' => 'datetime',
         'generated_at' => 'datetime',

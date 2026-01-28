@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { useRoute } from "vue-router";
 import AppIcon from "../icons/AppIcon.vue";
 
@@ -6,49 +7,60 @@ type Props = {
     open: boolean;
     collapsed: boolean;
 };
-
 const props = defineProps<Props>();
 const emit = defineEmits<{
     (e: "navigate"): void;
     (e: "toggle-collapsed"): void;
 }>();
-
 const route = useRoute();
 
-const navItems = [
-    { name: "Dashboard", icon: "dashboard", to: { name: "dashboard" } },
-    { name: "Reports", icon: "reports", to: { name: "reports" } },
-    { name: "Usage", icon: "usage", to: { name: "usage" } },
-    { name: "Account", icon: "account", to: { name: "account" } },
-] as const;
+const openGroups = ref<{ [key: string]: boolean }>({});
+function toggleGroup(key: string) {
+    openGroups.value[key] = !openGroups.value[key];
+}
+
+const navGroups = [
+    {
+        label: "PAGES",
+        items: [
+            { name: "Dashboard", icon: "dashboard", to: { name: "dashboard" } },
+            { name: "Reports", icon: "reports", to: { name: "reports" } },
+            { name: "Usage", icon: "usage", to: { name: "usage" } },
+            { name: "Account", icon: "account", to: { name: "account" } },
+        ],
+    },
+];
+
+const outlineLinks = [
+    { icon: "x", label: "@keenthemes", href: "#" },
+    { icon: "slack", label: "@keenthemes_hub", href: "#" },
+    { icon: "figma", label: "metronic", href: "#" },
+];
 
 function onNavigate() {
     emit("navigate");
 }
-
 function isActive(name: string) {
-    if (name === "reports") return route.name === "reports";
     return route.name === name;
 }
 </script>
 
 <template>
     <aside
-        class="sidebar"
-        :class="{ open, collapsed: props.collapsed }"
+        class="sidebar metronic-sidebar"
+        :class="{ open: props.open, collapsed: props.collapsed }"
         aria-label="Sidebar navigation"
     >
+        <!-- Brand/Logo -->
         <div class="sidebarHeader">
             <div class="brand">
-                <div class="brandMark" aria-hidden="true"></div>
+                <div class="brandMark metronic-logo" aria-hidden="true"></div>
                 <div class="brandText">
-                    <div class="brandName">BlueHub</div>
-                    <div class="brandSub">Reporting</div>
+                    <div class="brandName">Metronic</div>
                 </div>
             </div>
-
             <button
-                class="btn btn--ghost collapseBtn"
+                class="collapseBtn"
                 type="button"
                 :aria-label="
                     props.collapsed ? 'Expand sidebar' : 'Collapse sidebar'
@@ -65,46 +77,102 @@ function isActive(name: string) {
             </button>
         </div>
 
-        <nav class="nav" aria-label="Primary">
-            <router-link
-                v-for="item in navItems"
-                :key="item.name"
-                class="navItem"
-                :class="{ active: isActive((item.to as any).name) }"
-                :to="item.to"
-                @click="onNavigate"
-                :title="props.collapsed ? item.name : undefined"
-            >
-                <span class="navIcon" aria-hidden="true">
-                    <AppIcon :name="item.icon" />
-                </span>
-                <span class="navLabel">{{ item.name }}</span>
-            </router-link>
-        </nav>
-
-        <div class="sidebarFooter">
-            <div class="hint">UI-only demo layout</div>
+        <!-- Add New/Search -->
+        <div class="sidebarActions">
+            <button class="addBtn" title="Add New">
+                <AppIcon name="plus" />
+                <span v-if="!props.collapsed">Add New</span>
+            </button>
+            <button class="iconBtn" title="Search">
+                <AppIcon name="search" />
+            </button>
         </div>
 
-        <div v-if="open" class="backdrop" @click="onNavigate"></div>
+        <!-- Nav Groups -->
+        <div class="navGroups">
+            <template v-for="group in navGroups" :key="group.label">
+                <div class="navSectionHeader">{{ group.label }}</div>
+                <nav class="nav" aria-label="Primary">
+                    <router-link
+                        v-for="item in group.items"
+                        :key="item.name"
+                        class="navItem metronic-nav-item"
+                        :class="{ active: isActive(item.to.name) }"
+                        :to="item.to"
+                        @click="onNavigate"
+                        :title="props.collapsed ? item.name : undefined"
+                    >
+                        <span class="navIcon"
+                            ><AppIcon :name="item.icon"
+                        /></span>
+                        <span class="navLabel">{{ item.name }}</span>
+                        <span
+                            class="activeBar"
+                            v-if="isActive(item.to.name)"
+                        ></span>
+                    </router-link>
+                </nav>
+            </template>
+        </div>
+
+        <!-- Outline/Social -->
+        <div class="navSectionHeader">OUTLINE</div>
+        <div class="outlineLinks">
+            <a
+                v-for="link in outlineLinks"
+                :key="link.label"
+                :href="link.href"
+                class="outlineLink"
+                target="_blank"
+            >
+                <AppIcon :name="link.icon" />
+                <span class="outlineLabel">{{ link.label }}</span>
+            </a>
+        </div>
+
+        <!-- Footer -->
+        <div class="sidebarFooter metronic-footer">
+            <img
+                class="avatar"
+                src="https://randomuser.me/api/portraits/men/32.jpg"
+                alt="User"
+            />
+            <div class="footerIcons">
+                <button class="iconBtn"><AppIcon name="settings" /></button>
+                <button class="iconBtn"><AppIcon name="logout" /></button>
+            </div>
+        </div>
+
+        <div v-if="props.open" class="backdrop" @click="onNavigate"></div>
     </aside>
 </template>
 
 <style scoped>
-.sidebar {
+.metronic-sidebar {
     position: sticky;
     top: 0;
     height: 100vh;
-    padding: var(--space-6);
-    border-right: 1px solid var(--border);
+    width: 100%;
+    max-width: 280px;
     background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition:
+        max-width 0.2s var(--ease-standard),
+        box-shadow 0.2s;
+    z-index: 20;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .sidebarHeader {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: var(--space-6);
+    padding: 18px;
+    border-bottom: 1px solid var(--border);
+    flex: 0 0 auto;
 }
 
 .brand {
@@ -115,12 +183,20 @@ function isActive(name: string) {
 }
 
 .brandMark {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
     flex: 0 0 auto;
+}
+
+.metronic-logo {
+    background: linear-gradient(135deg, #22d3ee 0%, #6366f1 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 1.5rem;
 }
 
 .brandText {
@@ -130,132 +206,282 @@ function isActive(name: string) {
 .brandName {
     font-weight: 700;
     letter-spacing: 0.2px;
-}
-
-.brandSub {
-    opacity: 0.7;
-    font-size: 0.9rem;
-}
-
-.nav {
-    display: grid;
-    gap: var(--space-2);
-}
-
-.navItem {
-    display: grid;
-    grid-template-columns: 20px 1fr;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid transparent;
-    color: inherit;
-    text-decoration: none;
-    position: relative;
-}
-
-.navItem:hover {
-    border-color: var(--border);
-    text-decoration: none;
-}
-
-.navItem.active {
-    background: var(--surface-2);
-    border-color: var(--border);
-}
-
-.navItem.active::before {
-    content: "";
-    position: absolute;
-    left: -6px;
-    top: 8px;
-    bottom: 8px;
-    width: 3px;
-    border-radius: 999px;
-    background: var(--color-primary);
-}
-
-.navIcon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-muted);
-}
-
-.navItem.active .navIcon {
-    color: var(--color-primary);
-}
-
-.navLabel {
-    font-weight: 650;
+    font-size: 1.1rem;
 }
 
 .collapseBtn {
+    background: none;
+    border: none;
     padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s;
+    color: var(--color-muted);
+}
+
+.collapseBtn:hover {
+    background: var(--surface-2);
+    color: var(--color-primary);
 }
 
 .collapseIcon {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
+    transition: transform 0.2s;
 }
 
 .collapseIcon.flipped {
     transform: rotate(180deg);
 }
 
-.sidebar.collapsed {
-    padding: var(--space-5);
+.sidebarActions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 18px 0 10px 0;
+    padding: 0 18px;
+    flex: 0 0 auto;
 }
 
-.sidebar.collapsed .brandText {
-    display: none;
+.addBtn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--color-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 8px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.15s;
+    flex: 1 1 auto;
+    white-space: nowrap;
 }
 
-.sidebar.collapsed .navItem {
-    grid-template-columns: 20px;
+.addBtn:hover {
+    background: #4f46e5;
+}
+
+.iconBtn {
+    background: none;
+    border: none;
+    color: var(--color-muted);
+    border-radius: var(--radius-md);
+    padding: 8px;
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        color 0.15s;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    font-size: 1.2rem;
 }
 
-.sidebar.collapsed .navLabel {
-    display: none;
+.iconBtn:hover {
+    background: var(--surface-2);
+    color: var(--color-primary);
 }
 
-.sidebarFooter {
-    margin-top: var(--space-8);
-    opacity: 0.7;
-    font-size: 0.9rem;
+.navGroups {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
 }
 
-.backdrop {
-    display: none;
+.navSectionHeader {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--color-muted);
+    letter-spacing: 1px;
+    margin: 18px 0 6px 18px;
+    text-transform: uppercase;
+}
+
+.nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 10px;
+}
+
+.navGroup {
+    display: flex;
+    flex-direction: column;
+}
+
+.groupBtn {
+    width: 100%;
+    justify-content: space-between;
+    background: none !important;
+    border: none !important;
+    cursor: pointer;
+}
+
+.chevron {
+    margin-left: auto;
+    transition: transform 0.2s;
+    display: flex;
+    align-items: center;
+    color: var(--color-muted);
+    font-size: 1.2rem;
+}
+
+.chevron.open {
+    transform: rotate(180deg);
+}
+
+.groupChildren {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 8px;
+    margin-top: 2px;
+}
+
+.child {
+    font-size: 0.97rem;
+    padding: 10px 12px;
+    margin-left: 8px;
+    border-left: 2px solid transparent;
+}
+
+.child:hover {
+    border-left-color: var(--color-primary);
+}
+
+.child.active {
+    border-left-color: var(--color-primary);
+}
+
+.metronic-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 18px;
+    border-radius: var(--radius-md);
+    color: var(--color-muted);
+    text-decoration: none;
+    font-weight: 600;
+    position: relative;
+    transition:
+        background 0.15s,
+        color 0.15s;
+    overflow: hidden;
+}
+
+.metronic-nav-item .navIcon {
+    font-size: 1.3rem;
+    color: var(--color-muted);
+    transition: color 0.15s;
+}
+
+.metronic-nav-item:hover {
+    background: var(--surface-2);
+    color: var(--color-primary);
+}
+
+.metronic-nav-item:hover .navIcon {
+    color: var(--color-primary);
+}
+
+.metronic-nav-item.active {
+    background: var(--surface-2);
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+.metronic-nav-item.active .navIcon {
+    color: var(--color-primary);
+}
+
+.activeBar {
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 4px;
+    border-radius: 4px;
+    background: var(--color-primary);
+    transition: background 0.2s;
+}
+
+.navLabel {
+    flex: 1 1 auto;
+    font-size: 1rem;
+    white-space: nowrap;
+}
+
+.outlineLinks {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 10px 0 0 0;
+    padding: 0 18px;
+    flex: 0 0 auto;
+}
+
+.outlineLink {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-muted);
+    text-decoration: none;
+    font-size: 1rem;
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    transition: color 0.15s;
+}
+
+.outlineLink:hover {
+    background: var(--surface-2);
+    color: var(--color-primary);
+}
+
+.outlineLabel {
+    font-weight: 600;
+}
+
+.metronic-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 18px;
+    border-top: 1px solid var(--border);
+    margin-top: auto;
+    flex: 0 0 auto;
+}
+
+.avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--color-border);
+}
+
+.footerIcons {
+    display: flex;
+    gap: 8px;
 }
 
 @media (max-width: 960px) {
-    .sidebar {
+    .metronic-sidebar {
         position: fixed;
         left: 0;
         top: 0;
-        z-index: 20;
-        width: 280px;
+        width: 80vw;
+        max-width: 280px;
+        min-width: 64px;
+        height: 100vh;
         transform: translateX(-102%);
-        transition: transform 200ms ease;
-        box-shadow: none;
-    }
-
-    .sidebar.collapsed {
-        padding: var(--space-6);
-    }
-
-    .sidebar.collapsed .brandText,
-    .sidebar.collapsed .navLabel {
-        display: block;
-    }
-
-    .sidebar.collapsed .navItem {
-        grid-template-columns: 20px 1fr;
-        justify-content: start;
+        transition: transform 0.2s var(--ease-standard);
+        box-shadow: 0 8px 32px rgba(16, 24, 40, 0.18);
     }
 
     .sidebar.open {
@@ -269,5 +495,48 @@ function isActive(name: string) {
         z-index: 10;
         background: rgba(0, 0, 0, 0.4);
     }
+}
+
+@media (max-width: 600px) {
+    .metronic-sidebar {
+        width: 100vw;
+        max-width: 100vw;
+    }
+}
+
+.sidebar.collapsed {
+    max-width: 80px;
+}
+
+.sidebar.collapsed .brandText,
+.sidebar.collapsed .navLabel,
+.sidebar.collapsed .sidebarActions span,
+.sidebar.collapsed .outlineLabel {
+    display: none;
+}
+
+.sidebar.collapsed .metronic-nav-item,
+.sidebar.collapsed .outlineLink {
+    justify-content: center;
+    padding: 12px;
+}
+
+.sidebar.collapsed .navIcon {
+    margin: 0;
+}
+
+.sidebar.collapsed .chevron {
+    display: none;
+}
+
+:root[data-theme="dark"] .metronic-sidebar {
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+}
+
+:root[data-theme="dark"] .metronic-nav-item:hover,
+:root[data-theme="dark"] .metronic-nav-item.active,
+:root[data-theme="dark"] .outlineLink:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 </style>

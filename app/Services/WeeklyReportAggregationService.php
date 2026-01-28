@@ -42,6 +42,11 @@ class WeeklyReportAggregationService
                 'from',
                 'to',
                 'started_at',
+                'category_id',
+                'sub_category_id',
+                'sub_category_label',
+                'category_source',
+                'category_confidence',
             ])
             ->where('company_id', $companyId);
 
@@ -77,6 +82,8 @@ class WeeklyReportAggregationService
                         'short_calls_count' => 0,
                         'top_extensions' => [],
                         'call_ids' => [],
+                        'category_counts' => [],
+                        'category_details' => [],
                     ];
                 }
 
@@ -97,6 +104,52 @@ class WeeklyReportAggregationService
                     $accumulators[$key]['top_extensions'][$extension] = ($accumulators[$key]['top_extensions'][$extension] ?? 0) + 1;
                 }
 
+                // Track category data (use stored values only, never re-run AI)
+                $categoryId = $call->category_id ? (int) $call->category_id : null;
+                if ($categoryId) {
+                    if (!isset($accumulators[$key]['category_counts'][$categoryId])) {
+                        $accumulators[$key]['category_counts'][$categoryId] = 0;
+                    }
+                    $accumulators[$key]['category_counts'][$categoryId]++;
+
+                    if (!isset($accumulators[$key]['category_details'][$categoryId])) {
+                        $accumulators[$key]['category_details'][$categoryId] = [
+                            'total_calls' => 0,
+                            'total_duration' => 0,
+                            'sub_categories' => [],
+                            'sources' => [],
+                            'avg_confidence' => 0,
+                            'confidence_sum' => 0,
+                        ];
+                    }
+
+                    $accumulators[$key]['category_details'][$categoryId]['total_calls']++;
+                    $accumulators[$key]['category_details'][$categoryId]['total_duration'] += (int) ($call->duration_seconds ?? 0);
+
+                    // Track sub-category
+                    $subCategoryId = $call->sub_category_id ? (int) $call->sub_category_id : null;
+                    $subCategoryLabel = $call->sub_category_label ? (string) $call->sub_category_label : null;
+                    if ($subCategoryId || $subCategoryLabel) {
+                        $subKey = $subCategoryId ? "id:{$subCategoryId}" : "label:{$subCategoryLabel}";
+                        if (!isset($accumulators[$key]['category_details'][$categoryId]['sub_categories'][$subKey])) {
+                            $accumulators[$key]['category_details'][$categoryId]['sub_categories'][$subKey] = 0;
+                        }
+                        $accumulators[$key]['category_details'][$categoryId]['sub_categories'][$subKey]++;
+                    }
+
+                    // Track source
+                    $source = $call->category_source ? (string) $call->category_source : 'unknown';
+                    if (!isset($accumulators[$key]['category_details'][$categoryId]['sources'][$source])) {
+                        $accumulators[$key]['category_details'][$categoryId]['sources'][$source] = 0;
+                    }
+                    $accumulators[$key]['category_details'][$categoryId]['sources'][$source]++;
+
+                    // Track confidence for averaging
+                    if ($call->category_confidence !== null) {
+                        $accumulators[$key]['category_details'][$categoryId]['confidence_sum'] += (float) $call->category_confidence;
+                    }
+                }
+
                 $accumulators[$key]['call_ids'][] = (int) $call->id;
             }
         });
@@ -106,6 +159,7 @@ class WeeklyReportAggregationService
         foreach ($accumulators as $weekly) {
             $topicCounts = $this->computeTopTopicsFromTranscripts($weekly['call_ids']);
             $topExtensions = $this->topN($weekly['top_extensions'], 10);
+            $categoryMetrics = $this->buildCategoryMetrics($weekly['category_counts'], $weekly['category_details']);
 
             DB::table('weekly_call_reports')->upsert(
                 [[
@@ -121,6 +175,8 @@ class WeeklyReportAggregationService
                         'short_calls_count' => $weekly['short_calls_count'],
                         'short_call_threshold_seconds' => self::SHORT_CALL_THRESHOLD_SECONDS,
                         'source' => 'WeeklyReportAggregationService',
+                        'category_counts' => $categoryMetrics['category_counts'],
+                        'category_breakdowns' => $categoryMetrics['category_breakdowns'],
                     ]),
                     'updated_at' => now(),
                     'created_at' => now(),
@@ -255,5 +311,118 @@ class WeeklyReportAggregationService
         }
 
         return $result;
+    }
+
+    /**
+     * Build category metrics from accumulated data.
+     * Uses ONLY stored category data from calls table - never runs AI.
+     *
+     * @param  array<int,int>  $categoryCounts
+     * @param  array<int,array>  $categoryDetails
+     * @return array{category_counts:array,category_breakdowns:array}
+     */
+    private function buildCategoryMetrics(array $categoryCounts, array $categoryDetails): array
+    {
+        if (empty($categoryCounts)) {
+            return [
+                'category_counts' => [],
+                'category_breakdowns' => [],
+            ];
+        }
+
+        // Load category names from database
+        $categoryIds = array_keys($categoryCounts);
+        $categories = DB::table('call_categories')
+            ->select(['id', 'name'])
+            ->whereIn('id', $categoryIds)
+            ->get()
+            ->keyBy('id');
+
+        // Load sub-category names
+        $subCategoryIds = [];
+        foreach ($categoryDetails as $details) {
+            foreach (array_keys($details['sub_categories']) as $subKey) {
+                if (str_starts_with($subKey, 'id:')) {
+                    $subCategoryIds[] = (int) substr($subKey, 3);
+                }
+            }
+        }
+
+        $subCategories = [];
+        if (!empty($subCategoryIds)) {
+            $subCategories = DB::table('sub_categories')
+                ->select(['id', 'name'])
+                ->whereIn('id', $subCategoryIds)
+                ->get()
+                ->keyBy('id');
+        }
+
+        // Build category_counts array
+        $counts = [];
+        foreach ($categoryCounts as $categoryId => $count) {
+            $categoryName = $categories[$categoryId]->name ?? "Unknown (ID: {$categoryId})";
+            $counts[] = [
+                'category_id' => $categoryId,
+                'category_name' => $categoryName,
+                'call_count' => $count,
+            ];
+        }
+
+        // Sort by call count descending
+        usort($counts, fn($a, $b) => $b['call_count'] <=> $a['call_count']);
+
+        // Build category_breakdowns array with detailed metrics
+        $breakdowns = [];
+        foreach ($categoryDetails as $categoryId => $details) {
+            $categoryName = $categories[$categoryId]->name ?? "Unknown (ID: {$categoryId})";
+
+            // Calculate average confidence
+            $avgConfidence = null;
+            if ($details['total_calls'] > 0 && $details['confidence_sum'] > 0) {
+                $avgConfidence = round($details['confidence_sum'] / $details['total_calls'], 2);
+            }
+
+            // Format sub-categories
+            $subCategoriesFormatted = [];
+            foreach ($details['sub_categories'] as $subKey => $subCount) {
+                if (str_starts_with($subKey, 'id:')) {
+                    $subId = (int) substr($subKey, 3);
+                    $subName = $subCategories[$subId]->name ?? "Unknown (ID: {$subId})";
+                    $subCategoriesFormatted[] = [
+                        'id' => $subId,
+                        'name' => $subName,
+                        'count' => $subCount,
+                    ];
+                } else if (str_starts_with($subKey, 'label:')) {
+                    $label = substr($subKey, 6);
+                    $subCategoriesFormatted[] = [
+                        'id' => null,
+                        'name' => $label,
+                        'count' => $subCount,
+                    ];
+                }
+            }
+
+            // Sort sub-categories by count
+            usort($subCategoriesFormatted, fn($a, $b) => $b['count'] <=> $a['count']);
+
+            $breakdowns[] = [
+                'category_id' => $categoryId,
+                'category_name' => $categoryName,
+                'total_calls' => $details['total_calls'],
+                'total_duration_seconds' => $details['total_duration'],
+                'avg_confidence' => $avgConfidence,
+                'sources' => $details['sources'],
+                'sub_categories' => $subCategoriesFormatted,
+            ];
+        }
+
+        // Sort breakdowns by total calls descending
+        usort($breakdowns, fn($a, $b) => $b['total_calls'] <=> $a['total_calls']);
+
+        return [
+            'category_counts' => $counts,
+            'category_breakdowns' => $breakdowns,
+        ];
     }
 }

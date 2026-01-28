@@ -228,23 +228,26 @@ class IngestPbxCallsJob implements ShouldQueue
                     $transcriptText = is_string($transcriptText) ? trim($transcriptText) : null;
                 }
 
-                if (is_string($transcriptText)) {
-                    $normalized = trim($transcriptText);
-                    if ($normalized !== '' && stripos($normalized, 'no transcription') === false) {
-                        $call->has_transcription = true;
-                        $call->transcript_text = $normalized;
-                        $call->save();
-                        $transcriptionsStored++;
+                    if (is_string($transcriptText)) {
+                        $normalized = trim($transcriptText);
+                        if ($normalized !== '' && stripos($normalized, 'no transcription') === false) {
+                            $call->has_transcription = true;
+                            $call->transcript_text = $normalized;
+                            $call->transcription_checked_at = now();
+                            $call->save();
+                            $transcriptionsStored++;
+                        } else {
+                            // Explicitly mark as no transcription when the API returns a sentinel string.
+                            $call->has_transcription = false;
+                            $call->transcription_checked_at = now();
+                            $call->save();
+                        }
                     } else {
-                        // Explicitly mark as no transcription when the API returns a sentinel string.
+                        // No transcription provided (non-fatal).
                         $call->has_transcription = false;
+                        $call->transcription_checked_at = now();
                         $call->save();
                     }
-                } else {
-                    // No transcription provided (non-fatal).
-                    $call->has_transcription = false;
-                    $call->save();
-                }
             }
 
             Log::info('PBXware ingestion summary', [
