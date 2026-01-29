@@ -13,39 +13,51 @@ return new class extends Migration
     {
         Schema::table('calls', function (Blueprint $table) {
             // Foreign key to call_categories table
-            $table->foreignId('category_id')
-                ->nullable()
-                ->after('transcript_text')
-                ->constrained('call_categories')
-                ->nullOnDelete();
+            if (!Schema::hasColumn('calls', 'category_id')) {
+                $table->foreignId('category_id')
+                    ->nullable()
+                    ->after('transcript_text')
+                    ->constrained('call_categories')
+                    ->nullOnDelete();
+            }
 
             // Foreign key to sub_categories table (nullable - not all calls have sub-categories)
-            $table->foreignId('sub_category_id')
-                ->nullable()
-                ->after('category_id')
-                ->constrained('sub_categories')
-                ->nullOnDelete();
+            if (!Schema::hasColumn('calls', 'sub_category_id')) {
+                $table->foreignId('sub_category_id')
+                    ->nullable()
+                    ->after('category_id')
+                    ->constrained('sub_categories')
+                    ->nullOnDelete();
+            }
 
             // Store sub-category text when AI provides label but no matching sub-category exists
-            $table->string('sub_category_label')
-                ->nullable()
-                ->after('sub_category_id');
+            if (!Schema::hasColumn('calls', 'sub_category_label')) {
+                $table->string('sub_category_label')
+                    ->nullable()
+                    ->after('sub_category_id');
+            }
 
             // Track categorization source: 'ai', 'manual', 'default'
-            $table->enum('category_source', ['ai', 'manual', 'default'])
-                ->nullable()
-                ->after('sub_category_label')
-                ->index();
+            if (!Schema::hasColumn('calls', 'category_source')) {
+                $table->enum('category_source', ['ai', 'manual', 'default'])
+                    ->nullable()
+                    ->after('sub_category_label')
+                    ->index();
+            }
 
             // AI confidence score (0.0 to 1.0)
-            $table->decimal('category_confidence', 3, 2)
-                ->nullable()
-                ->after('category_source');
+            if (!Schema::hasColumn('calls', 'category_confidence')) {
+                $table->decimal('category_confidence', 3, 2)
+                    ->nullable()
+                    ->after('category_source');
+            }
 
             // Timestamp when categorization was performed
-            $table->timestamp('categorized_at')
-                ->nullable()
-                ->after('category_confidence');
+            if (!Schema::hasColumn('calls', 'categorized_at')) {
+                $table->timestamp('categorized_at')
+                    ->nullable()
+                    ->after('category_confidence');
+            }
         });
     }
 

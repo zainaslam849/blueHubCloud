@@ -6,19 +6,24 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Run the migrations.
+     */
     public function up(): void
     {
         Schema::table('company_pbx_accounts', function (Blueprint $table) {
-            // server_id column already exists in initial create migration, so this is a no-op
-            // This migration is kept for historical reasons
+            $table->dropColumn(['name', 'pbx_name']);
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
         Schema::table('company_pbx_accounts', function (Blueprint $table) {
-            $table->dropIndex(['server_id']);
-            $table->dropColumn('server_id');
+            $table->string('name')->nullable();
+            $table->string('pbx_name')->nullable();
         });
     }
 };

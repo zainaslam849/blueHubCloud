@@ -1,26 +1,122 @@
 <template>
     <div class="admin-container admin-page">
-        <header class="admin-page__header">
-            <div>
-                <p class="admin-page__kicker">Insights</p>
-                <h1 class="admin-page__title">Transcription</h1>
-                <p class="admin-page__subtitle">Read-only transcript viewer.</p>
+        <header class="admin-transcriptionDetailHeader">
+            <div class="admin-transcriptionDetailHeader__left">
+                <div class="admin-transcriptionDetailHeader__icon">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path
+                            d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                        />
+                        <path
+                            d="M9 13h6M9 17h4"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M19 3H5a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                        />
+                    </svg>
+                </div>
+                <div class="admin-transcriptionDetailHeader__content">
+                    <div class="admin-transcriptionDetailHeader__breadcrumb">
+                        <router-link
+                            :to="{ name: 'admin.transcriptions' }"
+                            class="admin-transcriptionDetailHeader__breadLink"
+                        >
+                            Transcriptions
+                        </router-link>
+                        <span class="admin-transcriptionDetailHeader__breadSep"
+                            >/</span
+                        >
+                        <span>{{ transcriptionId }}</span>
+                    </div>
+                    <h1 class="admin-transcriptionDetailHeader__title">
+                        {{ company?.name || "Unknown Company" }}
+                    </h1>
+                    <p class="admin-transcriptionDetailHeader__subtitle">
+                        Transcript from {{ formatDate(t?.createdAt) }}
+                    </p>
+                </div>
             </div>
 
-            <div class="admin-callsDetailHeader__actions">
+            <div class="admin-transcriptionDetailHeader__stats">
+                <div class="admin-transcriptionDetailHeader__stat">
+                    <div class="admin-transcriptionDetailHeader__statLabel">
+                        Duration
+                    </div>
+                    <div class="admin-transcriptionDetailHeader__statValue">
+                        {{ formatDuration(t?.durationSeconds) }}
+                    </div>
+                </div>
+                <div class="admin-transcriptionDetailHeader__stat">
+                    <div class="admin-transcriptionDetailHeader__statLabel">
+                        Provider
+                    </div>
+                    <div class="admin-transcriptionDetailHeader__statValue">
+                        {{ t?.provider || "—" }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-transcriptionDetailHeader__actions">
                 <BaseButton
-                    variant="secondary"
+                    variant="ghost"
                     size="sm"
                     :to="{ name: 'admin.transcriptions' }"
+                    class="admin-detailActionBtn"
                 >
-                    Back to Transcriptions
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="admin-detailActionBtn__icon"
+                    >
+                        <path
+                            d="M19 12H5M5 12L12 19M5 12L12 5"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    Back
                 </BaseButton>
                 <BaseButton
-                    variant="secondary"
+                    variant="ghost"
                     size="sm"
                     :loading="loading"
                     @click="refresh"
+                    class="admin-detailActionBtn"
                 >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="admin-detailActionBtn__icon"
+                    >
+                        <path
+                            d="M20 12a8 8 0 1 1-2.34-5.66"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M20 4v6h-6"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
                     Refresh
                 </BaseButton>
             </div>

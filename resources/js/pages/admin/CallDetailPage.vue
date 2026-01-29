@@ -1,48 +1,76 @@
 <template>
     <div class="admin-container admin-page">
-        <header class="admin-page__header">
-            <div>
-                <div class="admin-callDetailBreadcrumb">
-                    <router-link
-                        :to="{ name: 'admin.calls' }"
-                        class="admin-callDetailBreadcrumb__link"
+        <header class="admin-callDetailHeader">
+            <div class="admin-callDetailHeader__left">
+                <div class="admin-callDetailHeader__icon">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
                     >
-                        Calls
-                    </router-link>
-                    <span class="admin-callDetailBreadcrumb__separator">/</span>
-                    <span class="admin-callDetailBreadcrumb__current">
-                        {{ call?.callId || "Loading..." }}
-                    </span>
+                        <path
+                            d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            fill="none"
+                        />
+                    </svg>
                 </div>
-                <h1 class="admin-page__title admin-callDetailTitle">
-                    <span class="admin-callDetailTitle__label"
-                        >Call Details</span
-                    >
-                    <BaseBadge
-                        v-if="!loading && call?.status"
-                        :variant="badgeVariant(call?.status)"
-                        size="lg"
-                    >
-                        {{ String(call?.status || "").toUpperCase() }}
-                    </BaseBadge>
-                </h1>
-                <p v-if="!loading" class="admin-page__subtitle">
-                    {{ call?.company || "Unknown Company" }} •
-                    {{ formatDate(call?.createdAt) }}
-                </p>
+                <div class="admin-callDetailHeader__content">
+                    <div class="admin-callDetailHeader__breadcrumb">
+                        <router-link
+                            :to="{ name: 'admin.calls' }"
+                            class="admin-callDetailHeader__breadLink"
+                        >
+                            Calls
+                        </router-link>
+                        <span class="admin-callDetailHeader__breadSep">/</span>
+                        <span>{{ call?.callId || "Loading..." }}</span>
+                    </div>
+                    <h1 class="admin-callDetailHeader__title">
+                        {{ call?.company || "Unknown Company" }}
+                    </h1>
+                    <p class="admin-callDetailHeader__subtitle">
+                        Call on {{ formatDate(call?.createdAt) }}
+                    </p>
+                </div>
             </div>
 
-            <div class="admin-callsDetailHeader__actions">
+            <div class="admin-callDetailHeader__stats">
+                <div class="admin-callDetailHeader__stat">
+                    <div class="admin-callDetailHeader__statLabel">
+                        Duration
+                    </div>
+                    <div class="admin-callDetailHeader__statValue">
+                        {{ formatDuration(call?.durationSeconds) }}
+                    </div>
+                </div>
+                <div class="admin-callDetailHeader__stat">
+                    <div class="admin-callDetailHeader__statLabel">Status</div>
+                    <div class="admin-callDetailHeader__statValue">
+                        <BaseBadge
+                            v-if="!loading && call?.status"
+                            :variant="badgeVariant(call?.status)"
+                        >
+                            {{ String(call?.status || "").toUpperCase() }}
+                        </BaseBadge>
+                        <span v-else>—</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-callDetailHeader__actions">
                 <BaseButton
-                    variant="secondary"
+                    variant="ghost"
                     size="sm"
                     :to="{ name: 'admin.calls' }"
+                    class="admin-detailActionBtn"
                 >
                     <svg
                         viewBox="0 0 24 24"
                         fill="none"
                         xmlns="http://www.w3.org/2000/svg"
-                        style="width: 16px; height: 16px; margin-right: 6px"
+                        class="admin-detailActionBtn__icon"
                     >
                         <path
                             d="M19 12H5M5 12L12 19M5 12L12 5"
@@ -55,27 +83,28 @@
                     Back
                 </BaseButton>
                 <BaseButton
-                    variant="secondary"
+                    variant="ghost"
                     size="sm"
                     :loading="loading"
                     @click="refresh"
+                    class="admin-detailActionBtn"
                 >
                     <svg
                         viewBox="0 0 24 24"
                         fill="none"
                         xmlns="http://www.w3.org/2000/svg"
-                        style="width: 16px; height: 16px; margin-right: 6px"
+                        class="admin-detailActionBtn__icon"
                     >
                         <path
-                            d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C14.3051 3 16.4077 3.89892 17.9923 5.36907"
+                            d="M20 12a8 8 0 1 1-2.34-5.66"
                             stroke="currentColor"
-                            stroke-width="2"
+                            stroke-width="1.8"
                             stroke-linecap="round"
                         />
                         <path
-                            d="M21 3V8M21 8H16M21 8L17 4"
+                            d="M20 4v6h-6"
                             stroke="currentColor"
-                            stroke-width="2"
+                            stroke-width="1.8"
                             stroke-linecap="round"
                             stroke-linejoin="round"
                         />

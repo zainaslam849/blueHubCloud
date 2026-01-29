@@ -11,11 +11,6 @@ class CompanyPbxAccount extends Model
     protected $fillable = [
         'company_id',
         'pbx_provider_id',
-        'name',
-        'pbx_name',
-        'api_endpoint',
-        'api_key',
-        'api_secret',
         'server_id',
         'status',
     ];

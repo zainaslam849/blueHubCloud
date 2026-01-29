@@ -99,6 +99,12 @@ const router = createRouter({
             component: () => import("../../pages/admin/CategoriesPage.vue"),
         },
         {
+            path: "/pbx-accounts",
+            name: "admin.pbxAccounts",
+            meta: { title: "PBX Accounts", breadcrumb: "PBX Accounts" },
+            component: () => import("../../pages/admin/PbxAccountsPage.vue"),
+        },
+        {
             path: "/:pathMatch(.*)*",
             name: "admin.notFound",
             meta: { title: "Not found" },

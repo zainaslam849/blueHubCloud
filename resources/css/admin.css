@@ -5194,3 +5194,264 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 .dp__today {
     border: 2px solid var(--accent-primary);
 }
+/* ============================================================================ */
+/* Detail Page Headers (Call, Transcription, Weekly Report) */
+/* ============================================================================ */
+
+.admin-callDetailHeader,
+.admin-transcriptionDetailHeader,
+.admin-reportDetailHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    padding: 28px 32px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 32px;
+}
+
+/* Left section: icon + content */
+.admin-callDetailHeader__left,
+.admin-transcriptionDetailHeader__left,
+.admin-reportDetailHeader__left {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Icon badges */
+.admin-callDetailHeader__icon,
+.admin-transcriptionDetailHeader__icon,
+.admin-reportDetailHeader__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+    border-radius: 12px;
+    color: white;
+    font-size: 28px;
+}
+
+/* Call detail: blue gradient */
+.admin-callDetailHeader__icon {
+    background: linear-gradient(135deg, var(--accent-primary) 0%, #1d4ed8 100%);
+}
+
+/* Transcription detail: green gradient */
+.admin-transcriptionDetailHeader__icon {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+/* Report detail: amber gradient */
+.admin-reportDetailHeader__icon {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.admin-callDetailHeader__icon svg,
+.admin-transcriptionDetailHeader__icon svg,
+.admin-reportDetailHeader__icon svg {
+    width: 28px;
+    height: 28px;
+}
+
+/* Content section */
+.admin-callDetailHeader__content,
+.admin-transcriptionDetailHeader__content,
+.admin-reportDetailHeader__content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Breadcrumb */
+.admin-callDetailHeader__breadcrumb,
+.admin-transcriptionDetailHeader__breadcrumb,
+.admin-reportDetailHeader__breadcrumb {
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: 0.3px;
+}
+
+.admin-callDetailHeader__breadLink,
+.admin-transcriptionDetailHeader__breadLink,
+.admin-reportDetailHeader__breadLink {
+    color: var(--accent-primary);
+    text-decoration: none;
+    transition: color 160ms ease;
+}
+
+.admin-callDetailHeader__breadLink:hover,
+.admin-transcriptionDetailHeader__breadLink:hover,
+.admin-reportDetailHeader__breadLink:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+}
+
+.admin-callDetailHeader__breadSep,
+.admin-transcriptionDetailHeader__breadSep,
+.admin-reportDetailHeader__breadSep {
+    color: var(--border-color);
+    margin: 0 6px;
+}
+
+/* Title */
+.admin-callDetailHeader__title,
+.admin-transcriptionDetailHeader__title,
+.admin-reportDetailHeader__title {
+    font-size: 24px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+    letter-spacing: -0.5px;
+}
+
+/* Subtitle */
+.admin-callDetailHeader__subtitle,
+.admin-transcriptionDetailHeader__subtitle,
+.admin-reportDetailHeader__subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Stats section */
+.admin-callDetailHeader__stats,
+.admin-transcriptionDetailHeader__stats,
+.admin-reportDetailHeader__stats {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    min-width: fit-content;
+}
+
+.admin-callDetailHeader__stat,
+.admin-transcriptionDetailHeader__stat,
+.admin-reportDetailHeader__stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.admin-callDetailHeader__statLabel,
+.admin-transcriptionDetailHeader__statLabel,
+.admin-reportDetailHeader__statLabel {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.admin-callDetailHeader__statValue,
+.admin-transcriptionDetailHeader__statValue,
+.admin-reportDetailHeader__statValue {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Actions section */
+.admin-callDetailHeader__actions,
+.admin-transcriptionDetailHeader__actions,
+.admin-reportDetailHeader__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.admin-detailActionBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 160ms ease;
+}
+
+.admin-detailActionBtn__icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 160ms ease;
+}
+
+.admin-detailActionBtn:hover .admin-detailActionBtn__icon {
+    transform: translateY(-1px);
+}
+
+.admin-detailActionBtn:active {
+    transform: scale(0.98);
+}
+
+/* Responsive design */
+@media (max-width: 1023px) {
+    .admin-callDetailHeader,
+    .admin-transcriptionDetailHeader,
+    .admin-reportDetailHeader {
+        flex-direction: column;
+        gap: 16px;
+        padding: 20px 16px;
+    }
+
+    .admin-callDetailHeader__left,
+    .admin-transcriptionDetailHeader__left,
+    .admin-reportDetailHeader__left {
+        width: 100%;
+    }
+
+    .admin-callDetailHeader__stats,
+    .admin-transcriptionDetailHeader__stats,
+    .admin-reportDetailHeader__stats {
+        width: 100%;
+        gap: 16px;
+    }
+
+    .admin-callDetailHeader__actions,
+    .admin-transcriptionDetailHeader__actions,
+    .admin-reportDetailHeader__actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .admin-callDetailHeader__title,
+    .admin-transcriptionDetailHeader__title,
+    .admin-reportDetailHeader__title {
+        font-size: 20px;
+    }
+}
+
+@media (max-width: 640px) {
+    .admin-callDetailHeader__icon,
+    .admin-transcriptionDetailHeader__icon,
+    .admin-reportDetailHeader__icon {
+        width: 48px;
+        height: 48px;
+        min-width: 48px;
+    }
+
+    .admin-callDetailHeader__icon svg,
+    .admin-transcriptionDetailHeader__icon svg,
+    .admin-reportDetailHeader__icon svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    .admin-callDetailHeader__title,
+    .admin-transcriptionDetailHeader__title,
+    .admin-reportDetailHeader__title {
+        font-size: 18px;
+    }
+
+    .admin-callDetailHeader__statValue,
+    .admin-transcriptionDetailHeader__statValue,
+    .admin-reportDetailHeader__statValue {
+        font-size: 16px;
+    }
+}

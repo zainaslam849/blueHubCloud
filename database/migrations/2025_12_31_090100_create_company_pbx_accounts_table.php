@@ -22,10 +22,9 @@ return new class extends Migration
                 ->constrained('pbx_providers')
                 ->cascadeOnDelete();
 
-            $table->string('pbx_name');
-            $table->string('api_endpoint')->nullable();
-            $table->string('api_key')->nullable();
-            $table->string('api_secret')->nullable();
+            $table->string('name');
+            $table->string('pbx_name')->nullable();
+            $table->string('server_id')->index();
             $table->string('status')->default('active')->index();
 
             $table->timestamps();

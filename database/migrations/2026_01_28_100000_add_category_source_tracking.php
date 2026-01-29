@@ -21,12 +21,17 @@ return new class extends Migration {
         Schema::table('calls', function (Blueprint $table) {
             // Track category source (ai, manual, rule, null)
             if (! Schema::hasColumn('calls', 'category_source')) {
-                $table->enum('category_source', ['rule', 'ai', 'manual'])->nullable()->after('category_confidence')
-                    ->comment('Source of category: rule-based, AI-generated, or manually assigned');
+                if (Schema::hasColumn('calls', 'category_confidence')) {
+                    $table->enum('category_source', ['rule', 'ai', 'manual'])->nullable()->after('category_confidence')
+                        ->comment('Source of category: rule-based, AI-generated, or manually assigned');
+                } else {
+                    $table->enum('category_source', ['rule', 'ai', 'manual'])->nullable()
+                        ->comment('Source of category: rule-based, AI-generated, or manually assigned');
+                }
             }
 
             // Add index for confidence filtering (needed for threshold enforcement)
-            if (! Schema::hasIndex('calls', 'idx_calls_category_confidence')) {
+            if (Schema::hasColumn('calls', 'category_confidence') && ! Schema::hasIndex('calls', 'idx_calls_category_confidence')) {
                 $table->index('category_confidence', 'idx_calls_category_confidence');
             }
 

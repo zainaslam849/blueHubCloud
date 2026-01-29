@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
 use App\Http\Controllers\Admin\AdminCompaniesController;
+use App\Http\Controllers\Admin\AdminPbxAccountsController;
 use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
 use App\Http\Controllers\Admin\CategoryController;
@@ -22,6 +23,15 @@ Route::prefix('admin/api')->group(function () {
     Route::middleware(['admin'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::get('/companies', [AdminCompaniesController::class, 'index']);
+        
+        // PBX Accounts management
+        Route::get('/pbx-accounts', [AdminPbxAccountsController::class, 'index']);
+        Route::post('/pbx-accounts', [AdminPbxAccountsController::class, 'store']);
+        Route::get('/pbx-accounts/{id}', [AdminPbxAccountsController::class, 'show']);
+        Route::put('/pbx-accounts/{id}', [AdminPbxAccountsController::class, 'update']);
+        Route::delete('/pbx-accounts/{id}', [AdminPbxAccountsController::class, 'destroy']);
+        Route::get('/pbx-providers', [AdminPbxAccountsController::class, 'providers']);
+        
         Route::get('/calls', [AdminCallsController::class, 'index']);
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);

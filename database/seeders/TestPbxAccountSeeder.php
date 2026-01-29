@@ -36,10 +36,9 @@ class TestPbxAccountSeeder extends Seeder
         DB::table('company_pbx_accounts')->insert([
             'company_id' => $companyId,
             'pbx_provider_id' => $providerId,
+            'name' => 'Test PBX Account',
             'pbx_name' => 'pbxware-test',
-            'api_endpoint' => null,
-            'api_key' => null,
-            'api_secret' => null,
+            'server_id' => 'test-server-1',
             'status' => 'active',
             'created_at' => now(),
             'updated_at' => now(),
