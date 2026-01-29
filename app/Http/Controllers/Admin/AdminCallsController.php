@@ -50,7 +50,7 @@ class AdminCallsController extends Controller
         $query = Call::query()->select('calls.*')
             ->with([
                 'company:id,name',
-                'companyPbxAccount:id,pbx_provider_id,pbx_name',
+                'companyPbxAccount:id,pbx_provider_id,company_id',
                 'companyPbxAccount.pbxProvider:id,name',
                 'category:id,name',
                 'subCategory:id,name',
@@ -122,9 +122,7 @@ class AdminCallsController extends Controller
         if ($sort === 'company') {
             $query->orderBy('companies.name', $direction);
         } elseif ($sort === 'provider') {
-            // Prefer provider name, then fallback to PBX account name.
-            $query->orderBy('pbx_providers.name', $direction)
-                ->orderBy('company_pbx_accounts.pbx_name', $direction);
+            $query->orderBy('pbx_providers.name', $direction);
         } else {
             $query->orderBy("calls.{$sort}", $direction);
         }
@@ -136,9 +134,7 @@ class AdminCallsController extends Controller
 
         return response()->json([
             'data' => collect($paginator->items())->map(function (Call $call) {
-                $providerName = $call->companyPbxAccount?->pbxProvider?->name
-                    ?? $call->companyPbxAccount?->pbx_name
-                    ?? '—';
+                $providerName = $call->companyPbxAccount?->pbxProvider?->name ?? '—';
 
                 $statusRaw = (string) ($call->status ?? '');
                 $status = strtolower($statusRaw);
@@ -189,7 +185,7 @@ class AdminCallsController extends Controller
         $callQuery = Call::query()
             ->with([
                 'company:id,name,timezone,status',
-                'companyPbxAccount:id,pbx_provider_id,pbx_name,company_id',
+                'companyPbxAccount:id,pbx_provider_id,company_id',
                 'companyPbxAccount.pbxProvider:id,name,slug,status',
             ]);
 
@@ -203,9 +199,7 @@ class AdminCallsController extends Controller
             ], 404);
         }
 
-        $providerName = $call->companyPbxAccount?->pbxProvider?->name
-            ?? $call->companyPbxAccount?->pbx_name
-            ?? '—';
+        $providerName = $call->companyPbxAccount?->pbxProvider?->name ?? '—';
 
         $callStatusRaw = (string) ($call->status ?? '');
         $callStatus = strtolower($callStatusRaw);
