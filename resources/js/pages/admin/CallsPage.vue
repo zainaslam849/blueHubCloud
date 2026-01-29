@@ -1,12 +1,36 @@
 <template>
     <div class="admin-container admin-page">
-        <header class="admin-page__header">
-            <div>
-                <p class="admin-page__kicker">Operations</p>
-                <h1 class="admin-page__title">Calls</h1>
-                <p class="admin-page__subtitle">
-                    Search, sort, and review recent calls.
-                </p>
+        <header class="admin-page__header admin-callsHeader">
+            <div class="admin-callsHeader__left">
+                <div class="admin-callsHeader__icon">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                    >
+                        <path
+                            d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
+                            fill="currentColor"
+                        />
+                    </svg>
+                </div>
+                <div>
+                    <p class="admin-page__kicker">Operations</p>
+                    <h1 class="admin-page__title">Calls</h1>
+                    <p class="admin-page__subtitle">
+                        Manage and review all incoming and outgoing calls in
+                        real-time.
+                    </p>
+                </div>
+            </div>
+
+            <div class="admin-callsHeader__stats">
+                <div class="admin-callsHeader__stat">
+                    <div class="admin-callsHeader__statValue">
+                        {{ formatNumber(meta.total) }}
+                    </div>
+                    <div class="admin-callsHeader__statLabel">Total Calls</div>
+                </div>
             </div>
         </header>
 
@@ -26,97 +50,182 @@
                             placeholder="Call ID, company, provider, status…"
                         />
                     </div>
-
-                    <BaseBadge variant="info">
-                        {{ meta.total }} total
-                    </BaseBadge>
                 </div>
 
                 <div class="admin-callsToolbar__right">
+                    <div ref="filterWrap" class="admin-filterPopover">
+                        <BaseButton
+                            variant="secondary"
+                            size="sm"
+                            class="admin-filterTrigger"
+                            @click="toggleFilters"
+                        >
+                            <span
+                                class="admin-filterTrigger__icon"
+                                aria-hidden="true"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M4 5H20L14 12V19L10 21V12L4 5Z"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                            </span>
+                            Filter
+                        </BaseButton>
+
+                        <div
+                            v-if="filtersOpen"
+                            class="admin-filterPanel"
+                            role="dialog"
+                            aria-label="Filter options"
+                        >
+                            <div class="admin-filterPanel__header">
+                                Filter Options
+                            </div>
+
+                            <div class="admin-filterGrid">
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-company"
+                                    >
+                                        Company
+                                    </label>
+                                    <select
+                                        id="filter-company"
+                                        v-model="draftFilterCompany"
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Companies</option>
+                                        <option
+                                            v-for="company in companies"
+                                            :key="company.id"
+                                            :value="company.id"
+                                        >
+                                            {{ company.name }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-category"
+                                    >
+                                        Category
+                                    </label>
+                                    <select
+                                        id="filter-category"
+                                        v-model="draftFilterCategory"
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Categories</option>
+                                        <option
+                                            v-for="cat in categories"
+                                            :key="cat.id"
+                                            :value="cat.id"
+                                        >
+                                            {{ cat.name }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-start-date"
+                                    >
+                                        Start date
+                                    </label>
+                                    <VueDatePicker
+                                        v-model="draftFilterStartDate"
+                                        :enable-time-picker="false"
+                                        placeholder="Select start date"
+                                        format="yyyy-MM-dd"
+                                        auto-apply
+                                        :clearable="true"
+                                    />
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-end-date"
+                                    >
+                                        End date
+                                    </label>
+                                    <VueDatePicker
+                                        v-model="draftFilterEndDate"
+                                        :enable-time-picker="false"
+                                        placeholder="Select end date"
+                                        format="yyyy-MM-dd"
+                                        auto-apply
+                                        :clearable="true"
+                                        :min-date="draftFilterStartDate"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="admin-filterActions">
+                                <BaseButton
+                                    variant="ghost"
+                                    size="sm"
+                                    @click="resetDraftFilters"
+                                >
+                                    Reset
+                                </BaseButton>
+                                <BaseButton
+                                    variant="primary"
+                                    size="sm"
+                                    @click="applyFilters"
+                                >
+                                    Apply
+                                </BaseButton>
+                            </div>
+                        </div>
+                    </div>
                     <BaseButton
                         variant="secondary"
                         size="sm"
                         :loading="loading"
                         @click="refresh"
                     >
+                        <span
+                            class="admin-filterTrigger__icon"
+                            aria-hidden="true"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <path
+                                    d="M20 12a8 8 0 1 1-2.34-5.66"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                                <path
+                                    d="M20 4v6h-6"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
                         Refresh
                     </BaseButton>
                 </div>
-            </div>
-
-            <!-- Category Filters -->
-            <div class="admin-callsFilters">
-                <div class="admin-field">
-                    <label class="admin-field__label" for="filter-category">
-                        Category
-                    </label>
-                    <select
-                        id="filter-category"
-                        v-model="filterCategory"
-                        class="admin-input"
-                    >
-                        <option value="">All Categories</option>
-                        <option
-                            v-for="cat in categories"
-                            :key="cat.id"
-                            :value="cat.id"
-                        >
-                            {{ cat.name }}
-                        </option>
-                    </select>
-                </div>
-
-                <div class="admin-field">
-                    <label class="admin-field__label" for="filter-source">
-                        Source
-                    </label>
-                    <select
-                        id="filter-source"
-                        v-model="filterSource"
-                        class="admin-input"
-                    >
-                        <option value="">All Sources</option>
-                        <option value="ai">AI</option>
-                        <option value="manual">Manual</option>
-                        <option value="default">Default</option>
-                    </select>
-                </div>
-
-                <div class="admin-field">
-                    <label class="admin-field__label" for="filter-conf-min">
-                        Min Confidence
-                    </label>
-                    <input
-                        id="filter-conf-min"
-                        v-model.number="filterConfidenceMin"
-                        class="admin-input"
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        placeholder="0.0"
-                    />
-                </div>
-
-                <div class="admin-field">
-                    <label class="admin-field__label" for="filter-conf-max">
-                        Max Confidence
-                    </label>
-                    <input
-                        id="filter-conf-max"
-                        v-model.number="filterConfidenceMax"
-                        class="admin-input"
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        placeholder="1.0"
-                    />
-                </div>
-
-                <BaseButton variant="ghost" size="sm" @click="clearFilters">
-                    Clear Filters
-                </BaseButton>
             </div>
 
             <div v-if="error" class="admin-alert admin-alert--error">
@@ -162,20 +271,7 @@
                     </button>
                 </template>
 
-                <template #header-provider>
-                    <button
-                        type="button"
-                        class="admin-callsSortBtn"
-                        @click="toggleSort('provider')"
-                    >
-                        Provider
-                        <span class="admin-callsSortBtn__chev">{{
-                            sortGlyph("provider")
-                        }}</span>
-                    </button>
-                </template>
-
-                <template #header-duration>
+                <template #header-durationSeconds>
                     <button
                         type="button"
                         class="admin-callsSortBtn"
@@ -203,12 +299,6 @@
 
                 <template #header-category> Category </template>
 
-                <template #header-subCategory> Sub-Category </template>
-
-                <template #header-categorySource> Source </template>
-
-                <template #header-categoryConfidence> Confidence </template>
-
                 <template #header-createdAt>
                     <button
                         type="button"
@@ -234,35 +324,18 @@
                     </BaseBadge>
                 </template>
 
-                <template #cell-category="{ value }">
-                    <span class="admin-callsCategory">{{ value || "—" }}</span>
-                </template>
-
-                <template #cell-subCategory="{ value }">
-                    <span class="admin-callsSubCategory">{{
-                        value || "—"
-                    }}</span>
-                </template>
-
-                <template #cell-categorySource="{ value }">
-                    <BaseBadge
-                        v-if="value"
-                        :variant="sourceVariant(value)"
-                        size="sm"
-                    >
-                        {{ String(value || "").toUpperCase() }}
-                    </BaseBadge>
-                    <span v-else>—</span>
-                </template>
-
-                <template #cell-categoryConfidence="{ value }">
-                    <span
-                        v-if="value !== null && value !== undefined"
-                        class="admin-callsConfidence"
-                    >
-                        {{ formatConfidence(value) }}
-                    </span>
-                    <span v-else>—</span>
+                <template #cell-category="{ row }">
+                    <div class="admin-callsCategory">
+                        <div class="admin-callsCategory__main">
+                            {{ row.category || "—" }}
+                        </div>
+                        <div
+                            v-if="row.subCategory"
+                            class="admin-callsCategory__sub"
+                        >
+                            {{ row.subCategory }}
+                        </div>
+                    </div>
                 </template>
 
                 <template #cell-createdAt="{ value }">
@@ -298,6 +371,8 @@
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { VueDatePicker } from "@vuepic/vue-datepicker";
+import "@vuepic/vue-datepicker/dist/main.css";
 
 import adminApi from "../../router/admin/api";
 import {
@@ -320,10 +395,19 @@ const sortBy = ref("created_at");
 const sortDirection = ref("desc");
 
 // Category filters
+const filterCompany = ref("");
 const filterCategory = ref("");
-const filterSource = ref("");
-const filterConfidenceMin = ref(null);
-const filterConfidenceMax = ref(null);
+const filterStartDate = ref("");
+const filterEndDate = ref("");
+
+const draftFilterCompany = ref("");
+const draftFilterCategory = ref("");
+const draftFilterStartDate = ref("");
+const draftFilterEndDate = ref("");
+
+const filtersOpen = ref(false);
+const filterWrap = ref(null);
+const companies = ref([]);
 const categories = ref([]);
 
 const rows = ref([]);
@@ -339,17 +423,13 @@ const isDesktop = ref(true);
 const columns = ref([
     { key: "callId", label: "Call ID" },
     { key: "company", label: "Company" },
-    { key: "provider", label: "Provider" },
-    { key: "duration", label: "Duration", cellClass: "admin-callsCol--right" },
-    { key: "status", label: "Status" },
-    { key: "category", label: "Category" },
-    { key: "subCategory", label: "Sub-Category" },
-    { key: "categorySource", label: "Source" },
     {
-        key: "categoryConfidence",
-        label: "Confidence",
+        key: "durationSeconds",
+        label: "Duration",
         cellClass: "admin-callsCol--right",
     },
+    { key: "status", label: "Status" },
+    { key: "category", label: "Category" },
     { key: "createdAt", label: "Created" },
     { key: "actions", label: "Actions", cellClass: "admin-callsCol--right" },
 ]);
@@ -374,19 +454,22 @@ function normalizeRow(item) {
 function formatDuration(seconds) {
     const s = Number(seconds);
     if (!Number.isFinite(s) || s < 0) return "—";
+    if (s === 0) return "0 seconds";
 
-    const hh = Math.floor(s / 3600);
-    const mm = Math.floor((s % 3600) / 60);
-    const ss = Math.floor(s % 60);
+    const totalMinutes = Math.floor(s / 60);
+    const secs = Math.floor(s % 60);
 
-    if (hh > 0) {
-        return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(
-            2,
-            "0",
-        )}`;
+    const parts = [];
+    if (totalMinutes > 0) {
+        parts.push(
+            `${totalMinutes} ${totalMinutes === 1 ? "minute" : "minutes"}`,
+        );
+    }
+    if (secs > 0) {
+        parts.push(`${secs} ${secs === 1 ? "second" : "seconds"}`);
     }
 
-    return `${mm}:${String(ss).padStart(2, "0")}`;
+    return parts.join(" ");
 }
 
 function formatDate(iso) {
@@ -396,25 +479,16 @@ function formatDate(iso) {
     return t.toLocaleString();
 }
 
+function formatNumber(num) {
+    if (!Number.isFinite(num)) return "—";
+    return new Intl.NumberFormat("en-US").format(num);
+}
+
 function badgeVariant(status) {
     const s = String(status || "").toLowerCase();
     if (s === "completed") return "active";
     if (s === "failed") return "failed";
     return "processing";
-}
-
-function sourceVariant(source) {
-    const s = String(source || "").toLowerCase();
-    if (s === "ai") return "info";
-    if (s === "manual") return "warning";
-    if (s === "default") return "secondary";
-    return "secondary";
-}
-
-function formatConfidence(value) {
-    if (value === null || value === undefined) return "—";
-    const percent = Math.round(value * 100);
-    return `${percent}%`;
 }
 
 function sortGlyph(key) {
@@ -446,24 +520,21 @@ async function fetchCalls() {
             direction: sortDirection.value,
         };
 
-        // Add category filters
+        // Add filters
+        if (filterCompany.value) {
+            params.company_id = filterCompany.value;
+        }
+
         if (filterCategory.value) {
             params.category_id = filterCategory.value;
         }
-        if (filterSource.value) {
-            params.source = filterSource.value;
+
+        if (filterStartDate.value) {
+            params.start_date = filterStartDate.value;
         }
-        if (
-            filterConfidenceMin.value !== null &&
-            filterConfidenceMin.value !== ""
-        ) {
-            params.confidence_min = filterConfidenceMin.value;
-        }
-        if (
-            filterConfidenceMax.value !== null &&
-            filterConfidenceMax.value !== ""
-        ) {
-            params.confidence_max = filterConfidenceMax.value;
+
+        if (filterEndDate.value) {
+            params.end_date = filterEndDate.value;
         }
 
         const res = await adminApi.get("/calls", { params });
@@ -481,6 +552,15 @@ async function fetchCalls() {
     }
 }
 
+async function loadCompanies() {
+    try {
+        const res = await adminApi.get("/companies");
+        companies.value = res?.data?.data || [];
+    } catch (e) {
+        console.error("Failed to load companies", e);
+    }
+}
+
 async function loadCategories() {
     try {
         const res = await adminApi.get("/categories/enabled");
@@ -491,12 +571,53 @@ async function loadCategories() {
 }
 
 function clearFilters() {
+    filterCompany.value = "";
     filterCategory.value = "";
-    filterSource.value = "";
-    filterConfidenceMin.value = null;
-    filterConfidenceMax.value = null;
+    filterStartDate.value = "";
+    filterEndDate.value = "";
     page.value = 1;
     fetchCalls();
+}
+
+function resetDraftFilters() {
+    draftFilterCompany.value = "";
+    draftFilterCategory.value = "";
+    draftFilterStartDate.value = "";
+    draftFilterEndDate.value = "";
+}
+
+function syncDraftFilters() {
+    draftFilterCompany.value = filterCompany.value;
+    draftFilterCategory.value = filterCategory.value;
+    draftFilterStartDate.value = filterStartDate.value;
+    draftFilterEndDate.value = filterEndDate.value;
+}
+
+function applyFilters() {
+    filterCompany.value = draftFilterCompany.value;
+    filterCategory.value = draftFilterCategory.value;
+
+    // Format dates from Date objects to YYYY-MM-DD strings
+    filterStartDate.value = draftFilterStartDate.value
+        ? draftFilterStartDate.value instanceof Date
+            ? draftFilterStartDate.value.toISOString().split("T")[0]
+            : draftFilterStartDate.value
+        : "";
+    filterEndDate.value = draftFilterEndDate.value
+        ? draftFilterEndDate.value instanceof Date
+            ? draftFilterEndDate.value.toISOString().split("T")[0]
+            : draftFilterEndDate.value
+        : "";
+    filtersOpen.value = false;
+    page.value = 1;
+    fetchCalls();
+}
+
+function toggleFilters() {
+    filtersOpen.value = !filtersOpen.value;
+    if (filtersOpen.value) {
+        syncDraftFilters();
+    }
 }
 
 function refresh() {
@@ -504,15 +625,15 @@ function refresh() {
 }
 
 function viewRow(row) {
-    const id = row?.id;
-    if (!id) return;
-    router.push({ name: "admin.calls.detail", params: { id } });
+    const callId = row?.callId;
+    if (!callId) return;
+    router.push({ name: "admin.calls.detail", params: { callId } });
 }
 
 let searchTimer = 0;
 
 function updateViewport() {
-    isDesktop.value = window.innerWidth > 768;
+    isDesktop.value = window.innerWidth >= 1024;
 }
 watch(
     () => search.value,
@@ -534,22 +655,25 @@ watch(
 );
 
 // Watch filter changes
-watch(
-    [filterCategory, filterSource, filterConfidenceMin, filterConfidenceMax],
-    () => {
-        page.value = 1;
-        fetchCalls();
-    },
-);
+function onDocumentClick(event) {
+    if (!filtersOpen.value) return;
+    const target = event.target;
+    if (!filterWrap.value || !(target instanceof Node)) return;
+    if (filterWrap.value.contains(target)) return;
+    filtersOpen.value = false;
+}
 
 onMounted(() => {
     updateViewport();
     window.addEventListener("resize", updateViewport);
+    document.addEventListener("click", onDocumentClick);
+    loadCompanies();
     loadCategories();
     fetchCalls();
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener("resize", updateViewport);
+    document.removeEventListener("click", onDocumentClick);
 });
 </script>

@@ -15,8 +15,6 @@ class Call extends Model
         'from',
         'to',
         'did',
-        'category',
-        'sub_category',
         'direction',
         'status',
         'started_at',
@@ -43,6 +41,12 @@ class Call extends Model
         'category_confidence' => 'float',
     ];
 
+    // Hide old category columns from serialization
+    protected $hidden = [
+        'category',
+        'sub_category',
+    ];
+
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
@@ -55,12 +59,12 @@ class Call extends Model
 
     public function category(): BelongsTo
     {
-        return $this->belongsTo(CallCategory::class, 'category_id');
+        return $this->belongsTo(CallCategory::class, 'category_id', 'id');
     }
 
     public function subCategory(): BelongsTo
     {
-        return $this->belongsTo(SubCategory::class, 'sub_category_id');
+        return $this->belongsTo(SubCategory::class, 'sub_category_id', 'id');
     }
 
     /**

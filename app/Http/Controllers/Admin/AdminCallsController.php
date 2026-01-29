@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Call;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class AdminCallsController extends Controller
@@ -16,10 +17,13 @@ class AdminCallsController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'sort' => ['nullable', 'string', 'max:40'],
             'direction' => ['nullable', 'in:asc,desc'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'category_id' => ['nullable', 'integer', 'exists:call_categories,id'],
             'source' => ['nullable', 'in:ai,manual,default'],
             'confidence_min' => ['nullable', 'numeric', 'min:0', 'max:1'],
             'confidence_max' => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'start_date' => ['nullable', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
         ]);
 
         $perPage = (int) ($validated['per_page'] ?? 25);
@@ -83,6 +87,11 @@ class AdminCallsController extends Controller
             });
         }
 
+        // Company filter
+        if (isset($validated['company_id'])) {
+            $query->where('calls.company_id', $validated['company_id']);
+        }
+
         // Category filters
         if (isset($validated['category_id'])) {
             $query->where('calls.category_id', $validated['category_id']);
@@ -98,6 +107,16 @@ class AdminCallsController extends Controller
 
         if (isset($validated['confidence_max'])) {
             $query->where('calls.category_confidence', '<=', $validated['confidence_max']);
+        }
+
+        if (isset($validated['start_date'])) {
+            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+            $query->where('calls.created_at', '>=', $startDate);
+        }
+
+        if (isset($validated['end_date'])) {
+            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+            $query->where('calls.created_at', '<=', $endDate);
         }
 
         if ($sort === 'company') {

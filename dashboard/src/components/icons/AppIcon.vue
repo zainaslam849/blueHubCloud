@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import IconDashboard from "./IconDashboard.vue";
-import IconReports from "./IconReports.vue";
-import IconUsage from "./IconUsage.vue";
-import IconAccount from "./IconAccount.vue";
-import IconCollapse from "./IconCollapse.vue";
-import IconCalls from "./IconCalls.vue";
-import IconMinutes from "./IconMinutes.vue";
-import IconGenerated from "./IconGenerated.vue";
-import IconJobs from "./IconJobs.vue";
+import {
+    LayoutDashboard,
+    FileText,
+    BarChart3,
+    User,
+    ChevronLeft,
+    PhoneCall,
+    Clock,
+    FileCheck,
+    Server,
+    Plus,
+    Search,
+    X,
+    Slack,
+    Figma,
+    Settings,
+    LogOut,
+} from "lucide-vue-next";
 
 type IconName =
     | "dashboard"
@@ -18,19 +27,37 @@ type IconName =
     | "calls"
     | "minutes"
     | "generated"
-    | "jobs";
+    | "jobs"
+    | "plus"
+    | "search"
+    | "x"
+    | "slack"
+    | "figma"
+    | "settings"
+    | "logout";
 
-defineProps<{ name: IconName }>();
+const icons: Record<IconName, any> = {
+    dashboard: LayoutDashboard,
+    reports: FileText,
+    usage: BarChart3,
+    account: User,
+    collapse: ChevronLeft,
+    calls: PhoneCall,
+    minutes: Clock,
+    generated: FileCheck,
+    jobs: Server,
+    plus: Plus,
+    search: Search,
+    x: X,
+    slack: Slack,
+    figma: Figma,
+    settings: Settings,
+    logout: LogOut,
+};
+
+const props = defineProps<{ name: IconName }>();
 </script>
 
 <template>
-    <IconDashboard v-if="name === 'dashboard'" />
-    <IconReports v-else-if="name === 'reports'" />
-    <IconUsage v-else-if="name === 'usage'" />
-    <IconAccount v-else-if="name === 'account'" />
-    <IconCollapse v-else-if="name === 'collapse'" />
-    <IconCalls v-else-if="name === 'calls'" />
-    <IconMinutes v-else-if="name === 'minutes'" />
-    <IconGenerated v-else-if="name === 'generated'" />
-    <IconJobs v-else />
+    <component :is="icons[props.name]" aria-hidden="true" />
 </template>

@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
+use App\Http\Controllers\Admin\AdminCompaniesController;
 use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\CallCategorizationController;
+use App\Http\Controllers\Admin\CategoryOverrideController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -19,6 +21,7 @@ Route::prefix('admin/api')->group(function () {
 
     Route::middleware(['admin'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
+        Route::get('/companies', [AdminCompaniesController::class, 'index']);
         Route::get('/calls', [AdminCallsController::class, 'index']);
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);
@@ -56,6 +59,13 @@ Route::prefix('admin/api')->group(function () {
         Route::post('/categorization/validate', [CallCategorizationController::class, 'validateCategorization']);
         Route::post('/categorization/persist', [CallCategorizationController::class, 'persistCategorization']);
         Route::post('/categorization/bulk-persist', [CallCategorizationController::class, 'bulkPersistCategorizations']);
+        
+        // Category override & confidence enforcement routes (STEP 5)
+        Route::get('/categories/review/stats', [CategoryOverrideController::class, 'getConfidenceStats']);
+        Route::get('/categories/review/calls-needing-review', [CategoryOverrideController::class, 'getCallsNeedingReview']);
+        Route::post('/categories/override/single', [CategoryOverrideController::class, 'overrideCallCategory']);
+        Route::post('/categories/override/bulk', [CategoryOverrideController::class, 'bulkOverride']);
+        Route::post('/categories/enforce-threshold', [CategoryOverrideController::class, 'enforceThreshold']);
         
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/pbx/ingest', [\App\Http\Controllers\Admin\PbxIngestController::class, 'trigger']);

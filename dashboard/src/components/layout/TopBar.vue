@@ -116,7 +116,8 @@ onBeforeUnmount(() => {
     gap: var(--space-4);
     padding: var(--space-4) var(--space-6);
     border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    backdrop-filter: blur(16px);
 }
 
 .left {
@@ -134,8 +135,8 @@ onBeforeUnmount(() => {
 }
 
 .company {
-    font-weight: 800;
-    letter-spacing: 0.2px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
     white-space: nowrap;
 }
 
@@ -144,8 +145,8 @@ onBeforeUnmount(() => {
 }
 
 .title {
-    font-weight: 700;
-    letter-spacing: 0.2px;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -167,6 +168,7 @@ onBeforeUnmount(() => {
     border-radius: 999px;
     border: 1px solid var(--border);
     background: var(--surface-2);
+    box-shadow: var(--shadow-xs);
 }
 
 .userTrigger {
@@ -184,7 +186,7 @@ onBeforeUnmount(() => {
     width: 220px;
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
     box-shadow: var(--shadow-lg);
     padding: 8px;
     z-index: 10;
@@ -202,7 +204,7 @@ onBeforeUnmount(() => {
     color: inherit;
     text-decoration: none;
     cursor: pointer;
-    font-weight: 650;
+    font-weight: var(--weight-medium);
 }
 
 .menuItem:hover {

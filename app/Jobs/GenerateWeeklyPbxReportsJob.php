@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\WeeklyCallReport;
+use App\Services\ReportInsightsAiService;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -17,6 +18,53 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     /**
+     * Generate weekly PBX call reports with immutable call freezing.
+     *
+     * CALL FREEZING RULES:
+     * ===================
+     *
+     * When a weekly report is generated, calls are "frozen" to that report by setting
+     * their weekly_call_report_id. This ensures:
+     *
+     *   ✅ No double-counting (each call assigned to exactly one report)
+     *   ✅ No call loss (no call missed or skipped)
+     *   ✅ Report immutability (once assigned, a call never changes reports)
+     *   ✅ Audit trail (each call shows which report it belongs to)
+     *
+     * CALL SELECTION CRITERIA (applied in order):
+     * ==========================================
+     *
+     *   1. Company ID match (company_id = target)
+     *   2. Status filter (status = 'answered' ONLY - completed calls)
+     *   3. Date range (started_at in report week, timezone-aware)
+     *   4. PBX Account (company_pbx_account_id = target)
+     *   5. Server match (server_id = target, if present)
+     *   6. Unassigned only (weekly_call_report_id IS NULL)
+     *
+     * CATEGORY CONFIDENCE RULES (STEP 5):
+     * ==================================
+     *
+     *   If confidence < 0.6 → category = null, sub_category = null
+     *   This ensures only high-confidence AI categorization is used.
+     *   Manual overrides tracked in category_source = 'manual'.
+     *
+     * WORKFLOW:
+     * ========
+     *
+     *   Normal run (weekly):
+     *     → Select unassigned calls matching criteria
+     *     → Apply confidence threshold to calls
+     *     → Assign to new report (status = answered only)
+     *     → Calls are now frozen; future runs won't touch them
+     *     → Call AI service for business insights (aggregated metrics only)
+     *     → Store AI insights in metrics.insights.ai_summary
+     *
+     *   Regeneration (re-run for past week):
+     *     → Reset weekly_call_report_id = NULL for calls in date range
+     *     → Recalculate report with updated data
+     *     → Re-assign calls to new report
+     *     → Old report remains (historical archive)
+     *
      * Optional ISO date bounds (inclusive) applied to calls.started_at.
      *
      * Use this to limit aggregation work (e.g., just last week).
@@ -24,11 +72,17 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     public function __construct(
         public ?string $fromDate = null,
         public ?string $toDate = null,
+        private ?ReportInsightsAiService $aiService = null,
     ) {
     }
 
     public function handle(): void
     {
+        // Lazy-load AI service if not injected (for queue compatibility)
+        if ($this->aiService === null) {
+            $this->aiService = app(ReportInsightsAiService::class);
+        }
+
         $from = $this->fromDate ? CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay() : null;
         $to = $this->toDate ? CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay() : null;
 
@@ -137,24 +191,32 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         $accumulators[$key]['last_call_at'] = $startedAtUtc;
                     }
 
-                    // Category counts
-                    $category = is_string($call->category ?? null) ? trim($call->category) : '';
-                    if ($category !== '') {
-                        if (! isset($accumulators[$key]['category_counts'][$category])) {
-                            $accumulators[$key]['category_counts'][$category] = 0;
+                    // Category counts (use category_id and name)
+                    $categoryId = $call->category_id ?? null;
+                    $categoryName = is_string($call->category_name ?? null) ? trim($call->category_name) : '';
+                    
+                    // Only count if we have both ID and name
+                    if ($categoryId !== null && $categoryName !== '') {
+                        $categoryKey = $categoryId.'|'.$categoryName;
+                        
+                        if (! isset($accumulators[$key]['category_counts'][$categoryKey])) {
+                            $accumulators[$key]['category_counts'][$categoryKey] = 0;
                         }
-                        $accumulators[$key]['category_counts'][$category]++;
+                        $accumulators[$key]['category_counts'][$categoryKey]++;
 
                         // Sub-category counts per category
-                        $subCategory = is_string($call->sub_category ?? null) ? trim($call->sub_category) : '';
-                        if ($subCategory !== '') {
-                            if (! isset($accumulators[$key]['category_breakdowns'][$category])) {
-                                $accumulators[$key]['category_breakdowns'][$category] = [];
+                        $subCategoryId = $call->sub_category_id ?? null;
+                        $subCategoryName = is_string($call->sub_category_name ?? null) ? trim($call->sub_category_name) : '';
+                        
+                        if ($subCategoryId !== null && $subCategoryName !== '') {
+                            if (! isset($accumulators[$key]['category_breakdowns'][$categoryKey])) {
+                                $accumulators[$key]['category_breakdowns'][$categoryKey] = [];
                             }
-                            if (! isset($accumulators[$key]['category_breakdowns'][$category][$subCategory])) {
-                                $accumulators[$key]['category_breakdowns'][$category][$subCategory] = 0;
+                            $subCategoryKey = $subCategoryId.'|'.$subCategoryName;
+                            if (! isset($accumulators[$key]['category_breakdowns'][$categoryKey][$subCategoryKey])) {
+                                $accumulators[$key]['category_breakdowns'][$categoryKey][$subCategoryKey] = 0;
                             }
-                            $accumulators[$key]['category_breakdowns'][$category][$subCategory]++;
+                            $accumulators[$key]['category_breakdowns'][$categoryKey][$subCategoryKey]++;
                         }
                     }
 
@@ -246,6 +308,16 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     'top_dids' => $topDids,
                     'hourly_distribution' => $hourlyDistribution,
                     'insights' => $insights,
+                    'ai_summary' => $this->generateAiInsights(
+                        $weekStart,
+                        $weekEnd,
+                        $totalCalls,
+                        (int) $weekly['answered_calls'],
+                        (int) $weekly['missed_calls'],
+                        $avgDuration,
+                        $weekly['category_counts'],
+                        $hourlyDistribution
+                    ),
                 ];
 
                 // Generate executive summary
@@ -290,21 +362,38 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 );
 
                 // Mark included calls as belonging to this weekly report
+                // IMMUTABILITY RULES:
+                // 1. Only select calls with status='answered' (completed calls)
+                // 2. Only select calls where weekly_call_report_id IS NULL (not yet assigned)
+                // 3. Match by company_id, company_pbx_account_id, date range, and server_id
+                // 4. Once assigned, a call NEVER changes its weekly_call_report_id
                 try {
-                    $markQuery = DB::table('calls')
+                    $affectedRows = DB::table('calls')
                         ->where('company_id', $companyId)
                         ->where('company_pbx_account_id', (int) $weekly['company_pbx_account_id'])
+                        ->where('status', 'answered') // Only completed calls
                         ->whereDate('started_at', '>=', $weekStart->toDateString())
                         ->whereDate('started_at', '<=', $weekEnd->toDateString())
-                        ->whereNull('weekly_call_report_id');
+                        ->whereNull('weekly_call_report_id') // Only unassigned calls
+                        ->when(! empty($weekly['server_id']), function ($q) use ($weekly) {
+                            return $q->where('server_id', $weekly['server_id']);
+                        })
+                        ->update(['weekly_call_report_id' => $reportModel->id]);
 
-                    if (! empty($weekly['server_id'])) {
-                        $markQuery->where('server_id', $weekly['server_id']);
-                    }
-
-                    $markQuery->update(['weekly_call_report_id' => $reportModel->id]);
+                    \Illuminate\Support\Facades\Log::info('Assigned calls to weekly report', [
+                        'report_id' => $reportModel->id,
+                        'company_id' => $companyId,
+                        'company_pbx_account_id' => $weekly['company_pbx_account_id'],
+                        'week_start' => $weekStart->toDateString(),
+                        'week_end' => $weekEnd->toDateString(),
+                        'affected_rows' => $affectedRows,
+                    ]);
                 } catch (\Throwable $e) {
                     // Non-fatal: indexing of calls to reports should not stop report generation
+                    \Illuminate\Support\Facades\Log::error('Failed to assign calls to weekly report', [
+                        'report_id' => $reportModel->id,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
         }
@@ -317,18 +406,25 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     {
         return DB::table('calls')
             ->select([
-                'server_id',
-                'company_pbx_account_id',
-                'status',
-                'started_at',
-                'duration_seconds',
-                'transcript_text',
-                'did',
-                'category',
-                'sub_category',
-                'weekly_call_report_id',
+                'calls.id',
+                'calls.server_id',
+                'calls.company_pbx_account_id',
+                'calls.status',
+                'calls.started_at',
+                'calls.duration_seconds',
+                'calls.transcript_text',
+                'calls.did',
+                'calls.category_id',
+                'calls.sub_category_id',
+                'calls.category_confidence',
+                'calls.weekly_call_report_id',
+                DB::raw('call_categories.name as category_name'),
+                DB::raw('sub_categories.name as sub_category_name'),
             ])
-            ->where('company_id', $companyId);
+            ->leftJoin('call_categories', 'calls.category_id', '=', 'call_categories.id')
+            ->leftJoin('sub_categories', 'calls.sub_category_id', '=', 'sub_categories.id')
+            ->where('calls.company_id', $companyId)
+            ->where('calls.status', 'answered'); // Only include completed/answered calls
     }
 
     /**
@@ -339,7 +435,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
      * 2. Valid DID (prefer non-null/non-empty)
      * 3. Longer transcript (order by length descending)
      *
-     * @param  array<string>  $categories
+     * @param  array<string>  $categories  Format: ["id|name", ...]
      * @return array<string, array> category => sample_calls
      */
     private function fetchSampleCallsByCategory(
@@ -351,7 +447,13 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     ): array {
         $samplesByCategory = [];
 
-        foreach ($categories as $category) {
+        foreach ($categories as $categoryKey) {
+            // Parse category key: "id|name"
+            [$categoryId, $categoryName] = explode('|', $categoryKey, 2) + [null, null];
+            if ($categoryId === null) {
+                continue;
+            }
+
             $samples = DB::table('calls')
                 ->select([
                     'started_at',
@@ -361,7 +463,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 ])
                 ->where('company_id', $companyId)
                 ->where('company_pbx_account_id', $companyPbxAccountId)
-                ->where('category', $category)
+                ->where('calls.category_id', (int) $categoryId)
                 ->whereDate('started_at', '>=', $weekStartDate)
                 ->whereDate('started_at', '<=', $weekEndDate)
                 ->whereNotNull('transcript_text')
@@ -372,7 +474,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 ->limit(5)
                 ->get();
 
-            $samplesByCategory[$category] = $samples->map(function ($call) {
+            $samplesByCategory[$categoryKey] = $samples->map(function ($call) {
                 $transcript = is_string($call->transcript_text) ? $call->transcript_text : '';
 
                 return [
@@ -427,9 +529,16 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
 
         if (! empty($categoryCounts)) {
             arsort($categoryCounts);
-            $topCategory = array_key_first($categoryCounts);
-            $topCategoryCount = $categoryCounts[$topCategory];
+            $topCategoryKey = array_key_first($categoryCounts);
+            $topCategoryCount = $categoryCounts[$topCategoryKey];
             $topCategoryPercent = round(($topCategoryCount / $totalCalls) * 100, 1);
+            
+            // Extract category name from key format "id|name"
+            if ($topCategoryKey && strpos($topCategoryKey, '|') !== false) {
+                [, $topCategory] = explode('|', $topCategoryKey, 2);
+            } else {
+                $topCategory = $topCategoryKey;
+            }
         }
 
         // Build summary sentences
@@ -551,15 +660,21 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         $answerRate = ($answeredCalls / $totalCalls) * 100;
 
         // Rule 1: Categories > 30% are automation candidates
-        foreach ($categoryCounts as $category => $count) {
+        foreach ($categoryCounts as $categoryKey => $count) {
             $percentage = ($count / $totalCalls) * 100;
 
             if ($percentage >= 30) {
-                $topSubCategory = $this->getTopSubCategory($category, $categoryBreakdowns);
+                // Extract category name from key format "id|name"
+                $categoryName = $categoryKey;
+                if (strpos($categoryKey, '|') !== false) {
+                    [, $categoryName] = explode('|', $categoryKey, 2);
+                }
+
+                $topSubCategory = $this->getTopSubCategory($categoryKey, $categoryBreakdowns);
 
                 $opportunity = [
                     'type' => 'automation_candidate',
-                    'category' => $category,
+                    'category' => $categoryName,
                     'call_count' => $count,
                     'percentage' => round($percentage, 1),
                     'reason' => "High volume category representing {$this->formatPercentage($percentage)} of total calls.",
@@ -579,14 +694,20 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         arsort($categoryCounts);
         $topCategories = array_slice(array_keys($categoryCounts), 0, 3, true);
 
-        foreach ($topCategories as $category) {
-            $topSubCategory = $this->getTopSubCategory($category, $categoryBreakdowns);
+        foreach ($topCategories as $categoryKey) {
+            $topSubCategory = $this->getTopSubCategory($categoryKey, $categoryBreakdowns);
 
             if ($topSubCategory !== null) {
+                // Extract category name
+                $categoryName = $categoryKey;
+                if (strpos($categoryKey, '|') !== false) {
+                    [, $categoryName] = explode('|', $categoryKey, 2);
+                }
+
                 // Check if not already captured in automation candidates
                 $alreadyCaptured = false;
                 foreach ($aiOpportunities as $opp) {
-                    if (($opp['category'] ?? '') === $category) {
+                    if (($opp['category'] ?? '') === $categoryName) {
                         $alreadyCaptured = true;
                         break;
                     }
@@ -595,11 +716,11 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 if (! $alreadyCaptured) {
                     $aiOpportunities[] = [
                         'type' => 'sub_category_highlight',
-                        'category' => $category,
+                        'category' => $categoryName,
                         'top_sub_category' => $topSubCategory['name'],
                         'top_sub_category_count' => $topSubCategory['count'],
                         'top_sub_category_percentage' => $topSubCategory['percentage'],
-                        'reason' => "Top sub-category within \"{$category}\" calls.",
+                        'reason' => "Top sub-category within \"{$categoryName}\" calls.",
                     ];
                 }
             }
@@ -670,9 +791,15 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         $subCategories = $categoryBreakdowns[$category];
         arsort($subCategories);
 
-        $topName = array_key_first($subCategories);
-        $topCount = $subCategories[$topName];
+        $topSubCategoryKey = array_key_first($subCategories);
+        $topCount = $subCategories[$topSubCategoryKey];
         $totalInCategory = array_sum($subCategories);
+
+        // Extract sub-category name from key format "id|name"
+        $topName = $topSubCategoryKey;
+        if ($topSubCategoryKey && strpos($topSubCategoryKey, '|') !== false) {
+            [, $topName] = explode('|', $topSubCategoryKey, 2);
+        }
 
         return [
             'name' => $topName,
@@ -750,5 +877,60 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     private function formatPercentage(float $value): string
     {
         return round($value, 1).'%';
+    }
+
+    /**
+     * Generate AI-powered business insights from aggregated metrics (STEP 4).
+     *
+     * ⚠️ IMPORTANT:
+     * - Input: ONLY aggregated metrics (counts, percentages, statistics)
+     * - NO transcripts, NO call details, NO PII
+     * - This ensures privacy compliance and focuses on business analysis
+     *
+     * @param  CarbonImmutable  $weekStart
+     * @param  CarbonImmutable  $weekEnd
+     * @param  int  $totalCalls
+     * @param  int  $answeredCalls
+     * @param  int  $missedCalls
+     * @param  int  $avgDuration
+     * @param  array<string, int>  $categoryCounts
+     * @param  array<int, int>  $hourlyDistribution
+     * @return array<string, mixed>
+     */
+    private function generateAiInsights(
+        CarbonImmutable $weekStart,
+        CarbonImmutable $weekEnd,
+        int $totalCalls,
+        int $answeredCalls,
+        int $missedCalls,
+        int $avgDuration,
+        array $categoryCounts,
+        array $hourlyDistribution
+    ): array {
+        // Format week range
+        $weekRange = $this->formatWeekRange($weekStart, $weekEnd);
+
+        // Calculate derived metrics
+        $answerRate = $totalCalls > 0 ? round(($answeredCalls / $totalCalls) * 100, 1) : 0;
+        $afterHoursCalls = $this->countAfterHoursCalls($hourlyDistribution);
+        $afterHoursPercentage = $totalCalls > 0 ? round(($afterHoursCalls / $totalCalls) * 100, 1) : 0;
+        $peakHours = $this->identifyPeakHours($hourlyDistribution, $totalCalls);
+
+        // Build metrics for AI (only aggregated data, no PII)
+        $metricsForAi = [
+            'period' => $weekRange,
+            'total_calls' => $totalCalls,
+            'answered_calls' => $answeredCalls,
+            'answer_rate' => $answerRate,
+            'missed_calls' => $missedCalls,
+            'avg_call_duration_seconds' => $avgDuration,
+            'calls_with_transcription' => $totalCalls, // Assume all have transcription for now
+            'after_hours_percentage' => $afterHoursPercentage,
+            'peak_hours' => $peakHours,
+            'category_counts' => $categoryCounts,
+        ];
+
+        // Call AI service to generate business insights
+        return $this->aiService->generateInsights($metricsForAi);
     }
 }

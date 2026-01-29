@@ -1,0 +1,461 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>CDR Analysis Report</title>
+        <style>
+            body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background-color: #f8fafc; color: #222; }
+            .container { max-width: 960px; margin: 20px auto; padding: 20px; background-color: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+            .header { text-align: center; padding-bottom: 20px; border-bottom: 2px solid #3995c6; }
+            .header img { max-width: 250px; margin-bottom: 10px; }
+            h1, h2, h3, h4 { color: #22234a; }
+            h1 { font-size: 2.5em; }
+            h2 { font-size: 2em; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-top: 40px; }
+            h3 { font-size: 1.5em; color: #3995c6; margin-top: 30px; }
+            h4 { font-size: 1.2em; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+            th { background-color: #22234a; color: #fff; }
+            tr:nth-child(even) { background-color: #f2f2f2; }
+            .toc ul { list-style-type: none; padding: 0; }
+            .toc ul li a { text-decoration: none; color: #3995c6; font-weight: bold; }
+            .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 2px solid #3995c6; font-size: 0.9em; color: #777; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="https://bluehubcloud.com.au/wp-content/uploads/2024/05/bluehubcloud-logo-transparent.png" alt="BlueHub Cloud Logo">
+                <h1>Call Detail Record (CDR) Analysis Report</h1>
+                <p>Prepared by BlueHub Cloud | 2025-10-22</p>
+            </div>
+
+            <div class="toc">
+                <h2>Table of Contents</h2>
+                <ul>
+                    <li><a href="#summary">Executive Summary</a></li>
+                    <li><a href="#quantitative">Quantitative Analysis</a></li>
+                    <li><a href="#breakdown">Key Category Breakdowns</a></li>
+                    <li><a href="#insights">Insights & Recommendations</a></li>
+                </ul>
+            </div>
+
+            <div id="summary">
+                <h2>Executive Summary</h2>
+                <p>This report provides a detailed analysis of call detail records from the provided dataset. The analysis categorizes calls to identify key trends, peak call times, and common topics of inquiry. The primary goal is to uncover actionable insights that can help improve customer service, optimize resource allocation, and identify opportunities for automation.</p>
+            </div>
+
+            <div id="quantitative">
+                <h2>Quantitative Analysis</h2>
+                <h3>Call Category Counts</h3>
+                <table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>count</th>
+    </tr>
+    <tr>
+      <th>category</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Property Enquiry</th>
+      <td>261</td>
+    </tr>
+    <tr>
+      <th>Other</th>
+      <td>66</td>
+    </tr>
+    <tr>
+      <th>Maintenance Request</th>
+      <td>13</td>
+    </tr>
+    <tr>
+      <th>General Enquiry</th>
+      <td>6</td>
+    </tr>
+    <tr>
+      <th>Appointment Scheduling</th>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>Access Issue</th>
+      <td>3</td>
+    </tr>
+  </tbody>
+</table>
+                <h3>Top 10 Locations (by DID)</h3>
+                <table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>count</th>
+    </tr>
+    <tr>
+      <th>did</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>61272579632</th>
+      <td>31</td>
+    </tr>
+    <tr>
+      <th>61272579631</th>
+      <td>29</td>
+    </tr>
+    <tr>
+      <th>61272579656</th>
+      <td>23</td>
+    </tr>
+    <tr>
+      <th>61272579613</th>
+      <td>17</td>
+    </tr>
+    <tr>
+      <th>61272579620</th>
+      <td>12</td>
+    </tr>
+    <tr>
+      <th>61272579607</th>
+      <td>11</td>
+    </tr>
+    <tr>
+      <th>61272579619</th>
+      <td>10</td>
+    </tr>
+    <tr>
+      <th>61272579635</th>
+      <td>9</td>
+    </tr>
+    <tr>
+      <th>61272579645</th>
+      <td>8</td>
+    </tr>
+    <tr>
+      <th>61272579691</th>
+      <td>8</td>
+    </tr>
+  </tbody>
+</table>
+                <h3>Hourly Call Distribution</h3>
+                <table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>count</th>
+    </tr>
+    <tr>
+      <th>date</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>9</th>
+      <td>49</td>
+    </tr>
+    <tr>
+      <th>10</th>
+      <td>30</td>
+    </tr>
+    <tr>
+      <th>11</th>
+      <td>54</td>
+    </tr>
+    <tr>
+      <th>12</th>
+      <td>59</td>
+    </tr>
+    <tr>
+      <th>13</th>
+      <td>50</td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>41</td>
+    </tr>
+    <tr>
+      <th>15</th>
+      <td>36</td>
+    </tr>
+    <tr>
+      <th>16</th>
+      <td>29</td>
+    </tr>
+    <tr>
+      <th>17</th>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>19</th>
+      <td>4</td>
+    </tr>
+  </tbody>
+</table>
+            </div>
+
+            <div id="breakdown">
+                <h2>Key Category Breakdowns</h2>
+    <h3>Category: Property Enquiry</h3><h4>Sub-Category Counts</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>count</th>
+    </tr>
+    <tr>
+      <th>sub_category</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>Availability/Pricing</th>
+      <td>161</td>
+    </tr>
+    <tr>
+      <th>Viewing/Inspection</th>
+      <td>41</td>
+    </tr>
+    <tr>
+      <th>General</th>
+      <td>35</td>
+    </tr>
+    <tr>
+      <th>Application/Lease</th>
+      <td>19</td>
+    </tr>
+    <tr>
+      <th>Amenities/Features</th>
+      <td>5</td>
+    </tr>
+  </tbody>
+</table><h4>Sample Calls</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>date</th>
+      <th>did</th>
+      <th>src</th>
+      <th>text</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-10-22 09:53:56</td>
+      <td>61272579611</td>
+      <td>0483826305</td>
+      <td>Hi. Yes? Oh, hi. So I was texting Colin. I looked at a photo you sent to me. And so as I can see, there's no laundry in the actual Studio Plus, right?...</td>
+    </tr>
+    <tr>
+      <td>2025-10-22 09:23:31</td>
+      <td>61272579645</td>
+      <td>0423103965</td>
+      <td>This is Yumi DiBali speaking. How can I help you? Hello. I'm calling about some ads on your website for studios, furniture studios available in Darlin...</td>
+    </tr>
+    <tr>
+      <td>2025-10-22 09:15:58</td>
+      <td>61272579691</td>
+      <td>0480106285</td>
+      <td>Hi, this is Yumi Ripali speaking, how can I help you? Hi, I'm moving in today. Yeah. So, apartment 310. That's funny, what time are you there? It's st...</td>
+    </tr>
+  </tbody>
+</table><h3>Category: Other</h3><h4>Sample Calls</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>date</th>
+      <th>did</th>
+      <th>src</th>
+      <th>text</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-10-21 15:44:42</td>
+      <td>None</td>
+      <td>2042</td>
+      <td>The person you are calling is......</td>
+    </tr>
+    <tr>
+      <td>2025-10-21 14:32:48</td>
+      <td>61272579610</td>
+      <td>0489197076</td>
+      <td>Est-ce que je peux vous expliquer ? Oui, c'est François, je suis du côté du parc. Salut, j'arrive. Je suis là dans une minute. Merci....</td>
+    </tr>
+    <tr>
+      <td>2025-10-21 13:11:21</td>
+      <td>61272579631</td>
+      <td>0494025711</td>
+      <td>This is Michaela from the ECO Department. I'm not sure how can I help you. Yes, hey Michaela. So they will be coming now or later? Sorry? The pest con...</td>
+    </tr>
+  </tbody>
+</table><h3>Category: Maintenance Request</h3><h4>Sub-Category Counts</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>count</th>
+    </tr>
+    <tr>
+      <th>sub_category</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>General Repair</th>
+      <td>7</td>
+    </tr>
+    <tr>
+      <th>Appliance</th>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>General</th>
+      <td>1</td>
+    </tr>
+  </tbody>
+</table><h4>Sample Calls</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>date</th>
+      <th>did</th>
+      <th>src</th>
+      <th>text</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-10-21 10:48:39</td>
+      <td>61272579613</td>
+      <td>0402360077</td>
+      <td>Hi Dylan. I had people just randomly come into my house. The maintenance people. I put clearly that there's no permission for it. Is it the air con? Y...</td>
+    </tr>
+    <tr>
+      <td>2025-10-20 14:18:46</td>
+      <td>61272579620</td>
+      <td>61493230584</td>
+      <td>Trina from Miranda. Yes, from Miranda. Oh, my God, the connection is really poor right now. The connection is really poor? Yes, the connection seems t...</td>
+    </tr>
+    <tr>
+      <td>2025-10-20 11:41:44</td>
+      <td>61272579622</td>
+      <td>0405160664</td>
+      <td>Yeah, I'm speaking. Sorry, can you repeat? Yeah, I just sent a message to my colleague. I just sent to you a message that I just texted my colleague. ...</td>
+    </tr>
+  </tbody>
+</table><h3>Category: General Enquiry</h3><h4>Sample Calls</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>date</th>
+      <th>did</th>
+      <th>src</th>
+      <th>text</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-10-20 15:57:32</td>
+      <td>None</td>
+      <td>2006</td>
+      <td>Hi, good afternoon, Dana. Yes, hello, good afternoon. Good afternoon. I'm Hiram, calling from Yukon-Earthskin Bill. How are you? I'm doing good. How a...</td>
+    </tr>
+    <tr>
+      <td>2025-10-17 13:50:51</td>
+      <td>61272579608</td>
+      <td>0493943766</td>
+      <td>Speaking. Hello, this is Eden. I called this morning about...  Yeah. Three weeks is good with me. Do I have to send an official notice to the... Yes, ...</td>
+    </tr>
+    <tr>
+      <td>2025-10-17 12:37:28</td>
+      <td>61272579614</td>
+      <td>0466888198</td>
+      <td>Speaking, how may I help?  Hi. Hi, is this you, Kayla? Yes, how may I help you? Yeah, I got your number from one of my friends that is renting from yo...</td>
+    </tr>
+  </tbody>
+</table><h3>Category: Appointment Scheduling</h3><h4>Sample Calls</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>date</th>
+      <th>did</th>
+      <th>src</th>
+      <th>text</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-10-21 15:49:23</td>
+      <td>None</td>
+      <td>2006</td>
+      <td>Hello. Hi Sandy. Yes. Just to confirm with you, you are moving in on the 26th? No, no, the 1st of December. 1st of December. Yes. I've spoken to Matt ...</td>
+    </tr>
+    <tr>
+      <td>2025-10-17 16:10:38</td>
+      <td>61272579613</td>
+      <td>0468025291</td>
+      <td>Good afternoon, Gisela. Hi, good afternoon. So sorry to call you unannounced. Happy weekend. My name is Khaleel. I'm a quantity surveyor. I'm just sea...</td>
+    </tr>
+    <tr>
+      <td>2025-10-16 15:59:09</td>
+      <td>61272579656</td>
+      <td>61434647200</td>
+      <td>Hello? Hi, can you hear me? Hi, yeah, I have quite much as follow, but looks like it's quite far from Gardiner's Road, is it? It's what, sorry? The on...</td>
+    </tr>
+  </tbody>
+</table><h3>Category: Access Issue</h3><h4>Sample Calls</h4><table border="1" class="dataframe table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>date</th>
+      <th>did</th>
+      <th>src</th>
+      <th>text</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>2025-10-22 09:25:28</td>
+      <td>61272579603</td>
+      <td>0473801285</td>
+      <td>Hi, this is Yuko Rikali speaking. How can I help you? Hi, mate. It's Lucas from Waste 3. I'm at U.K.O. Paddington in Opal Street. Yeah. I can't get ou...</td>
+    </tr>
+    <tr>
+      <td>2025-10-20 14:24:28</td>
+      <td>61272579649</td>
+      <td>0460021897</td>
+      <td>Valley speaking. Hi, I don't know if this is the number I just called about the door or just another one. This is community manager's number. You have...</td>
+    </tr>
+    <tr>
+      <td>2025-10-17 13:20:34</td>
+      <td>None</td>
+      <td>2004</td>
+      <td>Hi, you've reached Bel Solchenko. Please leave me a message and I'll get back to you as soon as possible. Thank you. Bel Solchenko. Oh, hi. This is Yu...</td>
+    </tr>
+  </tbody>
+</table>            </div>
+
+            <div id="insights">
+                <h2>Insights & Recommendations</h2>
+                <h4>Opportunities for AI Call Deflection</h4>
+                <p>Based on the call volume and the nature of inquiries, several categories present strong opportunities for deflection using a Conversational AI agent. Automating these routine queries can free up staff to handle more complex issues, improving overall efficiency.</p>
+                <ul>
+                    <li><strong>Property Enquiry (Availability/Pricing):</strong> With 161 calls, this is the largest sub-category. An AI can be trained to check property availability and provide pricing information from a database or CRM, answering these common questions instantly.</li>
+                    <li><strong>Property Enquiry (Viewing/Inspection):</strong> The 41 calls in this category could be handled by an AI that schedules inspections based on pre-defined availability, integrating directly with a calendar system.</li>
+                    <li><strong>General Enquiry:</strong> Many general questions about opening hours, addresses, and services can be easily answered by a well-trained AI, reducing the need for human intervention for these simple queries.</li>
+                </ul>
+                <h4>Implementation Steps</h4>
+                <ol>
+                    <li><strong>Knowledge Base Integration:</strong> Connect the AI to a knowledge base containing property details, pricing, and general company information.</li>
+                    <li><strong>Calendar Integration:</strong> Integrate with a scheduling system to allow the AI to book, reschedule, or cancel appointments.</li>
+                    <li><strong>CRM Integration:</strong> For more complex queries, the AI can create a ticket or log the interaction in a CRM for a human agent to follow up.</li>
+                </ol>
+            </div>
+
+            <div class="footer">
+                <p>&copy; 2025 BlueHub Cloud. All Rights Reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    

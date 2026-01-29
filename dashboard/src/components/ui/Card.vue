@@ -24,9 +24,15 @@ defineProps<Props>();
 .card {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    background: var(--surface);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface) 96%, transparent),
+        color-mix(in srgb, var(--surface-2) 70%, transparent)
+    );
     box-shadow: var(--shadow-sm);
-    transition: transform var(--duration-fast) var(--ease-standard),
+    backdrop-filter: blur(14px);
+    transition:
+        transform var(--duration-fast) var(--ease-standard),
         box-shadow var(--duration-fast) var(--ease-standard),
         border-color var(--duration-fast) var(--ease-standard);
 }
@@ -34,7 +40,7 @@ defineProps<Props>();
 .card:hover {
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
-    border-color: color-mix(in srgb, var(--color-text) 16%, var(--border));
+    border-color: color-mix(in srgb, var(--color-primary) 26%, var(--border));
 }
 
 .cardHeader {
@@ -43,13 +49,14 @@ defineProps<Props>();
 }
 
 .cardTitle {
-    font-weight: 700;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
 }
 
 .cardSubtitle {
     margin-top: 2px;
-    opacity: 0.7;
-    font-size: 0.95rem;
+    opacity: 0.72;
+    font-size: var(--text-sm);
 }
 
 .cardBody {

@@ -30,13 +30,17 @@ defineProps<Props>();
 
 .h1 {
     margin: 0;
-    font-size: 1.6rem;
-    line-height: 1.2;
+    font-size: var(--text-2xl);
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-tight);
+    font-weight: var(--weight-semibold);
 }
 
 .desc {
     margin: 6px 0 0;
-    opacity: 0.75;
+    opacity: 0.72;
+    font-size: var(--text-sm);
+    line-height: var(--leading-relaxed);
 }
 
 .actions {

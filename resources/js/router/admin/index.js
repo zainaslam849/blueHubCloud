@@ -33,7 +33,7 @@ const router = createRouter({
             component: () => import("../../pages/admin/CallsPage.vue"),
         },
         {
-            path: "/calls/:id",
+            path: "/calls/:callId",
             name: "admin.calls.detail",
             meta: { title: "Call Detail", breadcrumb: "Call" },
             component: () => import("../../pages/admin/CallDetailPage.vue"),

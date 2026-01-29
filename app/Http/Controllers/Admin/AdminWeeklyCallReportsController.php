@@ -7,7 +7,9 @@ use App\Models\WeeklyCallReport;
 use App\Services\WeeklyCallReportQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 
 class AdminWeeklyCallReportsController extends Controller
 {
@@ -97,8 +99,34 @@ class AdminWeeklyCallReportsController extends Controller
         $report = WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,name'])
             ->findOrFail($id);
 
-        // Policy check for role-based access
-        Gate::authorize('view', $report);
+        // Attempt to get authenticated user from admin guard first, fallback to web guard
+        $adminGuardUser = Auth::guard('admin')->user();
+        $webGuardUser = Auth::user();
+        $user = $adminGuardUser ?? $webGuardUser;
+
+        // Debug logging for authentication issues
+        Log::channel('daily')->info('Weekly report access attempt', [
+            'report_id' => $id,
+            'admin_guard_user' => $adminGuardUser ? ['id' => $adminGuardUser->id, 'email' => $adminGuardUser->email, 'role' => $adminGuardUser->role] : null,
+            'web_guard_user' => $webGuardUser ? ['id' => $webGuardUser->id, 'email' => $webGuardUser->email, 'role' => $webGuardUser->role] : null,
+            'final_user' => $user ? ['id' => $user->id, 'email' => $user->email, 'role' => $user->role, 'is_admin' => $user->isAdmin()] : null,
+        ]);
+
+        // Return 401 if completely unauthenticated
+        if (!$user) {
+            Log::channel('daily')->warning('Report access denied: no authenticated user', ['report_id' => $id]);
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        // Return 403 if user lacks admin role
+        if (!$user->isAdmin()) {
+            Log::channel('daily')->warning('Report access denied: user not admin', [
+                'report_id' => $id,
+                'user_id' => $user->id,
+                'user_role' => $user->role,
+            ]);
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
 
         $metrics = $report->metrics ?? [];
 

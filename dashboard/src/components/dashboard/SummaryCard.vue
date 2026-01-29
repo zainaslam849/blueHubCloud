@@ -36,7 +36,11 @@ const props = withDefaults(defineProps<Props>(), {
 .card {
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
-    background: var(--surface);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface) 96%, transparent),
+        color-mix(in srgb, var(--surface-2) 70%, transparent)
+    );
     box-shadow: var(--shadow-sm);
     padding: var(--space-5);
     display: grid;
@@ -62,7 +66,8 @@ const props = withDefaults(defineProps<Props>(), {
 .card:hover {
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
-    transition: transform var(--duration-fast) var(--ease-standard),
+    transition:
+        transform var(--duration-fast) var(--ease-standard),
         box-shadow var(--duration-fast) var(--ease-standard);
 }
 
@@ -78,26 +83,27 @@ const props = withDefaults(defineProps<Props>(), {
     height: 40px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--surface-2) 85%, transparent);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--color-muted);
+    color: var(--color-primary);
     flex: 0 0 auto;
+    box-shadow: var(--shadow-xs);
 }
 
 .label {
     min-width: 0;
     font-size: var(--text-sm);
     color: var(--color-muted);
-    font-weight: 700;
+    font-weight: var(--weight-medium);
     text-align: right;
 }
 
 .value {
-    font-size: 1.9rem;
-    font-weight: 800;
-    letter-spacing: -0.02em;
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
 }
 
 /* Skeleton */

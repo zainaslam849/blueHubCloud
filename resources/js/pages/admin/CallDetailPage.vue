@@ -2,10 +2,33 @@
     <div class="admin-container admin-page">
         <header class="admin-page__header">
             <div>
-                <p class="admin-page__kicker">Operations</p>
-                <h1 class="admin-page__title">Call Detail</h1>
-                <p class="admin-page__subtitle">
-                    Read-only overview of a single call.
+                <div class="admin-callDetailBreadcrumb">
+                    <router-link
+                        :to="{ name: 'admin.calls' }"
+                        class="admin-callDetailBreadcrumb__link"
+                    >
+                        Calls
+                    </router-link>
+                    <span class="admin-callDetailBreadcrumb__separator">/</span>
+                    <span class="admin-callDetailBreadcrumb__current">
+                        {{ call?.callId || "Loading..." }}
+                    </span>
+                </div>
+                <h1 class="admin-page__title admin-callDetailTitle">
+                    <span class="admin-callDetailTitle__label"
+                        >Call Details</span
+                    >
+                    <BaseBadge
+                        v-if="!loading && call?.status"
+                        :variant="badgeVariant(call?.status)"
+                        size="lg"
+                    >
+                        {{ String(call?.status || "").toUpperCase() }}
+                    </BaseBadge>
+                </h1>
+                <p v-if="!loading" class="admin-page__subtitle">
+                    {{ call?.company || "Unknown Company" }} •
+                    {{ formatDate(call?.createdAt) }}
                 </p>
             </div>
 
@@ -15,7 +38,21 @@
                     size="sm"
                     :to="{ name: 'admin.calls' }"
                 >
-                    Back to Calls
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        style="width: 16px; height: 16px; margin-right: 6px"
+                    >
+                        <path
+                            d="M19 12H5M5 12L12 19M5 12L12 5"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    Back
                 </BaseButton>
                 <BaseButton
                     variant="secondary"
@@ -23,6 +60,26 @@
                     :loading="loading"
                     @click="refresh"
                 >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        style="width: 16px; height: 16px; margin-right: 6px"
+                    >
+                        <path
+                            d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C14.3051 3 16.4077 3.89892 17.9923 5.36907"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                        />
+                        <path
+                            d="M21 3V8M21 8H16M21 8L17 4"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
                     Refresh
                 </BaseButton>
             </div>
@@ -33,7 +90,116 @@
         </div>
 
         <div class="admin-callsDetailGrid">
-            <BaseCard title="Summary" variant="glass">
+            <!-- Hero Stats Card -->
+            <BaseCard class="admin-callDetailHero" variant="glass">
+                <div v-if="loading" class="admin-skeletonLines">
+                    <div class="admin-skeleton admin-skeleton--line" />
+                    <div class="admin-skeleton admin-skeleton--line" />
+                </div>
+
+                <div v-else class="admin-callDetailStats">
+                    <div class="admin-callDetailStat">
+                        <div class="admin-callDetailStat__icon">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <circle
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                />
+                                <path
+                                    d="M12 6V12L16 14"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                />
+                            </svg>
+                        </div>
+                        <div class="admin-callDetailStat__content">
+                            <div class="admin-callDetailStat__label">
+                                Duration
+                            </div>
+                            <div class="admin-callDetailStat__value">
+                                {{ formatDuration(call?.durationSeconds) }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="admin-callDetailStat">
+                        <div class="admin-callDetailStat__icon">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <rect
+                                    x="3"
+                                    y="4"
+                                    width="18"
+                                    height="16"
+                                    rx="2"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                />
+                                <path
+                                    d="M3 10h18"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                />
+                            </svg>
+                        </div>
+                        <div class="admin-callDetailStat__content">
+                            <div class="admin-callDetailStat__label">
+                                Provider
+                            </div>
+                            <div class="admin-callDetailStat__value">
+                                {{ call?.provider ?? "—" }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="admin-callDetailStat">
+                        <div class="admin-callDetailStat__icon">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <path
+                                    d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                                <circle
+                                    cx="12"
+                                    cy="7"
+                                    r="4"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                />
+                            </svg>
+                        </div>
+                        <div class="admin-callDetailStat__content">
+                            <div class="admin-callDetailStat__label">
+                                Company
+                            </div>
+                            <div class="admin-callDetailStat__value">
+                                {{ call?.company ?? "—" }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </BaseCard>
+
+            <!-- Call Information Card -->
+            <BaseCard title="Call Information" variant="glass">
                 <div v-if="loading" class="admin-skeletonLines">
                     <div class="admin-skeleton admin-skeleton--line" />
                     <div class="admin-skeleton admin-skeleton--line" />
@@ -41,6 +207,41 @@
                 </div>
 
                 <div v-else class="admin-kvGrid">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Call ID</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ call?.callId ?? "—" }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">From Number</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ call?.from ?? "—" }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">To Number</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ call?.to ?? "—" }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Started At</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ formatDate(call?.startedAt) }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Created At</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ formatDate(call?.createdAt) }}
+                        </div>
+                    </div>
+
                     <div class="admin-kv">
                         <div class="admin-kv__k">Status</div>
                         <div class="admin-kv__v">
@@ -50,86 +251,6 @@
                                     "—"
                                 }}
                             </BaseBadge>
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Duration</div>
-                        <div class="admin-kv__v admin-callsMono">
-                            {{ formatDuration(call?.durationSeconds) }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Provider</div>
-                        <div class="admin-kv__v">
-                            {{ call?.provider ?? "—" }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Company</div>
-                        <div class="admin-kv__v">
-                            {{ call?.company ?? "—" }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Created</div>
-                        <div class="admin-kv__v admin-callsMono">
-                            {{ formatDate(call?.createdAt) }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Call ID</div>
-                        <div class="admin-kv__v admin-callsMono">
-                            {{ call?.callId ?? "—" }}
-                        </div>
-                    </div>
-                </div>
-            </BaseCard>
-
-            <BaseCard
-                title="Transcription"
-                description="PBX-provided transcript"
-                variant="glass"
-            >
-                <div v-if="loading" class="admin-skeletonLines">
-                    <div class="admin-skeleton admin-skeleton--line" />
-                </div>
-
-                <div
-                    v-else-if="!transcription?.hasTranscription"
-                    class="admin-empty"
-                >
-                    <div class="admin-empty__title">No transcription</div>
-                    <div class="admin-empty__desc">
-                        This call does not have a PBX-provided transcript.
-                    </div>
-                </div>
-
-                <div v-else class="admin-kvGrid">
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Status</div>
-                        <div class="admin-kv__v">
-                            <BaseBadge variant="active">COMPLETED</BaseBadge>
-                        </div>
-                    </div>
-
-                    <div class="admin-kv">
-                        <div class="admin-kv__k">Provider</div>
-                        <div class="admin-kv__v">
-                            {{ transcription?.provider ?? "pbxware" }}
-                        </div>
-                    </div>
-
-                    <div class="admin-kv" style="grid-column: 1 / -1">
-                        <div class="admin-kv__k">Text</div>
-                        <div class="admin-kv__v">
-                            <pre class="admin-transcriptText">{{
-                                transcription?.text || ""
-                            }}</pre>
                         </div>
                     </div>
                 </div>
@@ -178,6 +299,51 @@
                         </div>
                     </li>
                 </ol>
+            </BaseCard>
+
+            <BaseCard
+                title="Transcription"
+                description="PBX-provided transcript"
+                variant="glass"
+            >
+                <div v-if="loading" class="admin-skeletonLines">
+                    <div class="admin-skeleton admin-skeleton--line" />
+                </div>
+
+                <div
+                    v-else-if="!transcription?.hasTranscription"
+                    class="admin-empty"
+                >
+                    <div class="admin-empty__title">No transcription</div>
+                    <div class="admin-empty__desc">
+                        This call does not have a PBX-provided transcript.
+                    </div>
+                </div>
+
+                <div v-else class="admin-kvGrid">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Status</div>
+                        <div class="admin-kv__v">
+                            <BaseBadge variant="active">COMPLETED</BaseBadge>
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Provider</div>
+                        <div class="admin-kv__v">
+                            {{ transcription?.provider ?? "pbxware" }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv" style="grid-column: 1 / -1">
+                        <div class="admin-kv__k">Text</div>
+                        <div class="admin-kv__v">
+                            <pre class="admin-transcriptText">{{
+                                transcription?.text || ""
+                            }}</pre>
+                        </div>
+                    </div>
+                </div>
             </BaseCard>
 
             <BaseCard
@@ -235,19 +401,22 @@ function badgeVariant(status) {
 function formatDuration(seconds) {
     const s = Number(seconds);
     if (!Number.isFinite(s) || s < 0) return "—";
+    if (s === 0) return "0 seconds";
 
-    const hh = Math.floor(s / 3600);
-    const mm = Math.floor((s % 3600) / 60);
-    const ss = Math.floor(s % 60);
+    const totalMinutes = Math.floor(s / 60);
+    const secs = Math.floor(s % 60);
 
-    if (hh > 0) {
-        return `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(
-            2,
-            "0",
-        )}`;
+    const parts = [];
+    if (totalMinutes > 0) {
+        parts.push(
+            `${totalMinutes} ${totalMinutes === 1 ? "minute" : "minutes"}`,
+        );
+    }
+    if (secs > 0) {
+        parts.push(`${secs} ${secs === 1 ? "second" : "seconds"}`);
     }
 
-    return `${mm}:${String(ss).padStart(2, "0")}`;
+    return parts.join(" ");
 }
 
 function formatDate(iso) {
@@ -258,13 +427,13 @@ function formatDate(iso) {
 }
 
 async function fetchDetail() {
-    const id = route.params.id;
+    const callId = route.params.callId;
 
     loading.value = true;
     error.value = "";
 
     try {
-        const res = await adminApi.get(`/calls/${id}`);
+        const res = await adminApi.get(`/calls/${callId}`);
         const data = res?.data;
 
         call.value = data?.call ?? null;
@@ -293,41 +462,37 @@ function refresh() {
 
 const metadataRows = computed(() => {
     const m = metadata.value || {};
+    const c = call.value || {};
 
     return [
         {
-            key: "companyId",
-            label: "Company ID",
-            value: String(m.companyId ?? "—"),
+            key: "company",
+            label: "Company",
+            value: String(c.company ?? "—"),
         },
         {
             key: "companyTimezone",
-            label: "Company TZ",
+            label: "Timezone",
             value: String(m.companyTimezone ?? "—"),
         },
         {
             key: "companyStatus",
-            label: "Company status",
-            value: String(m.companyStatus ?? "—"),
+            label: "Company Status",
+            value: String(m.companyStatus ?? "—").toUpperCase(),
         },
         {
-            key: "pbxAccountId",
-            label: "PBX account",
-            value: String(m.pbxAccountId ?? "—"),
-        },
-        {
-            key: "pbxProviderId",
-            label: "PBX provider ID",
-            value: String(m.pbxProviderId ?? "—"),
+            key: "provider",
+            label: "Provider",
+            value: String(c.provider ?? "—"),
         },
         {
             key: "pbxProviderSlug",
-            label: "PBX provider slug",
+            label: "Provider Slug",
             value: String(m.pbxProviderSlug ?? "—"),
         },
         {
             key: "pbxUniqueId",
-            label: "PBX unique ID",
+            label: "PBX Unique ID",
             value: String(m.pbxUniqueId ?? "—"),
         },
         {

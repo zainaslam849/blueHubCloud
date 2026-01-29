@@ -154,7 +154,11 @@ function isActive(name: string) {
     height: 100vh;
     width: 100%;
     max-width: 280px;
-    background: var(--surface);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface) 94%, transparent) 0%,
+        color-mix(in srgb, var(--surface-2) 80%, transparent) 100%
+    );
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -164,6 +168,8 @@ function isActive(name: string) {
     z-index: 20;
     overflow-y: auto;
     overflow-x: hidden;
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(14px);
 }
 
 .sidebarHeader {
@@ -185,8 +191,9 @@ function isActive(name: string) {
 .brandMark {
     width: 40px;
     height: 40px;
-    border-radius: 8px;
+    border-radius: 12px;
     flex: 0 0 auto;
+    box-shadow: 0 10px 24px rgba(34, 211, 238, 0.25);
 }
 
 .metronic-logo {
@@ -204,9 +211,9 @@ function isActive(name: string) {
 }
 
 .brandName {
-    font-weight: 700;
-    letter-spacing: 0.2px;
-    font-size: 1.1rem;
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-tight);
+    font-size: var(--text-lg);
 }
 
 .collapseBtn {
@@ -215,7 +222,9 @@ function isActive(name: string) {
     padding: 8px 10px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background 0.15s;
+    transition:
+        background 0.15s,
+        color 0.15s;
     color: var(--color-muted);
 }
 
@@ -248,21 +257,25 @@ function isActive(name: string) {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--color-primary);
+    background: linear-gradient(135deg, #2f6bff 0%, #00a3ff 100%);
     color: #fff;
     border: none;
     border-radius: var(--radius-md);
-    padding: 8px 16px;
-    font-weight: 600;
+    padding: 10px 16px;
+    font-weight: var(--weight-semibold);
     cursor: pointer;
     font-size: 1rem;
-    transition: background 0.15s;
+    transition:
+        transform 0.15s,
+        box-shadow 0.15s;
     flex: 1 1 auto;
     white-space: nowrap;
+    box-shadow: 0 10px 20px rgba(47, 107, 255, 0.25);
 }
 
 .addBtn:hover {
-    background: #4f46e5;
+    transform: translateY(-1px);
+    box-shadow: 0 14px 26px rgba(47, 107, 255, 0.3);
 }
 
 .iconBtn {
@@ -295,9 +308,9 @@ function isActive(name: string) {
 
 .navSectionHeader {
     font-size: 0.85rem;
-    font-weight: 700;
+    font-weight: var(--weight-semibold);
     color: var(--color-muted);
-    letter-spacing: 1px;
+    letter-spacing: var(--tracking-wide);
     margin: 18px 0 6px 18px;
     text-transform: uppercase;
 }
@@ -366,7 +379,7 @@ function isActive(name: string) {
     border-radius: var(--radius-md);
     color: var(--color-muted);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--weight-medium);
     position: relative;
     transition:
         background 0.15s,
@@ -375,13 +388,13 @@ function isActive(name: string) {
 }
 
 .metronic-nav-item .navIcon {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
     color: var(--color-muted);
     transition: color 0.15s;
 }
 
 .metronic-nav-item:hover {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--surface-2));
     color: var(--color-primary);
 }
 
@@ -390,9 +403,9 @@ function isActive(name: string) {
 }
 
 .metronic-nav-item.active {
-    background: var(--surface-2);
+    background: color-mix(in srgb, var(--color-primary) 12%, var(--surface-2));
     color: var(--color-primary);
-    font-weight: 700;
+    font-weight: var(--weight-semibold);
 }
 
 .metronic-nav-item.active .navIcon {
@@ -412,7 +425,7 @@ function isActive(name: string) {
 
 .navLabel {
     flex: 1 1 auto;
-    font-size: 1rem;
+    font-size: var(--text-md);
     white-space: nowrap;
 }
 
@@ -431,7 +444,7 @@ function isActive(name: string) {
     gap: 10px;
     color: var(--color-muted);
     text-decoration: none;
-    font-size: 1rem;
+    font-size: var(--text-sm);
     border-radius: var(--radius-md);
     padding: 8px 12px;
     transition: color 0.15s;
@@ -443,7 +456,7 @@ function isActive(name: string) {
 }
 
 .outlineLabel {
-    font-weight: 600;
+    font-weight: var(--weight-medium);
 }
 
 .metronic-footer {
@@ -463,6 +476,7 @@ function isActive(name: string) {
     border-radius: 50%;
     object-fit: cover;
     border: 2px solid var(--color-border);
+    box-shadow: var(--shadow-xs);
 }
 
 .footerIcons {
@@ -481,7 +495,7 @@ function isActive(name: string) {
         height: 100vh;
         transform: translateX(-102%);
         transition: transform 0.2s var(--ease-standard);
-        box-shadow: 0 8px 32px rgba(16, 24, 40, 0.18);
+        box-shadow: var(--shadow-lg);
     }
 
     .sidebar.open {
@@ -538,5 +552,13 @@ function isActive(name: string) {
 :root[data-theme="dark"] .metronic-nav-item.active,
 :root[data-theme="dark"] .outlineLink:hover {
     background: rgba(255, 255, 255, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .metronic-sidebar,
+    .collapseIcon,
+    .addBtn {
+        transition: none;
+    }
 }
 </style>
