@@ -43,6 +43,7 @@ class AdminPbxAccountsController extends Controller
     public function show(int $id): JsonResponse
     {
         $account = CompanyPbxAccount::with(['company:id,name', 'pbxProvider:id,name'])
+            ->select(['id', 'company_id', 'pbx_provider_id', 'server_id', 'status'])
             ->findOrFail($id);
 
         return response()->json([

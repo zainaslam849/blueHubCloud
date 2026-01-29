@@ -96,7 +96,7 @@ class AdminWeeklyCallReportsController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $report = WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,name'])
+        $report = WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
             ->findOrFail($id);
 
         // Attempt to get authenticated user from admin guard first, fallback to web guard
