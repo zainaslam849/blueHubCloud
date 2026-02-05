@@ -23,6 +23,7 @@ class Call extends Model
         'weekly_call_report_id',
         'has_transcription',
         'transcript_text',
+        'ai_summary',
         'transcription_checked_at',
         'category_id',
         'sub_category_id',

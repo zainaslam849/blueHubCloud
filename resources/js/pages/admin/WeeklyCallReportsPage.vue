@@ -425,7 +425,7 @@ const filteredRows = computed(() => {
         filtered = filtered.filter((row) => {
             return String(row.company || "")
                 .toLowerCase()
-                .includes(filterCompany.value.toLowerCase());
+                .includes(String(filterCompany.value).toLowerCase());
         });
     }
 

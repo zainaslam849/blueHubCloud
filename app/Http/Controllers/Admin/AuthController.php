@@ -19,6 +19,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role,
             ],
+            'csrf_token' => csrf_token(),
         ]);
     }
 

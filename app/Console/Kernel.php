@@ -12,6 +12,11 @@ class Kernel extends ConsoleKernel
 {
     protected function schedule(Schedule $schedule): void
     {
+        // Hardcoded AI category generation schedule (every week)
+        $schedule->command('ai:generate-categories --company=1 --range=30')
+            ->weekly()
+            ->withoutOverlapping();
+
         $schedule->call(function () {
             $enabled = (bool) config('services.pbxware.ingest_enabled', env('PBXWARE_INGEST_ENABLED', true));
             if (! $enabled) {

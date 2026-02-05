@@ -14,6 +14,8 @@ class SubCategory extends Model
         'name',
         'description',
         'is_enabled',
+        'source',
+        'status',
     ];
 
     protected $casts = [

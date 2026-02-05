@@ -12,6 +12,8 @@ class AiSetting extends Model
         'provider',
         'api_key',
         'categorization_model',
+        'categorization_system_prompt',
+        'summary_system_prompt',
         'report_model',
         'enabled',
     ];

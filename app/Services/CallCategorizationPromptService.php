@@ -3,14 +3,32 @@
 namespace App\Services;
 
 use App\Models\CallCategory;
+use App\Repositories\AiSettingsRepository;
 
 class CallCategorizationPromptService
 {
+    private const CONFIDENCE_THRESHOLD = 0.6;
+
     /**
      * System prompt for AI categorization
      */
     public static function getSystemPrompt(): string
     {
+        $override = null;
+
+        try {
+            $settings = app(AiSettingsRepository::class)->getActive();
+            if ($settings && is_string($settings->categorization_system_prompt)) {
+                $override = trim($settings->categorization_system_prompt);
+            }
+        } catch (\Throwable $e) {
+            $override = null;
+        }
+
+        if (! empty($override)) {
+            return $override;
+        }
+
         return <<<'PROMPT'
 You are a phone call classification engine.
 
@@ -32,15 +50,14 @@ PROMPT;
         string $direction = 'inbound',
         string $status = 'completed',
         int $duration = 0,
-        bool $isAfterHours = false
+        bool $isAfterHours = false,
+        ?int $companyId = null
     ): string
     {
-        // Fetch enabled categories with their enabled sub-categories
-        $categories = CallCategory::enabled()
-            ->with(['subCategories' => function ($query) {
-                $query->enabled();
-            }])
-            ->get();
+        $threshold = self::CONFIDENCE_THRESHOLD;
+
+        // Fetch active categories with their active sub-categories
+        $categories = self::getActiveCategories($companyId);
 
         // Build categories section
         $categoriesSection = self::buildCategoriesSection($categories);
@@ -68,6 +85,7 @@ RULES:
 2. If after hours → choose the category that best fits after-hours handling.
 3. Choose ONLY from the available categories above.
 4. If no sub-category fits, return null.
+5. If confidence < {$threshold} → return category "Other" and sub_category "Unclear".
 
 OUTPUT FORMAT (JSON ONLY):
 {
@@ -156,7 +174,8 @@ PROMPT;
         string $direction = 'inbound',
         string $status = 'completed',
         int $duration = 0,
-        bool $isAfterHours = false
+        bool $isAfterHours = false,
+        ?int $companyId = null
     ): array
     {
         return [
@@ -166,7 +185,8 @@ PROMPT;
                 $direction,
                 $status,
                 $duration,
-                $isAfterHours
+                $isAfterHours,
+                $companyId
             ),
             'model_parameters' => self::getModelParameters(),
         ];
@@ -175,7 +195,7 @@ PROMPT;
     /**
      * Parse AI response and validate categorization
      */
-    public static function validateCategorization(array $aiResponse): array
+    public static function validateCategorization(array $aiResponse, ?int $companyId = null): array
     {
         // Ensure required fields
         if (!isset($aiResponse['category'])) {
@@ -189,8 +209,18 @@ PROMPT;
         $subCategoryName = $aiResponse['sub_category'] ?? null;
         $confidence = $aiResponse['confidence'] ?? 0;
 
-        // Verify category exists and is enabled
-        $category = CallCategory::enabled()
+        if ((float) $confidence < self::CONFIDENCE_THRESHOLD) {
+            $categoryName = 'Other';
+            $subCategoryName = 'Unclear';
+        }
+
+        // Verify category exists and is active
+        $category = CallCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->when($companyId, function ($query) use ($companyId) {
+                $query->where('company_id', $companyId);
+            })
             ->where('name', $categoryName)
             ->first();
 
@@ -204,7 +234,8 @@ PROMPT;
         // Verify sub-category if provided
         if ($subCategoryName !== null) {
             $subCategory = $category->subCategories()
-                ->enabled()
+                ->where('is_enabled', true)
+                ->where('status', 'active')
                 ->where('name', $subCategoryName)
                 ->first();
 
@@ -229,5 +260,23 @@ PROMPT;
             'sub_category_id' => null,
             'confidence' => $confidence,
         ];
+    }
+
+    /**
+     * Fetch active categories and their active sub-categories.
+     */
+    private static function getActiveCategories(?int $companyId = null)
+    {
+        return CallCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->when($companyId, function ($query) use ($companyId) {
+                $query->where('company_id', $companyId);
+            })
+            ->with(['subCategories' => function ($query) {
+                $query->where('is_enabled', true)
+                    ->where('status', 'active');
+            }])
+            ->get();
     }
 }

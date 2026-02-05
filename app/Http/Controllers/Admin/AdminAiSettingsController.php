@@ -30,12 +30,16 @@ class AdminAiSettingsController extends Controller
             'openai/gpt-4.1-mini',
             'openai/gpt-5.2',
             'anthropic/claude-3.5-sonnet',
+            'google/gemini-1.5-flash',
+            'google/gemini-1.5-pro',
         ];
 
         $validated = $request->validate([
             'provider' => ['required', 'string'],
             'api_key' => ['nullable', 'string'],
             'categorization_model' => ['required', 'string', 'in:' . implode(',', $allowed)],
+            'categorization_system_prompt' => ['nullable', 'string', 'max:10000'],
+            'summary_system_prompt' => ['nullable', 'string', 'max:10000'],
             'report_model' => ['required', 'string', 'in:' . implode(',', $allowed)],
             'enabled' => ['sometimes', 'boolean'],
         ]);
@@ -48,6 +52,8 @@ class AdminAiSettingsController extends Controller
             'provider' => $validated['provider'],
             'api_key' => $validated['api_key'] ?? null,
             'categorization_model' => $validated['categorization_model'],
+            'categorization_system_prompt' => $validated['categorization_system_prompt'] ?? null,
+            'summary_system_prompt' => $validated['summary_system_prompt'] ?? null,
             'report_model' => $validated['report_model'],
             'enabled' => ! empty($validated['enabled']),
         ];

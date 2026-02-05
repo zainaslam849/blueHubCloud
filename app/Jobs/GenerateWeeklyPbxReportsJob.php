@@ -302,13 +302,11 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 );
 
                 // Build metrics JSON structure
-                $metrics = [
-                    'category_counts' => $weekly['category_counts'],
-                    'category_breakdowns' => $categoryBreakdowns,
-                    'top_dids' => $topDids,
-                    'hourly_distribution' => $hourlyDistribution,
-                    'insights' => $insights,
-                    'ai_summary' => $this->generateAiInsights(
+                $aiSummary = null;
+                $reportsAiEnabled = filter_var(env('REPORTS_AI_ENABLED', false), FILTER_VALIDATE_BOOLEAN);
+
+                if ($reportsAiEnabled) {
+                    $aiSummary = $this->generateAiInsights(
                         $weekStart,
                         $weekEnd,
                         $totalCalls,
@@ -317,7 +315,16 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         $avgDuration,
                         $weekly['category_counts'],
                         $hourlyDistribution
-                    ),
+                    );
+                }
+
+                $metrics = [
+                    'category_counts' => $weekly['category_counts'],
+                    'category_breakdowns' => $categoryBreakdowns,
+                    'top_dids' => $topDids,
+                    'hourly_distribution' => $hourlyDistribution,
+                    'insights' => $insights,
+                    'ai_summary' => $aiSummary,
                 ];
 
                 // Generate executive summary

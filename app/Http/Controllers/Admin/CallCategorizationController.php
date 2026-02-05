@@ -27,9 +27,17 @@ class CallCategorizationController extends Controller
      */
     public function getEnabledCategories()
     {
-        $categories = CallCategory::enabled()
+        $companyId = request()->input('company_id');
+
+        $categories = CallCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->when($companyId, function ($query) use ($companyId) {
+                $query->where('company_id', $companyId);
+            })
             ->with(['subCategories' => function ($query) {
-                $query->enabled();
+                $query->where('is_enabled', true)
+                    ->where('status', 'active');
             }])
             ->orderBy('name')
             ->get();
@@ -61,9 +69,13 @@ class CallCategorizationController extends Controller
             'category' => 'required|string',
             'sub_category' => 'nullable|string',
             'confidence' => 'required|numeric|between:0,1',
+            'company_id' => 'nullable|integer',
         ]);
 
-        $result = CallCategorizationPromptService::validateCategorization($validated);
+        $result = CallCategorizationPromptService::validateCategorization(
+            $validated,
+            $validated['company_id'] ?? null
+        );
 
         return response()->json($result, $result['valid'] ? 200 : 400);
     }
@@ -79,6 +91,7 @@ class CallCategorizationController extends Controller
             'status' => 'nullable|in:completed,missed,failed',
             'duration' => 'nullable|integer|min:0',
             'is_after_hours' => 'nullable|boolean',
+            'company_id' => 'nullable|integer',
         ]);
 
         $prompt = CallCategorizationPromptService::buildPromptObject(
@@ -86,7 +99,8 @@ class CallCategorizationController extends Controller
             $validated['direction'] ?? 'inbound',
             $validated['status'] ?? 'completed',
             $validated['duration'] ?? 0,
-            $validated['is_after_hours'] ?? false
+            $validated['is_after_hours'] ?? false,
+            $validated['company_id'] ?? null
         );
 
         return response()->json([
@@ -99,9 +113,17 @@ class CallCategorizationController extends Controller
      */
     private function getEnabledCategoriesWithSubcategories()
     {
-        return CallCategory::enabled()
+        $companyId = request()->input('company_id');
+
+        return CallCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->when($companyId, function ($query) use ($companyId) {
+                $query->where('company_id', $companyId);
+            })
             ->with(['subCategories' => function ($query) {
-                $query->enabled();
+                $query->where('is_enabled', true)
+                    ->where('status', 'active');
             }])
             ->orderBy('name')
             ->get()

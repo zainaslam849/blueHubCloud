@@ -39,6 +39,9 @@ class SubCategoryController extends Controller
             'is_enabled' => 'boolean',
         ]);
 
+        $validated['source'] = 'admin';
+        $validated['status'] = 'active';
+
         $subCategory = $category->subCategories()->create($validated);
 
         return response()->json([
@@ -60,6 +63,10 @@ class SubCategoryController extends Controller
             'description' => 'nullable|string|max:1000',
             'is_enabled' => 'boolean',
         ]);
+
+        // Manual edits override AI-generated values
+        $validated['source'] = 'admin';
+        $validated['status'] = 'active';
 
         $subCategory->update($validated);
 

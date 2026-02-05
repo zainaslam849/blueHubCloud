@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\CallCategorizationController;
 use App\Http\Controllers\Admin\CategoryOverrideController;
+use App\Http\Controllers\Admin\AdminAiCategoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -52,6 +53,8 @@ Route::prefix('admin/api')->group(function () {
         Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);
         Route::post('/categories/{id}/restore', [CategoryController::class, 'restore']);
         Route::delete('/categories/{id}/force-delete', [CategoryController::class, 'forceDelete']);
+        Route::get('/categories/ai-generate/preview', [AdminAiCategoryController::class, 'preview']);
+        Route::post('/categories/ai-generate', [AdminAiCategoryController::class, 'generate']);
 
         // Sub-category routes
         Route::get('/categories/{categoryId}/sub-categories', [SubCategoryController::class, 'index']);

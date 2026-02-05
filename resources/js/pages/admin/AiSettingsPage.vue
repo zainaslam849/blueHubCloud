@@ -22,6 +22,12 @@
                     <option value="openai/gpt-4.1-mini">
                         openai/gpt-4.1-mini (Cheapest)
                     </option>
+                    <option value="google/gemini-1.5-flash">
+                        google/gemini-1.5-flash (Fast)
+                    </option>
+                    <option value="google/gemini-1.5-pro">
+                        google/gemini-1.5-pro (Premium)
+                    </option>
                     <option value="anthropic/claude-3.5-sonnet">
                         anthropic/claude-3.5-sonnet (Premium)
                     </option>
@@ -51,6 +57,22 @@
                         :disabled="categorizationModel === 'openai/gpt-5.2'"
                     >
                         openai/gpt-5.2 (Premium – higher cost)
+                    </option>
+                    <option
+                        value="google/gemini-1.5-flash"
+                        :disabled="
+                            categorizationModel === 'google/gemini-1.5-flash'
+                        "
+                    >
+                        google/gemini-1.5-flash
+                    </option>
+                    <option
+                        value="google/gemini-1.5-pro"
+                        :disabled="
+                            categorizationModel === 'google/gemini-1.5-pro'
+                        "
+                    >
+                        google/gemini-1.5-pro
                     </option>
                     <option
                         value="anthropic/claude-3.5-sonnet"
@@ -88,6 +110,32 @@
                 />
                 <p class="admin-card__hint" style="margin-top: 8px">
                     API key is stored encrypted and never returned by the API.
+                </p>
+            </div>
+
+            <div class="admin-form-row" style="margin-top: 16px">
+                <label class="admin-label">Categorization System Prompt</label>
+                <textarea
+                    v-model="categorizationSystemPrompt"
+                    class="admin-input admin-textarea"
+                    rows="6"
+                    placeholder="Leave blank to use the default categorization prompt"
+                />
+                <p class="admin-card__hint" style="margin-top: 8px">
+                    Overrides the system prompt used for call categorization.
+                </p>
+            </div>
+
+            <div class="admin-form-row" style="margin-top: 16px">
+                <label class="admin-label">Call Summary System Prompt</label>
+                <textarea
+                    v-model="summarySystemPrompt"
+                    class="admin-input admin-textarea"
+                    rows="6"
+                    placeholder="Leave blank to use the default call summary prompt"
+                />
+                <p class="admin-card__hint" style="margin-top: 8px">
+                    Overrides the system prompt used for per-call summaries.
                 </p>
             </div>
 
@@ -141,6 +189,24 @@ const reportModel = ref("openai/gpt-5.2");
 const provider = ref("openrouter");
 const apiKey = ref("");
 const enabled = ref(false);
+const defaultCategorizationPrompt = `You are a phone call classification engine.
+
+Your task is to assign the call to ONE category chosen from a predefined list.
+These categories are managed by the system administrator and MUST be followed strictly.
+
+You MUST NOT invent new primary categories.
+If intent is unclear, choose the closest matching category or "General".
+
+Return valid JSON only.`;
+
+const defaultSummaryPrompt = `You are a call summarization assistant.
+
+Summarize the call in two concise paragraphs. Keep the summary factual, neutral, and client-friendly.
+Avoid speculation and do not invent details that are not present in the transcript.
+Return plain text only.`;
+
+const categorizationSystemPrompt = ref(defaultCategorizationPrompt);
+const summarySystemPrompt = ref(defaultSummaryPrompt);
 
 const saving = ref(false);
 const error = ref("");
@@ -160,6 +226,11 @@ async function load() {
             reportModel.value = data.report_model ?? reportModel.value;
             provider.value = data.provider ?? provider.value;
             enabled.value = !!data.enabled;
+            categorizationSystemPrompt.value =
+                data.categorization_system_prompt ??
+                defaultCategorizationPrompt;
+            summarySystemPrompt.value =
+                data.summary_system_prompt ?? defaultSummaryPrompt;
             // api_key is never returned by API — keep blank
         }
     } catch (e) {
@@ -183,6 +254,9 @@ async function save() {
             provider: provider.value,
             api_key: apiKey.value || null,
             categorization_model: categorizationModel.value,
+            categorization_system_prompt:
+                categorizationSystemPrompt.value || null,
+            summary_system_prompt: summarySystemPrompt.value || null,
             report_model: reportModel.value,
             enabled: enabled.value,
         };

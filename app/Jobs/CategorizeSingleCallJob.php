@@ -74,7 +74,8 @@ class CategorizeSingleCallJob implements ShouldQueue
             direction: $call->direction ?? 'inbound',
             status: $call->status ?? 'completed',
             duration: $call->duration_seconds ?? 0,
-            isAfterHours: $this->isAfterHours($call)
+            isAfterHours: $this->isAfterHours($call),
+            companyId: $call->company_id
         );
 
         try {

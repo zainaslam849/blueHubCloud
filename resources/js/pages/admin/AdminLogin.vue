@@ -111,7 +111,7 @@
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import adminApi from "../../router/admin/api";
+import adminApi, { setCsrfToken } from "../../router/admin/api";
 import { setAdminUser } from "../../router/admin/auth";
 
 const router = useRouter();
@@ -159,6 +159,10 @@ async function submit() {
             password: password.value,
             remember: remember.value,
         });
+
+        if (res?.data?.csrf_token) {
+            setCsrfToken(res.data.csrf_token);
+        }
 
         setAdminUser(res?.data?.user ?? null);
 

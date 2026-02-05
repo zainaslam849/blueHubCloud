@@ -12,15 +12,26 @@ class CallCategory extends Model
     protected $table = 'call_categories';
 
     protected $fillable = [
+        'company_id',
         'name',
         'description',
         'is_enabled',
+        'source',
+        'status',
+        'generated_by_model',
+        'generated_at',
     ];
 
     protected $casts = [
         'is_enabled' => 'boolean',
+        'generated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
 
     // Relationships
     public function subCategories()

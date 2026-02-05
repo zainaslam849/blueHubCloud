@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\CallCategory;
+use App\Models\Company;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,10 @@ class CategoryController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $companyId = $this->resolveCompanyId();
+
         $categories = CallCategory::withTrashed()
+            ->where('company_id', $companyId)
             ->orderBy('is_enabled', 'desc')
             ->orderBy('name', 'asc')
             ->get();
@@ -34,7 +38,10 @@ class CategoryController extends Controller
      */
     public function enabled(Request $request): JsonResponse
     {
+        $companyId = $this->resolveCompanyId();
+
         $categories = CallCategory::enabled()
+            ->where('company_id', $companyId)
             ->orderBy('name', 'asc')
             ->get();
 
@@ -55,6 +62,9 @@ class CategoryController extends Controller
         ]);
 
         $validated['is_enabled'] = $validated['is_enabled'] ?? true;
+        $validated['source'] = 'admin';
+        $validated['status'] = 'active';
+        $validated['company_id'] = $this->resolveCompanyId();
 
         $category = CallCategory::create($validated);
 
@@ -105,6 +115,11 @@ class CategoryController extends Controller
             'description' => ['nullable', 'string', 'max:1000'],
             'is_enabled' => ['boolean'],
         ]);
+
+        // Manual edits override AI-generated values
+        $validated['source'] = 'admin';
+        $validated['status'] = 'active';
+        $validated['generated_by_model'] = null;
 
         $category->update($validated);
 
@@ -196,5 +211,10 @@ class CategoryController extends Controller
         return response()->json([
             'message' => 'Category permanently deleted successfully',
         ]);
+    }
+
+    private function resolveCompanyId(): int
+    {
+        return (int) (Company::orderBy('id')->value('id') ?? 1);
     }
 }

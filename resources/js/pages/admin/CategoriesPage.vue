@@ -8,9 +8,18 @@
                     Manage call categories for organization and reporting.
                 </p>
             </div>
-            <BaseButton variant="primary" size="md" @click="openAddForm">
-                + Add Category
-            </BaseButton>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap">
+                <BaseButton
+                    variant="secondary"
+                    size="md"
+                    @click="openAiGenerateModal"
+                >
+                    Generate AI Categories
+                </BaseButton>
+                <BaseButton variant="primary" size="md" @click="openAddForm">
+                    + Add Category
+                </BaseButton>
+            </div>
         </header>
 
         <section class="admin-card admin-card--glass">
@@ -366,6 +375,129 @@
             </Transition>
         </Teleport>
 
+        <!-- AI Category Generation Modal -->
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div
+                    v-if="showAiGenerate"
+                    class="admin-modalOverlay"
+                    @click="closeAiGenerateModal"
+                >
+                    <div class="admin-modal" @click.stop>
+                        <div class="admin-modal__header">
+                            <h2 class="admin-modal__title">
+                                Generate AI Categories
+                            </h2>
+                            <button
+                                type="button"
+                                class="admin-modal__close"
+                                @click="closeAiGenerateModal"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="admin-modal__body">
+                            <div
+                                v-if="aiGenerateError"
+                                class="admin-alert admin-alert--error"
+                            >
+                                {{ aiGenerateError }}
+                            </div>
+
+                            <div
+                                v-if="aiGenerateSuccess"
+                                class="admin-alert admin-alert--success"
+                            >
+                                {{ aiGenerateSuccess }}
+                            </div>
+
+                            <div class="admin-field">
+                                <label
+                                    class="admin-field__label"
+                                    for="ai-range"
+                                >
+                                    Data Range
+                                </label>
+                                <select
+                                    id="ai-range"
+                                    v-model="aiGenerateRange"
+                                    class="admin-input"
+                                >
+                                    <option value="last_30_days">
+                                        Last 30 days (default)
+                                    </option>
+                                    <option value="last_60_days">
+                                        Last 60 days
+                                    </option>
+                                    <option value="last_90_days">
+                                        Last 90 days
+                                    </option>
+                                </select>
+                                <p
+                                    class="admin-card__hint"
+                                    style="margin-top: 8px"
+                                >
+                                    Uses call summaries only (no transcripts).
+                                </p>
+                            </div>
+
+                            <div class="admin-alert admin-alert--info">
+                                <div
+                                    style="font-weight: 600; margin-bottom: 4px"
+                                >
+                                    Summaries to be analyzed
+                                </div>
+                                <div v-if="aiPreviewLoading">Calculating…</div>
+                                <div v-else-if="aiPreviewError">
+                                    {{ aiPreviewError }}
+                                </div>
+                                <div v-else>
+                                    {{ aiPreviewCount ?? 0 }} calls
+                                </div>
+                            </div>
+
+                            <div
+                                class="admin-alert admin-alert--info"
+                                style="margin-top: 10px"
+                            >
+                                This regenerates the AI category structure
+                                using call summaries. Existing calls will NOT
+                                be re-categorized.
+                            </div>
+
+                            <div
+                                class="admin-alert admin-alert--warning"
+                                style="margin-top: 10px"
+                            >
+                                This will archive previous AI-generated
+                                categories. Admin-created categories will remain
+                                unchanged.
+                            </div>
+                        </div>
+
+                        <div class="admin-modal__footer">
+                            <BaseButton
+                                @click="closeAiGenerateModal"
+                                variant="secondary"
+                                :disabled="aiGenerating"
+                            >
+                                Cancel
+                            </BaseButton>
+                            <BaseButton
+                                @click="submitAiGenerate"
+                                variant="primary"
+                                :loading="aiGenerating"
+                                :disabled="aiGenerating"
+                            >
+                                Generate
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
         <!-- Delete Confirmation Modal -->
         <Teleport to="body">
             <Transition name="admin-modal">
@@ -444,7 +576,7 @@
     </div>
 </template>
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { BaseButton, BaseBadge } from "../../components/admin/base";
 import SubCategoriesModal from "../../components/admin/SubCategoriesModal.vue";
 import adminApi from "../../router/admin/api";
@@ -464,6 +596,14 @@ const togglingId = ref(null);
 const restoringId = ref(null);
 const showSubCatsModal = ref(false);
 const selectedCategory = ref(null);
+const showAiGenerate = ref(false);
+const aiGenerating = ref(false);
+const aiGenerateError = ref("");
+const aiGenerateSuccess = ref("");
+const aiGenerateRange = ref("last_30_days");
+const aiPreviewCount = ref(null);
+const aiPreviewLoading = ref(false);
+const aiPreviewError = ref("");
 
 const formData = ref({
     name: "",
@@ -514,6 +654,74 @@ const openAddForm = () => {
     };
     validationErrors.value = {};
 };
+
+const openAiGenerateModal = () => {
+    showAiGenerate.value = true;
+    aiGenerateError.value = "";
+    aiGenerateSuccess.value = "";
+    fetchAiPreview();
+};
+
+const closeAiGenerateModal = () => {
+    showAiGenerate.value = false;
+};
+
+const fetchAiPreview = async () => {
+    aiPreviewError.value = "";
+    aiPreviewLoading.value = true;
+
+    try {
+        const response = await adminApi.get("/categories/ai-generate/preview", {
+            params: {
+                range: aiGenerateRange.value,
+            },
+        });
+        aiPreviewCount.value = response?.data?.data?.summary_count ?? 0;
+    } catch (err) {
+        aiPreviewError.value =
+            err?.response?.data?.message ||
+            err?.message ||
+            "Failed to load preview.";
+    } finally {
+        aiPreviewLoading.value = false;
+    }
+};
+
+const submitAiGenerate = async () => {
+    aiGenerateError.value = "";
+    aiGenerateSuccess.value = "";
+
+    const confirmed = window.confirm(
+        "This will archive previous AI-generated categories. Continue?",
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    const payload = {
+        range: aiGenerateRange.value,
+    };
+
+    try {
+        aiGenerating.value = true;
+        await adminApi.post("/categories/ai-generate", payload);
+        aiGenerateSuccess.value = "AI category generation queued.";
+        await fetchCategories();
+    } catch (err) {
+        aiGenerateError.value =
+            err?.response?.data?.message ||
+            err?.message ||
+            "Failed to queue AI category generation.";
+    } finally {
+        aiGenerating.value = false;
+    }
+};
+
+watch(aiGenerateRange, () => {
+    if (showAiGenerate.value) {
+        fetchAiPreview();
+    }
+});
 
 const openEditForm = (category) => {
     isEditing.value = true;
