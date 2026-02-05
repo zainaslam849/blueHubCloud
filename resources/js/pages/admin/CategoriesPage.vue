@@ -461,9 +461,9 @@
                                 class="admin-alert admin-alert--info"
                                 style="margin-top: 10px"
                             >
-                                This regenerates the AI category structure
-                                using call summaries. Existing calls will NOT
-                                be re-categorized.
+                                This regenerates the AI category structure using
+                                call summaries. Existing calls will NOT be
+                                re-categorized.
                             </div>
 
                             <div
