@@ -1239,6 +1239,16 @@ body.admin-body {
     flex-wrap: wrap;
 }
 
+.admin-muted {
+    font-size: 12px;
+    color: var(--admin-muted);
+}
+
+.admin-error {
+    font-size: 12px;
+    color: #dc2626;
+}
+
 .admin-kpiGrid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

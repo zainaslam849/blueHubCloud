@@ -98,7 +98,12 @@
         <div class="container">
             <div class="header">
                 <img src="https://bluehubcloud.com.au/wp-content/uploads/2024/05/bluehubcloud-logo-transparent.png" alt="BlueHub Cloud Logo" />
-                <h1>Call Detail Record (CDR) Analysis Report</h1>
+                <h1>
+                    Call Detail Record (CDR) Analysis Report
+                    @if(!empty($report['pbx_account_name'] ?? null))
+                        — {{ $report['pbx_account_name'] }}
+                    @endif
+                </h1>
                 <p>
                     Prepared by BlueHub Cloud |
                     {{ $report['generated_at'] ? \Carbon\Carbon::parse($report['generated_at'])->toDateString() : ($report['reporting_period_end'] ?? '') }}

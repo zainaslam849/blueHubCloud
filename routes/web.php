@@ -82,6 +82,7 @@ Route::prefix('admin/api')->group(function () {
         
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::post('/pbx/ingest', [\App\Http\Controllers\Admin\PbxIngestController::class, 'trigger']);
+        Route::post('/pipeline/run', [\App\Http\Controllers\Admin\AdminPipelineController::class, 'run']);
     });
 });
 

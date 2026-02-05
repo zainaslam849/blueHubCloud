@@ -43,6 +43,90 @@
             </template>
         </section>
 
+        <PanelCard title="Quick actions" meta="Test pipeline">
+            <div
+                style="
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 12px;
+                    align-items: center;
+                "
+            >
+                <BaseButton
+                    variant="primary"
+                    size="sm"
+                    :loading="pipelineRunning"
+                    :disabled="pipelineRunning"
+                    @click="runPipeline"
+                >
+                    <template v-if="pipelineRunning">Running…</template>
+                    <template v-else>Run full AI pipeline</template>
+                </BaseButton>
+                <span v-if="pipelineSuccess" class="admin-muted">
+                    {{ pipelineSuccess }}
+                </span>
+                <span v-if="pipelineError" class="admin-error">
+                    {{ pipelineError }}
+                </span>
+            </div>
+            <div
+                style="
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                    gap: 12px;
+                    margin-top: 12px;
+                "
+            >
+                <div>
+                    <label class="admin-label">Company</label>
+                    <select v-model="pipelineCompanyId" class="admin-input">
+                        <option value="">Auto (first company)</option>
+                        <option
+                            v-for="company in companies"
+                            :key="company.id"
+                            :value="company.id"
+                        >
+                            {{ company.name }}
+                        </option>
+                    </select>
+                </div>
+                <div>
+                    <label class="admin-label">Range (days)</label>
+                    <input
+                        v-model.number="pipelineRangeDays"
+                        type="number"
+                        min="1"
+                        max="365"
+                        class="admin-input"
+                    />
+                </div>
+                <div>
+                    <label class="admin-label">Summary limit</label>
+                    <input
+                        v-model.number="pipelineSummarizeLimit"
+                        type="number"
+                        min="1"
+                        max="5000"
+                        class="admin-input"
+                    />
+                </div>
+                <div>
+                    <label class="admin-label">Categorize limit</label>
+                    <input
+                        v-model.number="pipelineCategorizeLimit"
+                        type="number"
+                        min="1"
+                        max="5000"
+                        class="admin-input"
+                    />
+                </div>
+            </div>
+            <p class="admin-muted" style="margin-top: 10px;">
+                This queues ingest → summaries → category generation → categorization → reports.
+                Keep workers running to process jobs.
+            </p>
+        </PanelCard>
+
         <section class="admin-dashboard__grid">
             <PanelCard title="Queue health" :meta="queueMeta">
                 <template v-if="loading">
@@ -109,7 +193,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import ActivityRow from "../../components/admin/ActivityRow.vue";
 import KpiCard from "../../components/admin/KpiCard.vue";
@@ -121,8 +205,10 @@ import EmptyState from "../../components/admin/EmptyState.vue";
 import ActivityRowSkeleton from "../../components/admin/dashboard/ActivityRowSkeleton.vue";
 import KpiCardSkeleton from "../../components/admin/dashboard/KpiCardSkeleton.vue";
 import MetricRowSkeleton from "../../components/admin/dashboard/MetricRowSkeleton.vue";
+import { BaseButton } from "../../components/admin/base";
 
 import { useAdminDashboard } from "../../composables/admin/useAdminDashboard";
+import adminApi from "../../router/admin/api";
 
 const {
     loading,
@@ -134,11 +220,54 @@ const {
     recentActivity,
 } = useAdminDashboard();
 
+const pipelineRunning = ref(false);
+const pipelineError = ref("");
+const pipelineSuccess = ref("");
+const companies = ref([]);
+const pipelineCompanyId = ref("");
+const pipelineRangeDays = ref(30);
+const pipelineSummarizeLimit = ref(500);
+const pipelineCategorizeLimit = ref(500);
+
 onMounted(() => {
     load();
+    loadCompanies();
 });
 
 const queueMeta = computed(() =>
     loading.value ? "Loading…" : "Last 15 minutes",
 );
+
+async function runPipeline() {
+    pipelineRunning.value = true;
+    pipelineError.value = "";
+    pipelineSuccess.value = "";
+
+    try {
+        const payload = {
+            company_id: pipelineCompanyId.value || null,
+            range_days: pipelineRangeDays.value,
+            summarize_limit: pipelineSummarizeLimit.value,
+            categorize_limit: pipelineCategorizeLimit.value,
+        };
+
+        const res = await adminApi.post("/pipeline/run", payload);
+        const message = res?.data?.message || "Pipeline queued.";
+        pipelineSuccess.value = message;
+    } catch (e) {
+        pipelineError.value =
+            e?.response?.data?.message || "Failed to queue pipeline.";
+    } finally {
+        pipelineRunning.value = false;
+    }
+}
+
+async function loadCompanies() {
+    try {
+        const res = await adminApi.get("/companies");
+        companies.value = res?.data?.data ?? [];
+    } catch (e) {
+        companies.value = [];
+    }
+}
 </script>

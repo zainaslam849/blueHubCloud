@@ -143,7 +143,12 @@ onMounted(async () => {
                     src="https://bluehubcloud.com.au/wp-content/uploads/2024/05/bluehubcloud-logo-transparent.png"
                     alt="BlueHub Cloud Logo"
                 />
-                <h1>Call Detail Record (CDR) Analysis Report</h1>
+                <h1>
+                    Call Detail Record (CDR) Analysis Report
+                    <span v-if="reportData.header.pbx_account?.name">
+                        — {{ reportData.header.pbx_account.name }}
+                    </span>
+                </h1>
                 <p>
                     Prepared by BlueHub Cloud |
                     {{
