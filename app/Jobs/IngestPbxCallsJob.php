@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Call;
 use App\Models\CompanyPbxAccount;
 use App\Services\Pbx\PbxClientResolver;
+use App\Jobs\SummarizeSingleCallJob;
 use Illuminate\Support\Facades\Config;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Bus\Queueable;
@@ -236,6 +237,11 @@ class IngestPbxCallsJob implements ShouldQueue
                             $call->transcription_checked_at = now();
                             $call->save();
                             $transcriptionsStored++;
+
+                            if (empty($call->ai_summary)) {
+                                SummarizeSingleCallJob::dispatch($call->id)
+                                    ->onQueue('summarization');
+                            }
                         } else {
                             // Explicitly mark as no transcription when the API returns a sentinel string.
                             $call->has_transcription = false;
