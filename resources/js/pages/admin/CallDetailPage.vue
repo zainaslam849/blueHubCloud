@@ -376,6 +376,35 @@
             </BaseCard>
 
             <BaseCard
+                title="Call Summary"
+                description="AI-generated summary"
+                variant="glass"
+            >
+                <div v-if="loading" class="admin-skeletonLines">
+                    <div class="admin-skeleton admin-skeleton--line" />
+                    <div class="admin-skeleton admin-skeleton--line" />
+                </div>
+
+                <div v-else-if="!call?.aiSummary" class="admin-empty">
+                    <div class="admin-empty__title">No summary yet</div>
+                    <div class="admin-empty__desc">
+                        Summary will appear after AI processing completes.
+                    </div>
+                </div>
+
+                <div v-else class="admin-kvGrid">
+                    <div class="admin-kv" style="grid-column: 1 / -1">
+                        <div class="admin-kv__k">Summary</div>
+                        <div class="admin-kv__v">
+                            <pre class="admin-transcriptText">{{
+                                call?.aiSummary || ""
+                            }}</pre>
+                        </div>
+                    </div>
+                </div>
+            </BaseCard>
+
+            <BaseCard
                 title="Metadata"
                 description="Identifiers and raw fields"
                 variant="glass"

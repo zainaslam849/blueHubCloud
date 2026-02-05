@@ -234,6 +234,17 @@ class AdminCallsController extends Controller
             ]);
         }
 
+        if (is_string($call->ai_summary) && trim($call->ai_summary) !== '') {
+            $jobHistory->push([
+                'key' => 'summary',
+                'type' => 'summary',
+                'label' => 'AI summary generated',
+                'status' => 'completed',
+                'occurredAt' => optional($call->updated_at ?? $call->created_at)->toISOString(),
+                'detail' => 'Source: AI',
+            ]);
+        }
+
         // AI jobs placeholder (read-only, empty state in UI when none)
 
         return response()->json([
@@ -249,6 +260,7 @@ class AdminCallsController extends Controller
                 'direction' => $call->direction,
                 'from' => $call->from,
                 'to' => $call->to,
+                'aiSummary' => $call->ai_summary,
             ],
             'transcription' => [
                 'status' => $transcriptionStatus,

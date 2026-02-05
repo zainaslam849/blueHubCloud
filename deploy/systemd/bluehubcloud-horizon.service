@@ -1,0 +1,17 @@
+[Unit]
+Description=blueHubCloud Horizon
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/bluehubcloud
+ExecStart=/var/www/bluehubcloud/deploy/bin/run-horizon.sh
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=3600
+
+[Install]
+WantedBy=multi-user.target

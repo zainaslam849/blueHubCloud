@@ -12,6 +12,10 @@ class Kernel extends ConsoleKernel
 {
     protected function schedule(Schedule $schedule): void
     {
+        $schedule->command('horizon:snapshot')
+            ->everyFiveMinutes()
+            ->withoutOverlapping();
+
         // Hardcoded AI category generation schedule (every week)
         $schedule->command('ai:generate-categories --company=1 --range=30')
             ->weekly()
