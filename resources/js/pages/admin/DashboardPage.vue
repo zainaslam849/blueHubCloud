@@ -127,6 +127,86 @@
             </p>
         </PanelCard>
 
+        <PanelCard title="System status" meta="Live health checks">
+            <div
+                v-if="systemStatusLoading"
+                class="admin-muted"
+                style="padding: 6px 0"
+            >
+                Checking system health…
+            </div>
+            <div v-else class="admin-metricRows">
+                <MetricRow
+                    label="Scheduler"
+                    :value="
+                        systemStatus?.scheduler?.ok ? 'Running' : 'Not running'
+                    "
+                    :status-label="
+                        systemStatus?.scheduler?.ok ? 'Active' : 'Failed'
+                    "
+                    :status-variant="
+                        systemStatus?.scheduler?.ok ? 'active' : 'failed'
+                    "
+                />
+                <MetricRow
+                    label="Queue worker"
+                    :value="
+                        systemStatus?.queue_worker?.ok
+                            ? 'Running'
+                            : 'Not running'
+                    "
+                    :status-label="
+                        systemStatus?.queue_worker?.ok ? 'Active' : 'Failed'
+                    "
+                    :status-variant="
+                        systemStatus?.queue_worker?.ok ? 'active' : 'failed'
+                    "
+                />
+                <MetricRow
+                    label="PBX ingest"
+                    :value="
+                        systemStatus?.pbx_ingest_enabled
+                            ? 'Enabled'
+                            : 'Disabled'
+                    "
+                    :status-label="
+                        systemStatus?.pbx_ingest_enabled ? 'Active' : 'Failed'
+                    "
+                    :status-variant="
+                        systemStatus?.pbx_ingest_enabled ? 'active' : 'failed'
+                    "
+                />
+                <MetricRow
+                    label="AI settings"
+                    :value="
+                        systemStatus?.ai_settings_enabled
+                            ? 'Enabled'
+                            : 'Disabled'
+                    "
+                    :status-label="
+                        systemStatus?.ai_settings_enabled ? 'Active' : 'Failed'
+                    "
+                    :status-variant="
+                        systemStatus?.ai_settings_enabled ? 'active' : 'failed'
+                    "
+                />
+                <MetricRow
+                    label="Report AI"
+                    :value="
+                        systemStatus?.reports_ai_enabled
+                            ? 'Enabled'
+                            : 'Disabled'
+                    "
+                    :status-label="
+                        systemStatus?.reports_ai_enabled ? 'Active' : 'Failed'
+                    "
+                    :status-variant="
+                        systemStatus?.reports_ai_enabled ? 'active' : 'failed'
+                    "
+                />
+            </div>
+        </PanelCard>
+
         <section class="admin-dashboard__grid">
             <PanelCard title="Queue health" :meta="queueMeta">
                 <template v-if="loading">
@@ -228,10 +308,13 @@ const pipelineCompanyId = ref("");
 const pipelineRangeDays = ref(30);
 const pipelineSummarizeLimit = ref(500);
 const pipelineCategorizeLimit = ref(500);
+const systemStatus = ref(null);
+const systemStatusLoading = ref(false);
 
 onMounted(() => {
     load();
     loadCompanies();
+    loadSystemStatus();
 });
 
 const queueMeta = computed(() =>
@@ -268,6 +351,18 @@ async function loadCompanies() {
         companies.value = res?.data?.data ?? [];
     } catch (e) {
         companies.value = [];
+    }
+}
+
+async function loadSystemStatus() {
+    systemStatusLoading.value = true;
+    try {
+        const res = await adminApi.get("/system/status");
+        systemStatus.value = res?.data?.data ?? null;
+    } catch (e) {
+        systemStatus.value = null;
+    } finally {
+        systemStatusLoading.value = false;
     }
 }
 </script>
