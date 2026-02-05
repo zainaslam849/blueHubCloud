@@ -121,9 +121,9 @@
                     />
                 </div>
             </div>
-            <p class="admin-muted" style="margin-top: 10px;">
-                This queues ingest → summaries → category generation → categorization → reports.
-                Keep workers running to process jobs.
+            <p class="admin-muted" style="margin-top: 10px">
+                This queues ingest → summaries → category generation →
+                categorization → reports. Keep workers running to process jobs.
             </p>
         </PanelCard>
 
