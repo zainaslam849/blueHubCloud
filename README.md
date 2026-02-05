@@ -8,6 +8,7 @@ Use Redis + Horizon for queue processing and a system scheduler for `schedule:ru
 
 - Config: [deploy/supervisor/bluehubcloud-horizon.conf](deploy/supervisor/bluehubcloud-horizon.conf)
 - Run: `supervisorctl reread && supervisorctl update && supervisorctl start bluehubcloud-horizon`
+- Auto install: `sudo APP_PATH=/var/www/blueHubCloud APP_USER=www-data bash deploy/bin/install-supervisor.sh`
 
 ### Option B: systemd (Horizon + Scheduler)
 
@@ -19,6 +20,10 @@ Enable:
 
 - `systemctl enable --now bluehubcloud-horizon`
 - `systemctl enable --now bluehubcloud-scheduler.timer`
+
+Auto install:
+
+- `sudo APP_PATH=/var/www/blueHubCloud APP_USER=www-data bash deploy/bin/install-systemd.sh`
 
 ### Required env
 

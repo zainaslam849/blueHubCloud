@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-User=www-data
-Group=www-data
-WorkingDirectory=/var/www/bluehubcloud
-ExecStart=/var/www/bluehubcloud/deploy/bin/run-scheduler.sh
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_PATH__
+ExecStart=__APP_PATH__/deploy/bin/run-scheduler.sh
