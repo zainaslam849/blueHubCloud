@@ -20,7 +20,8 @@ class QueueCallsForSummarizationJob implements ShouldQueue
     public function __construct(
         public int $companyId,
         public int $limit = 500,
-        public int $batch = 25
+        public int $batch = 25,
+        public string $targetQueue = 'summarization'
     ) {}
 
     public function handle(): void
@@ -46,7 +47,7 @@ class QueueCallsForSummarizationJob implements ShouldQueue
         foreach ($chunks as $chunkIndex => $chunk) {
             foreach ($chunk as $call) {
                 SummarizeSingleCallJob::dispatch($call->id)
-                    ->onQueue('summarization')
+                    ->onQueue($this->targetQueue)
                     ->delay(now()->addSeconds($chunkIndex * 2));
             }
         }

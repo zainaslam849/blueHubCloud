@@ -21,7 +21,8 @@ class QueueCallsForCategorizationJob implements ShouldQueue
         public int $companyId,
         public int $limit = 500,
         public int $batch = 25,
-        public bool $force = false
+        public bool $force = false,
+        public string $targetQueue = 'categorization'
     ) {}
 
     public function handle(): void
@@ -50,7 +51,7 @@ class QueueCallsForCategorizationJob implements ShouldQueue
         foreach ($chunks as $chunkIndex => $chunk) {
             foreach ($chunk as $call) {
                 CategorizeSingleCallJob::dispatch($call->id)
-                    ->onQueue('categorization')
+                    ->onQueue($this->targetQueue)
                     ->delay(now()->addSeconds($chunkIndex * 2));
             }
         }

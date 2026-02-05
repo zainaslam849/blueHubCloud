@@ -22,7 +22,8 @@ class AdminTestPipelineJob implements ShouldQueue
         public int $companyId,
         public int $rangeDays = 30,
         public int $summarizeLimit = 500,
-        public int $categorizeLimit = 500
+        public int $categorizeLimit = 500,
+        public string $pipelineQueue = 'default'
     ) {}
 
     public function handle(): void
@@ -32,38 +33,53 @@ class AdminTestPipelineJob implements ShouldQueue
             'range_days' => $this->rangeDays,
         ]);
 
+        $to = CarbonImmutable::now('UTC')->toDateString();
+        $from = CarbonImmutable::now('UTC')->subDays($this->rangeDays)->toDateString();
+
         $accounts = CompanyPbxAccount::query()
             ->where('company_id', $this->companyId)
             ->where('status', 'active')
             ->get(['id']);
 
         foreach ($accounts as $account) {
-            IngestPbxCallsJob::dispatch($this->companyId, $account->id)
-                ->onQueue('ingest-pbx');
+            IngestPbxCallsJob::dispatchSync(
+                $this->companyId,
+                $account->id,
+                ['from' => $from, 'to' => $to]
+            );
         }
 
-        QueueCallsForSummarizationJob::dispatch($this->companyId, $this->summarizeLimit)
+        QueueCallsForSummarizationJob::dispatch(
+            $this->companyId,
+            $this->summarizeLimit,
+            25,
+            $this->pipelineQueue
+        )
             ->delay(now()->addMinutes(2))
-            ->onQueue('summarization');
+            ->onQueue($this->pipelineQueue);
 
         GenerateAiCategoriesForCompanyJob::dispatch($this->companyId, $this->rangeDays)
             ->delay(now()->addMinutes(4))
-            ->onQueue('default');
+            ->onQueue($this->pipelineQueue);
 
-        QueueCallsForCategorizationJob::dispatch($this->companyId, $this->categorizeLimit)
+        QueueCallsForCategorizationJob::dispatch(
+            $this->companyId,
+            $this->categorizeLimit,
+            25,
+            false,
+            $this->pipelineQueue
+        )
             ->delay(now()->addMinutes(5))
-            ->onQueue('default');
-
-        $to = CarbonImmutable::now('UTC')->toDateString();
-        $from = CarbonImmutable::now('UTC')->subDays($this->rangeDays)->toDateString();
+            ->onQueue($this->pipelineQueue);
 
         GenerateWeeklyPbxReportsJob::dispatch($from, $to)
             ->delay(now()->addMinutes(7))
-            ->onQueue('default');
+            ->onQueue($this->pipelineQueue);
 
         Log::info('Admin test pipeline queued', [
             'company_id' => $this->companyId,
             'ingest_accounts' => $accounts->count(),
+            'queue' => $this->pipelineQueue,
         ]);
     }
 }

@@ -37,7 +37,8 @@ class AdminPipelineController extends Controller
             (int) $companyId,
             $rangeDays,
             $summarizeLimit,
-            $categorizeLimit
+            $categorizeLimit,
+            'default'
         )->onQueue('default');
 
         return response()->json([
