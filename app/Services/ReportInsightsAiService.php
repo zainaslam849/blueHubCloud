@@ -2,7 +2,8 @@
 
 namespace App\Services;
 
-use App\Contracts\AiProviderContract;
+use App\Repositories\AiSettingsRepository;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Log;
 class ReportInsightsAiService
 {
     public function __construct(
-        private AiProviderContract $aiProvider
+        private ?AiSettingsRepository $aiSettingsRepo = null
     ) {
     }
 
@@ -55,14 +56,32 @@ class ReportInsightsAiService
     public function generateInsights(array $metrics): array
     {
         try {
+            $repo = $this->aiSettingsRepo ?? app(AiSettingsRepository::class);
+            $aiSettings = $repo->getActive();
+
+            if (! $aiSettings || ! $aiSettings->enabled) {
+                return $this->emptyInsights();
+            }
+
+            if (! $aiSettings->api_key || ! $aiSettings->report_model) {
+                return $this->emptyInsights();
+            }
+
             // Build prompt for AI
             $prompt = $this->buildPrompt($metrics);
 
-            // Call AI provider (batch processing for efficiency)
-            $response = $this->aiProvider->generateText($prompt, [
+            $modelParameters = [
+                'temperature' => 0.5,
                 'max_tokens' => 1500,
-                'temperature' => 0.5, // Deterministic analysis
-            ]);
+            ];
+
+            $response = $this->callProvider(
+                $aiSettings->provider,
+                $aiSettings->api_key,
+                $aiSettings->report_model,
+                $prompt,
+                $modelParameters
+            );
 
             // Parse AI response
             $parsed = $this->parseResponse($response);
@@ -80,13 +99,21 @@ class ReportInsightsAiService
             ]);
 
             // Graceful fallback - return empty insights
-            return [
-                'ai_summary' => '',
-                'recommendations' => [],
-                'risks' => [],
-                'automation_opportunities' => [],
-            ];
+            return $this->emptyInsights();
         }
+    }
+
+    /**
+     * @return array{ai_summary: string, recommendations: array, risks: array, automation_opportunities: array}
+     */
+    private function emptyInsights(): array
+    {
+        return [
+            'ai_summary' => '',
+            'recommendations' => [],
+            'risks' => [],
+            'automation_opportunities' => [],
+        ];
     }
 
     /**
@@ -165,6 +192,116 @@ Format your response EXACTLY as JSON (no markdown, no code blocks):
   "opportunities": ["...", "..."]
 }
 PROMPT;
+    }
+
+    /**
+     * @param  array{temperature: float, max_tokens: int}  $modelParameters
+     */
+    private function callProvider(
+        string $provider,
+        string $apiKey,
+        string $model,
+        string $prompt,
+        array $modelParameters
+    ): string {
+        if ($provider === 'openrouter') {
+            return $this->callOpenRouter($apiKey, $model, $prompt, $modelParameters);
+        }
+
+        [$modelProvider, $modelName] = array_pad(explode('/', $model, 2), 2, null);
+
+        if ($provider === 'openai' || $modelProvider === 'openai') {
+            return $this->callOpenAI($apiKey, $modelName ?? $model, $prompt, $modelParameters);
+        }
+
+        if ($provider === 'anthropic' || $modelProvider === 'anthropic') {
+            return $this->callAnthropic($apiKey, $modelName ?? $model, $prompt, $modelParameters);
+        }
+
+        throw new \Exception("Unsupported AI provider: {$provider}");
+    }
+
+    private function callOpenAI(string $apiKey, string $model, string $prompt, array $modelParameters): string
+    {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'temperature' => $modelParameters['temperature'],
+            'max_tokens' => $modelParameters['max_tokens'],
+        ]);
+
+        if (! $response->successful()) {
+            throw new \Exception("OpenAI API failed ({$response->status()}): " . $response->body());
+        }
+
+        $content = $response->json()['choices'][0]['message']['content'] ?? null;
+
+        if (! $content) {
+            throw new \Exception('No content in OpenAI response');
+        }
+
+        return (string) $content;
+    }
+
+    private function callAnthropic(string $apiKey, string $model, string $prompt, array $modelParameters): string
+    {
+        $response = Http::withHeaders([
+            'x-api-key' => $apiKey,
+            'Content-Type' => 'application/json',
+            'anthropic-version' => '2023-06-01',
+        ])->timeout(30)->post('https://api.anthropic.com/v1/messages', [
+            'model' => $model,
+            'max_tokens' => $modelParameters['max_tokens'],
+            'temperature' => $modelParameters['temperature'],
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ]);
+
+        if (! $response->successful()) {
+            throw new \Exception("Anthropic API failed ({$response->status()}): " . $response->body());
+        }
+
+        $content = $response->json()['content'][0]['text'] ?? null;
+
+        if (! $content) {
+            throw new \Exception('No content in Anthropic response');
+        }
+
+        return (string) $content;
+    }
+
+    private function callOpenRouter(string $apiKey, string $model, string $prompt, array $modelParameters): string
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => 'blueHubCloud Report Insights',
+        ])->timeout(30)->post('https://openrouter.ai/api/v1/chat/completions', [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'temperature' => $modelParameters['temperature'],
+            'max_tokens' => $modelParameters['max_tokens'],
+        ]);
+
+        if (! $response->successful()) {
+            throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
+        }
+
+        $content = $response->json()['choices'][0]['message']['content'] ?? null;
+
+        if (! $content) {
+            throw new \Exception('No content in OpenRouter response');
+        }
+
+        return (string) $content;
     }
 
     /**

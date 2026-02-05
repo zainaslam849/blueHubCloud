@@ -188,6 +188,9 @@ class AdminWeeklyCallReportsController extends Controller
                     'recommendations' => [],
                 ],
 
+                // AI business analysis (if available)
+                'ai_summary' => $metrics['ai_summary'] ?? null,
+
                 // Additional data
                 'top_extensions' => $report->top_extensions ?? [],
                 'top_call_topics' => $report->top_call_topics ?? [],

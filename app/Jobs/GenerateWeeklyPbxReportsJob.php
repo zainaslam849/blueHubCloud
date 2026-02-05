@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\WeeklyCallReport;
+use App\Repositories\AiSettingsRepository;
 use App\Services\ReportInsightsAiService;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
@@ -12,6 +13,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class GenerateWeeklyPbxReportsJob implements ShouldQueue
 {
@@ -327,7 +330,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     'ai_summary' => $aiSummary,
                 ];
 
-                // Generate executive summary
+                // Generate executive summary (rule-based fallback)
                 $executiveSummary = $this->generateExecutiveSummary(
                     $weekStart,
                     $weekEnd,
@@ -337,6 +340,33 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     $avgDuration,
                     $weekly['category_counts']
                 );
+
+                if ($reportsAiEnabled) {
+                    $callSummaries = $this->fetchCallSummariesForReport(
+                        $companyId,
+                        (int) $weekly['company_pbx_account_id'],
+                        $weekStart->toDateString(),
+                        $weekEnd->toDateString(),
+                        60
+                    );
+
+                    if (! empty($callSummaries)) {
+                        $aiExecutiveSummary = $this->generateAiExecutiveSummary(
+                            $weekStart,
+                            $weekEnd,
+                            $totalCalls,
+                            (int) $weekly['answered_calls'],
+                            (int) $weekly['missed_calls'],
+                            $avgDuration,
+                            $weekly['category_counts'],
+                            $callSummaries
+                        );
+
+                        if (is_string($aiExecutiveSummary) && trim($aiExecutiveSummary) !== '') {
+                            $executiveSummary = trim($aiExecutiveSummary);
+                        }
+                    }
+                }
 
                 $reportModel = WeeklyCallReport::query()->updateOrCreate(
                     [
@@ -499,6 +529,125 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     }
 
     /**
+     * Fetch call summaries for executive report summary.
+     *
+     * @return array<int, string>
+     */
+    private function fetchCallSummariesForReport(
+        int $companyId,
+        int $companyPbxAccountId,
+        string $weekStartDate,
+        string $weekEndDate,
+        int $limit
+    ): array {
+        $summaries = DB::table('calls')
+            ->select(['ai_summary'])
+            ->where('company_id', $companyId)
+            ->where('company_pbx_account_id', $companyPbxAccountId)
+            ->whereDate('started_at', '>=', $weekStartDate)
+            ->whereDate('started_at', '<=', $weekEndDate)
+            ->whereNotNull('ai_summary')
+            ->where('ai_summary', '!=', '')
+            ->orderByDesc('started_at')
+            ->limit($limit)
+            ->pluck('ai_summary')
+            ->filter(fn ($summary) => is_string($summary) && trim($summary) !== '')
+            ->map(function ($summary) {
+                $clean = trim((string) $summary);
+
+                return mb_strlen($clean) > 240 ? mb_substr($clean, 0, 240).'…' : $clean;
+            })
+            ->values()
+            ->all();
+
+        return $summaries;
+    }
+
+    /**
+     * Generate executive summary using call summaries + aggregated metrics.
+     */
+    private function generateAiExecutiveSummary(
+        CarbonImmutable $weekStart,
+        CarbonImmutable $weekEnd,
+        int $totalCalls,
+        int $answeredCalls,
+        int $missedCalls,
+        int $avgDurationSeconds,
+        array $categoryCounts,
+        array $callSummaries
+    ): ?string {
+        try {
+            $aiSettings = app(AiSettingsRepository::class)->getActive();
+
+            if (! $aiSettings || ! $aiSettings->enabled) {
+                return null;
+            }
+
+            if (! $aiSettings->api_key || ! $aiSettings->report_model) {
+                return null;
+            }
+
+            $weekRange = $this->formatWeekRange($weekStart, $weekEnd);
+            $answerRate = $totalCalls > 0 ? round(($answeredCalls / $totalCalls) * 100, 1) : 0;
+            $avgDuration = $this->formatDuration($avgDurationSeconds);
+
+            $categoryLines = '';
+            if (! empty($categoryCounts)) {
+                arsort($categoryCounts);
+                foreach ($categoryCounts as $categoryKey => $count) {
+                    $categoryName = $categoryKey;
+                    if (strpos($categoryKey, '|') !== false) {
+                        [, $categoryName] = explode('|', $categoryKey, 2);
+                    }
+                    $percentage = $totalCalls > 0 ? round(($count / $totalCalls) * 100, 1) : 0;
+                    $categoryLines .= "- {$categoryName}: {$count} calls ({$percentage}%)\n";
+                }
+            }
+
+            $summaryLines = implode("\n", array_map(fn ($s) => "- {$s}", $callSummaries));
+
+            $prompt = <<<PROMPT
+You are a reporting analyst. Create an executive summary for a weekly call report.
+
+Use ONLY the information provided below. Do NOT invent facts.
+Write 2–3 concise paragraphs, client-friendly and neutral.
+
+PERIOD: {$weekRange}
+TOTAL CALLS: {$totalCalls}
+ANSWERED: {$answeredCalls}
+MISSED: {$missedCalls}
+ANSWER RATE: {$answerRate}%
+AVERAGE DURATION: {$avgDuration}
+
+CATEGORY DISTRIBUTION:
+{$categoryLines}
+
+CALL SUMMARIES (representative samples):
+{$summaryLines}
+PROMPT;
+
+            $modelParameters = [
+                'temperature' => 0.3,
+                'max_tokens' => 600,
+            ];
+
+            return $this->callProvider(
+                $aiSettings->provider,
+                $aiSettings->api_key,
+                $aiSettings->report_model,
+                $prompt,
+                $modelParameters
+            );
+        } catch (\Throwable $e) {
+            Log::warning('AI executive summary generation failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
      * Generate a programmatic executive summary for the weekly report.
      *
      * Includes: week range, total call volume, answer rate, top category.
@@ -629,6 +778,116 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * @param  array{temperature: float, max_tokens: int}  $modelParameters
+     */
+    private function callProvider(
+        string $provider,
+        string $apiKey,
+        string $model,
+        string $prompt,
+        array $modelParameters
+    ): string {
+        if ($provider === 'openrouter') {
+            return $this->callOpenRouter($apiKey, $model, $prompt, $modelParameters);
+        }
+
+        [$modelProvider, $modelName] = array_pad(explode('/', $model, 2), 2, null);
+
+        if ($provider === 'openai' || $modelProvider === 'openai') {
+            return $this->callOpenAI($apiKey, $modelName ?? $model, $prompt, $modelParameters);
+        }
+
+        if ($provider === 'anthropic' || $modelProvider === 'anthropic') {
+            return $this->callAnthropic($apiKey, $modelName ?? $model, $prompt, $modelParameters);
+        }
+
+        throw new \Exception("Unsupported AI provider: {$provider}");
+    }
+
+    private function callOpenAI(string $apiKey, string $model, string $prompt, array $modelParameters): string
+    {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ])->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'temperature' => $modelParameters['temperature'],
+            'max_tokens' => $modelParameters['max_tokens'],
+        ]);
+
+        if (! $response->successful()) {
+            throw new \Exception("OpenAI API failed ({$response->status()}): " . $response->body());
+        }
+
+        $content = $response->json()['choices'][0]['message']['content'] ?? null;
+
+        if (! $content) {
+            throw new \Exception('No content in OpenAI response');
+        }
+
+        return (string) $content;
+    }
+
+    private function callAnthropic(string $apiKey, string $model, string $prompt, array $modelParameters): string
+    {
+        $response = Http::withHeaders([
+            'x-api-key' => $apiKey,
+            'Content-Type' => 'application/json',
+            'anthropic-version' => '2023-06-01',
+        ])->timeout(30)->post('https://api.anthropic.com/v1/messages', [
+            'model' => $model,
+            'max_tokens' => $modelParameters['max_tokens'],
+            'temperature' => $modelParameters['temperature'],
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+        ]);
+
+        if (! $response->successful()) {
+            throw new \Exception("Anthropic API failed ({$response->status()}): " . $response->body());
+        }
+
+        $content = $response->json()['content'][0]['text'] ?? null;
+
+        if (! $content) {
+            throw new \Exception('No content in Anthropic response');
+        }
+
+        return (string) $content;
+    }
+
+    private function callOpenRouter(string $apiKey, string $model, string $prompt, array $modelParameters): string
+    {
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => 'blueHubCloud Weekly Reports',
+        ])->timeout(30)->post('https://openrouter.ai/api/v1/chat/completions', [
+            'model' => $model,
+            'messages' => [
+                ['role' => 'user', 'content' => $prompt],
+            ],
+            'temperature' => $modelParameters['temperature'],
+            'max_tokens' => $modelParameters['max_tokens'],
+        ]);
+
+        if (! $response->successful()) {
+            throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
+        }
+
+        $content = $response->json()['choices'][0]['message']['content'] ?? null;
+
+        if (! $content) {
+            throw new \Exception('No content in OpenRouter response');
+        }
+
+        return (string) $content;
     }
 
     /**

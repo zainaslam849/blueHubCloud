@@ -71,41 +71,54 @@ class ReportGeneratorService
         ];
     }
 
-    /**
-     * @return array{
-     *   id:int,
-     *   company_id:int,
-     *   reporting_period_start:string,
-     *   reporting_period_end:string,
-     *   total_calls:int,
-     *   total_duration_seconds:int,
-     *   unresolved_calls_count:int,
-     *   top_extensions:array<int,mixed>,
-     *   top_call_topics:array<int,mixed>,
-     *   metadata:array<string,mixed>
-     * }
-     */
     private function getWeeklyReport(int $weeklyReportId): array
     {
-        $row = DB::table('weekly_call_reports')
-            ->where('id', $weeklyReportId)
-            ->first();
+        $report = \App\Models\WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,name'])
+            ->find($weeklyReportId);
 
-        if (! $row) {
+        if (! $report) {
             throw new RuntimeException('Weekly report not found.');
         }
 
+        $metrics = $report->metrics ?? [];
+
         return [
-            'id' => (int) $row->id,
-            'company_id' => (int) $row->company_id,
-            'reporting_period_start' => (string) $row->reporting_period_start,
-            'reporting_period_end' => (string) $row->reporting_period_end,
-            'total_calls' => (int) ($row->total_calls ?? 0),
-            'total_duration_seconds' => (int) ($row->total_duration_seconds ?? 0),
-            'unresolved_calls_count' => (int) ($row->unresolved_calls_count ?? 0),
-            'top_extensions' => $this->decodeJsonArray($row->top_extensions ?? null),
-            'top_call_topics' => $this->decodeJsonArray($row->top_call_topics ?? null),
-            'metadata' => $this->decodeJsonAssoc($row->metadata ?? null),
+            'id' => (int) $report->id,
+            'company_id' => (int) $report->company_id,
+            'company_name' => $report->company?->name,
+            'pbx_account_name' => $report->companyPbxAccount?->name,
+            'reporting_period_start' => $report->reporting_period_start?->toDateString(),
+            'reporting_period_end' => $report->reporting_period_end?->toDateString(),
+            'generated_at' => $report->generated_at?->toIso8601String(),
+            'executive_summary' => $report->executive_summary,
+            'metrics' => [
+                'total_calls' => $report->total_calls,
+                'answered_calls' => $report->answered_calls,
+                'missed_calls' => $report->missed_calls,
+                'answer_rate' => $report->total_calls > 0
+                    ? round(($report->answered_calls / $report->total_calls) * 100, 1)
+                    : 0,
+                'calls_with_transcription' => $report->calls_with_transcription,
+                'transcription_rate' => $report->total_calls > 0
+                    ? round(($report->calls_with_transcription / $report->total_calls) * 100, 1)
+                    : 0,
+                'total_call_duration_seconds' => $report->total_call_duration_seconds,
+                'avg_call_duration_seconds' => $report->avg_call_duration_seconds,
+                'avg_call_duration_formatted' => $this->formatDuration((int) ($report->avg_call_duration_seconds ?? 0)),
+                'first_call_at' => $report->first_call_at?->toIso8601String(),
+                'last_call_at' => $report->last_call_at?->toIso8601String(),
+            ],
+            'category_breakdowns' => [
+                'counts' => $metrics['category_counts'] ?? [],
+                'details' => $metrics['category_breakdowns'] ?? [],
+                'top_dids' => $metrics['top_dids'] ?? [],
+                'hourly_distribution' => $metrics['hourly_distribution'] ?? [],
+            ],
+            'insights' => $metrics['insights'] ?? [
+                'ai_opportunities' => [],
+                'recommendations' => [],
+            ],
+            'ai_summary' => $metrics['ai_summary'] ?? null,
         ];
     }
 
@@ -135,6 +148,28 @@ class ReportGeneratorService
         $decoded = json_decode($value, true);
 
         return is_array($decoded) ? $decoded : [];
+    }
+
+    private function formatDuration(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return $seconds === 1 ? '1 second' : "{$seconds} seconds";
+        }
+
+        $hours = intdiv($seconds, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+
+        $parts = [];
+
+        if ($hours > 0) {
+            $parts[] = $hours === 1 ? '1 hour' : "{$hours} hours";
+        }
+
+        if ($minutes > 0) {
+            $parts[] = $minutes === 1 ? '1 minute' : "{$minutes} minutes";
+        }
+
+        return implode(' ', $parts) ?: '0 seconds';
     }
 
     private function renderPdf(string $html): string
