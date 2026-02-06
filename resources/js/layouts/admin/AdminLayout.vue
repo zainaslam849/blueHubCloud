@@ -1,5 +1,5 @@
 <template>
-    <div v-if="isLogin" class="admin-authShell">
+    <div v-if="isAuthShell" class="admin-authShell">
         <RouterView v-slot="{ Component }">
             <Transition name="admin-route" mode="out-in">
                 <component :is="Component" />
@@ -48,7 +48,10 @@ import adminApi from "../../router/admin/api";
 
 const route = useRoute();
 
-const isLogin = computed(() => route.name === "admin.login");
+const isAuthShell = computed(() => {
+    if (!route.name) return true;
+    return route.name === "admin.login" || route.meta?.public === true;
+});
 
 const SIDEBAR_KEY = "admin_sidebar_collapsed";
 const sidebarCollapsed = ref(false);

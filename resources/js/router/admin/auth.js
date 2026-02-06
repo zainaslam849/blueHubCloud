@@ -8,8 +8,8 @@ export function getAdminAccess() {
     return access;
 }
 
-export async function getAdminUser() {
-    if (loaded) return cachedUser;
+export async function getAdminUser(force = false) {
+    if (loaded && !force) return cachedUser;
 
     try {
         const res = await adminApi.get("/me");

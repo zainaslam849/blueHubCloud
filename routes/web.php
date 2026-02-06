@@ -14,7 +14,7 @@ use App\Http\Controllers\Admin\AdminAiCategoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect('/admin/login');
 });
 
 // Admin auth API (session-based)

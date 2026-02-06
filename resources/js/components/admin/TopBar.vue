@@ -260,7 +260,11 @@ async function logout() {
     } finally {
         clearAdminUser();
         menuOpen.value = false;
-        await router.replace({ name: "admin.login" });
+        try {
+            await router.replace({ name: "admin.login" });
+        } finally {
+            window.location.href = "/admin/login";
+        }
     }
 }
 </script>
