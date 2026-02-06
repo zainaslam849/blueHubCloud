@@ -15,6 +15,8 @@
         <SidebarNav
             :items="navItems"
             :collapsed="sidebarCollapsed"
+            :app-name="appName"
+            :logo-url="logoUrl"
             @toggle-collapsed="toggleSidebar"
         />
 
@@ -37,11 +39,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import SidebarNav from "../../components/admin/SidebarNav.vue";
 import TopBar from "../../components/admin/TopBar.vue";
+import adminApi from "../../router/admin/api";
 
 const route = useRoute();
 
@@ -78,6 +81,55 @@ const pageTitle = computed(() => {
     }
 
     return "Dashboard";
+});
+
+const appName = ref("BlueHubCloud");
+const logoUrl = ref("");
+const faviconUrl = ref("");
+
+function applyBranding() {
+    const name = appName.value || "BlueHubCloud";
+    document.title = `${name} — Admin`;
+
+    if (faviconUrl.value) {
+        let link = document.querySelector("link[rel~='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.setAttribute("rel", "icon");
+            document.head.appendChild(link);
+        }
+        link.setAttribute("href", faviconUrl.value);
+    }
+}
+
+async function loadSettings() {
+    try {
+        const res = await adminApi.get("/settings");
+        const data = res?.data?.data || {};
+        appName.value = data.site_name || "BlueHubCloud";
+        logoUrl.value = data.admin_logo_url || "";
+        faviconUrl.value = data.admin_favicon_url || "";
+        applyBranding();
+    } catch (e) {
+        // ignore
+    }
+}
+
+function handleSettingsUpdated(event) {
+    const detail = event?.detail || {};
+    appName.value = detail.site_name || appName.value || "BlueHubCloud";
+    logoUrl.value = detail.admin_logo_url || "";
+    faviconUrl.value = detail.admin_favicon_url || "";
+    applyBranding();
+}
+
+onMounted(() => {
+    loadSettings();
+    window.addEventListener("admin-settings-updated", handleSettingsUpdated);
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener("admin-settings-updated", handleSettingsUpdated);
 });
 
 const navItems = [

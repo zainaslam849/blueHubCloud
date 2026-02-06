@@ -7,11 +7,18 @@
         <!-- Brand/Header -->
         <div class="admin-sidebar__brand metronic-brand">
             <div
+                v-if="logoUrl"
+                class="admin-sidebar__logo metronic-logo"
+                :style="{ backgroundImage: `url(${logoUrl})` }"
+                aria-hidden="true"
+            ></div>
+            <div
+                v-else
                 class="admin-sidebar__logo metronic-logo"
                 aria-hidden="true"
             ></div>
             <div v-if="!collapsed" class="admin-sidebar__brandText">
-                <div class="admin-sidebar__app">BlueHubClouds</div>
+                <div class="admin-sidebar__app">{{ appName }}</div>
                 <div class="admin-sidebar__area">Admin</div>
             </div>
 
@@ -191,6 +198,16 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+
+    appName: {
+        type: String,
+        default: "BlueHubCloud",
+    },
+
+    logoUrl: {
+        type: String,
+        default: "",
+    },
 });
 
 const { items, collapsed } = toRefs(props);
@@ -366,6 +383,34 @@ const NavIcon = {
                         ],
                     );
                 case "jobs":
+                    return h(
+                        "svg",
+                        {
+                            viewBox: "0 0 24 24",
+                            fill: "none",
+                            xmlns: "http://www.w3.org/2000/svg",
+                        },
+                        [
+                            h("path", {
+                                d: "M7 7h10v10H7V7Z",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                            }),
+                            h("path", {
+                                d: "M7 11h10",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                                "stroke-linecap": "round",
+                            }),
+                            h("path", {
+                                d: "M7 15h6",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                                "stroke-linecap": "round",
+                            }),
+                        ],
+                    );
+                case "categories":
                     return h(
                         "svg",
                         {
