@@ -56,14 +56,14 @@ class AdminSettingsController extends Controller
 
         if ($request->hasFile('admin_logo')) {
             $this->deleteStoredFile($settings->admin_logo_url);
-            $path = $request->file('admin_logo')->store('app-settings', 'public');
-            $settings->admin_logo_url = Storage::disk('public')->url($path);
+            $path = $request->file('admin_logo')->store('app-settings', 's3');
+            $settings->admin_logo_url = Storage::disk('s3')->url($path);
         }
 
         if ($request->hasFile('admin_favicon')) {
             $this->deleteStoredFile($settings->admin_favicon_url);
-            $path = $request->file('admin_favicon')->store('app-settings', 'public');
-            $settings->admin_favicon_url = Storage::disk('public')->url($path);
+            $path = $request->file('admin_favicon')->store('app-settings', 's3');
+            $settings->admin_favicon_url = Storage::disk('s3')->url($path);
         }
 
         $settings->save();
@@ -88,11 +88,21 @@ class AdminSettingsController extends Controller
             return;
         }
 
-        $prefix = '/storage/';
-        if (str_starts_with($path, $prefix)) {
-            $relative = ltrim(substr($path, strlen($prefix)), '/');
-            if ($relative) {
-                Storage::disk('public')->delete($relative);
+        $relative = ltrim($path, '/');
+
+        if ($relative) {
+            try {
+                Storage::disk('s3')->delete($relative);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+
+        $prefix = 'storage/';
+        if (str_starts_with($relative, $prefix)) {
+            $legacy = ltrim(substr($relative, strlen($prefix)), '/');
+            if ($legacy) {
+                Storage::disk('public')->delete($legacy);
             }
         }
     }

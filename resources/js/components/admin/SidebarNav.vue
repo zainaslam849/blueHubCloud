@@ -7,16 +7,20 @@
         <!-- Brand/Header -->
         <div class="admin-sidebar__brand metronic-brand">
             <div
-                v-if="logoUrl"
                 class="admin-sidebar__logo metronic-logo"
-                :style="{ backgroundImage: `url(${logoUrl})` }"
+                :class="{ 'has-image': !!logoUrl }"
                 aria-hidden="true"
-            ></div>
-            <div
-                v-else
-                class="admin-sidebar__logo metronic-logo"
-                aria-hidden="true"
-            ></div>
+            >
+                <img
+                    v-if="logoUrl"
+                    class="admin-sidebar__logoImg"
+                    :src="logoUrl"
+                    alt=""
+                />
+                <span v-else class="admin-sidebar__logoInitial">
+                    {{ logoInitial }}
+                </span>
+            </div>
             <div v-if="!collapsed" class="admin-sidebar__brandText">
                 <div class="admin-sidebar__app">{{ appName }}</div>
                 <div class="admin-sidebar__area">Admin</div>
@@ -183,7 +187,7 @@
 </template>
 
 <script setup>
-import { h, ref, toRefs, watchEffect } from "vue";
+import { computed, h, ref, toRefs, watchEffect } from "vue";
 import { useRoute } from "vue-router";
 
 defineEmits(["toggle-collapsed"]);
@@ -211,6 +215,14 @@ const props = defineProps({
 });
 
 const { items, collapsed } = toRefs(props);
+
+const logoInitial = computed(() => {
+    const name = String(props.appName || "BlueHubCloud").trim();
+    if (!name) return "B";
+    const parts = name.split(/\s+/).filter(Boolean);
+    const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase());
+    return initials.join("") || "B";
+});
 
 const route = useRoute();
 const openSections = ref({});

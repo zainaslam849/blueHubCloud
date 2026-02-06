@@ -90,7 +90,7 @@
                         </BaseButton>
 
                         <div
-                            v-if="filtersOpen"
+                            v-if="filtersOpen && isDesktop"
                             class="admin-filterPanel"
                             role="dialog"
                             aria-label="Filter options"
@@ -320,6 +320,103 @@
                 />
             </div>
         </section>
+
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div
+                    v-if="filtersOpen && !isDesktop"
+                    class="admin-modalOverlay"
+                    @click="filtersOpen = false"
+                >
+                    <div class="admin-modal" @click.stop>
+                        <div class="admin-modal__header">
+                            <h2 class="admin-modal__title">Filter Options</h2>
+                            <button
+                                type="button"
+                                class="admin-modal__close"
+                                @click="filtersOpen = false"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="admin-modal__body">
+                            <div class="admin-filterGrid">
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-company"
+                                    >
+                                        Company
+                                    </label>
+                                    <select
+                                        id="filter-company"
+                                        v-model="draftFilterCompany"
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Companies</option>
+                                        <option
+                                            v-for="company in companies"
+                                            :key="company.id"
+                                            :value="company.id"
+                                        >
+                                            {{ company.name }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-start-date"
+                                    >
+                                        Start date
+                                    </label>
+                                    <VueDatePicker
+                                        v-model="draftFilterStartDate"
+                                        :enable-time-picker="false"
+                                        placeholder="Select start date"
+                                        format="yyyy-MM-dd"
+                                        auto-apply
+                                        :clearable="true"
+                                    />
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-end-date"
+                                    >
+                                        End date
+                                    </label>
+                                    <VueDatePicker
+                                        v-model="draftFilterEndDate"
+                                        :enable-time-picker="false"
+                                        placeholder="Select end date"
+                                        format="yyyy-MM-dd"
+                                        auto-apply
+                                        :clearable="true"
+                                        :min-date="draftFilterStartDate"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="admin-modal__footer">
+                            <BaseButton
+                                variant="secondary"
+                                @click="resetDraftFilters"
+                            >
+                                Reset
+                            </BaseButton>
+                            <BaseButton variant="primary" @click="applyFilters">
+                                Apply
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
     </div>
 </template>
 
@@ -561,7 +658,7 @@ watch(
 );
 
 function onDocumentClick(event) {
-    if (!filtersOpen.value) return;
+    if (!filtersOpen.value || !isDesktop.value) return;
     const target = event.target;
     if (!filterWrap.value || !(target instanceof Node)) return;
     if (filterWrap.value.contains(target)) return;

@@ -1,17 +1,48 @@
 <template>
     <div class="admin-container admin-page settings-page">
         <header class="admin-page__header settings-hero">
-            <div>
+            <div class="settings-hero__intro">
                 <p class="admin-page__kicker">Settings</p>
                 <h1 class="admin-page__title">General</h1>
                 <p class="admin-page__subtitle">
-                    Configure branding and admin security.
+                    Configure branding, access, and security for your admin
+                    workspace.
                 </p>
             </div>
-            <div class="settings-hero__chips">
-                <span class="settings-hero__chip">Branding</span>
-                <span class="settings-hero__chip">Security</span>
-                <span class="settings-hero__chip">Admin</span>
+            <div class="settings-hero__profileCard">
+                <div class="settings-hero__avatar">
+                    <img
+                        v-if="logoPreviewUrl"
+                        :src="logoPreviewUrl"
+                        alt="Admin logo"
+                    />
+                    <span v-else>{{ siteInitials }}</span>
+                </div>
+                <div class="settings-hero__meta">
+                    <div class="settings-hero__name">
+                        {{ siteName || "BlueHubCloud" }}
+                    </div>
+                    <div class="settings-hero__role">Admin workspace</div>
+                    <div class="settings-hero__tags">
+                        <span class="settings-pill">Branding</span>
+                        <span class="settings-pill settings-pill--soft"
+                            >Security</span
+                        >
+                        <span class="settings-pill settings-pill--soft"
+                            >Admin</span
+                        >
+                    </div>
+                </div>
+                <div class="settings-hero__preview">
+                    <span class="settings-hero__favicon">
+                        <img
+                            v-if="faviconPreviewUrl"
+                            :src="faviconPreviewUrl"
+                            alt="Admin favicon"
+                        />
+                        <span v-else class="settings-hero__faviconDot" />
+                    </span>
+                </div>
             </div>
         </header>
 
@@ -24,7 +55,6 @@
                             Upload brand assets and customize the admin name.
                         </p>
                     </div>
-                    <div class="settings-section__badge">Live preview</div>
                 </div>
 
                 <div class="settings-section__body">
@@ -315,6 +345,14 @@ const faviconFileName = computed(() => {
     return "No file selected";
 });
 
+const siteInitials = computed(() => {
+    const name = (siteName.value || "BlueHubCloud").trim();
+    if (!name) return "BH";
+    const parts = name.split(/\s+/).filter(Boolean);
+    const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase());
+    return initials.join("") || "BH";
+});
+
 async function loadSettings() {
     settingsError.value = "";
     try {
@@ -461,32 +499,134 @@ onBeforeUnmount(() => {
 <style scoped>
 .settings-page {
     display: grid;
-    gap: 20px;
+    gap: 24px;
 }
 
 .settings-hero {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
     gap: 20px;
+    align-items: center;
 }
 
-.settings-hero__chips {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
+.settings-hero__intro {
+    display: grid;
+    gap: 6px;
 }
 
-.settings-hero__chip {
-    font-size: 12px;
-    padding: 6px 12px;
-    border-radius: 999px;
+.settings-hero__profileCard {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 16px 18px;
+    border-radius: 20px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-surface);
+    box-shadow: var(--shadow-elev-1);
+}
+
+.settings-hero__avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
     background: linear-gradient(
-        120deg,
-        rgba(59, 130, 246, 0.2),
-        rgba(14, 116, 144, 0.25)
+        135deg,
+        var(--admin-logo-grad-1),
+        var(--admin-logo-grad-2)
     );
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: var(--text-on-accent);
+    font-weight: 700;
+    font-size: 18px;
+    overflow: hidden;
+    border: 1px solid var(--border-soft);
+}
+
+.settings-hero__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: transparent;
+    padding: 8px;
+    box-sizing: border-box;
+    filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.15));
+}
+
+.settings-hero__meta {
+    display: grid;
+    gap: 6px;
+}
+
+.settings-hero__name {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.settings-hero__role {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.settings-hero__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.settings-pill {
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: var(--accent-hover-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-border);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.settings-pill--soft {
+    background: var(--bg-soft);
+    border-color: var(--border-soft);
+    color: var(--text-secondary);
+}
+
+.settings-hero__preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-left: 16px;
+    border-left: 1px solid var(--border-faint);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.settings-hero__favicon {
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--bg-surface-2);
+    border: 1px solid var(--border-soft);
+}
+
+.settings-hero__favicon img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+}
+
+.settings-hero__faviconDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.settings-hero__previewLabel {
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
@@ -501,6 +641,9 @@ onBeforeUnmount(() => {
     display: grid;
     gap: 20px;
     border-radius: 22px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+    box-shadow: var(--shadow-elev-1);
 }
 
 .settings-section__head {
@@ -520,8 +663,8 @@ onBeforeUnmount(() => {
     padding: 6px 12px;
     font-size: 12px;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: var(--bg-soft);
+    border: 1px solid var(--border-soft);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
@@ -561,8 +704,8 @@ onBeforeUnmount(() => {
     gap: 10px;
     padding: 16px;
     border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background: rgba(15, 23, 42, 0.3);
+    border: 1px solid var(--border-soft);
+    background: var(--bg-surface-2);
 }
 
 .settings-upload__label {
@@ -577,8 +720,8 @@ onBeforeUnmount(() => {
     gap: 6px;
     padding: 16px;
     border-radius: 14px;
-    border: 1px dashed rgba(148, 163, 184, 0.35);
-    background: rgba(30, 41, 59, 0.35);
+    border: 1px dashed var(--border-soft);
+    background: var(--bg-faint);
     cursor: pointer;
     transition:
         border-color 0.2s ease,
@@ -586,8 +729,8 @@ onBeforeUnmount(() => {
 }
 
 .settings-upload__drop:hover {
-    border-color: rgba(59, 130, 246, 0.6);
-    background: rgba(30, 58, 138, 0.25);
+    border-color: var(--accent-border);
+    background: var(--accent-hover-bg);
 }
 
 .settings-upload__input {
@@ -619,11 +762,11 @@ onBeforeUnmount(() => {
 .settings-preview-card {
     padding: 18px;
     border-radius: 18px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border: 1px solid var(--border-soft);
     background: linear-gradient(
         150deg,
-        rgba(15, 23, 42, 0.6),
-        rgba(30, 41, 59, 0.45)
+        color-mix(in srgb, var(--bg-surface-2) 80%, transparent),
+        var(--bg-surface)
     );
     display: grid;
     gap: 16px;
@@ -635,8 +778,8 @@ onBeforeUnmount(() => {
     gap: 10px;
     padding: 8px 12px;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: var(--bg-soft);
+    border: 1px solid var(--border-soft);
     font-size: 12px;
 }
 
@@ -647,7 +790,7 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(148, 163, 184, 0.2);
+    background: var(--bg-surface-2);
 }
 
 .settings-preview__favicon img {
@@ -660,7 +803,7 @@ onBeforeUnmount(() => {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: rgba(148, 163, 184, 0.6);
+    background: var(--text-muted);
 }
 
 .settings-preview__title {
@@ -680,11 +823,11 @@ onBeforeUnmount(() => {
     width: 100%;
     height: 140px;
     border-radius: 16px;
-    border: 1px dashed rgba(148, 163, 184, 0.25);
+    border: 1px dashed var(--border-soft);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(15, 23, 42, 0.35);
+    background: var(--bg-faint);
 }
 
 .settings-preview__logo img {
@@ -732,13 +875,13 @@ onBeforeUnmount(() => {
 .settings-tip {
     padding: 16px;
     border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid var(--border-soft);
+    background: var(--bg-surface-2);
 }
 
 .settings-tip--accent {
-    background: rgba(30, 58, 138, 0.3);
-    border-color: rgba(59, 130, 246, 0.4);
+    background: var(--accent-hover-bg);
+    border-color: var(--accent-border);
 }
 
 .settings-tip__title {
@@ -768,8 +911,31 @@ onBeforeUnmount(() => {
     }
 
     .settings-hero {
-        flex-direction: column;
-        align-items: flex-start;
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .settings-hero__profileCard {
+        grid-template-columns: auto 1fr;
+        grid-template-rows: auto auto;
+    }
+
+    .settings-hero__preview {
+        border-left: none;
+        padding-left: 0;
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+    .settings-hero__profileCard {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-hero__avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
     }
 }
 </style>

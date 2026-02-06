@@ -10,178 +10,449 @@
             </div>
         </header>
 
-        <section class="admin-card admin-card--glass">
-            <h2 class="admin-card__headline">Call Categorization Model</h2>
+        <div v-if="error" class="admin-alert admin-alert--error">
+            {{ error }}
+        </div>
+        <div v-if="success" class="admin-alert admin-alert--success">
+            Saved.
+        </div>
 
-            <div class="admin-form-row">
-                <label class="admin-label">Model</label>
-                <select v-model="categorizationModel" class="admin-input">
-                    <option value="openai/gpt-4o-mini">
-                        openai/gpt-4o-mini (Recommended)
-                    </option>
-                    <option value="openai/gpt-4.1-mini">
-                        openai/gpt-4.1-mini (Cheapest)
-                    </option>
-                    <option value="google/gemini-1.5-flash">
-                        google/gemini-1.5-flash (Fast)
-                    </option>
-                    <option value="google/gemini-1.5-pro">
-                        google/gemini-1.5-pro (Premium)
-                    </option>
-                    <option value="anthropic/claude-3.5-sonnet">
-                        anthropic/claude-3.5-sonnet (Premium)
-                    </option>
-                </select>
-
-                <p class="admin-card__hint" style="margin-top: 8px">
-                    Used to categorize individual calls. Runs once per call.
-                    Accuracy here affects all reports.
-                </p>
-            </div>
-
-            <h2 class="admin-card__headline" style="margin-top: 20px">
-                Weekly Report Model
-            </h2>
-
-            <div class="admin-form-row">
-                <label class="admin-label">Model</label>
-                <select v-model="reportModel" class="admin-input">
-                    <option
-                        value="openai/gpt-4o-mini"
-                        :disabled="categorizationModel === 'openai/gpt-4o-mini'"
-                    >
-                        openai/gpt-4o-mini
-                    </option>
-                    <option
-                        value="openai/gpt-5.2"
-                        :disabled="categorizationModel === 'openai/gpt-5.2'"
-                    >
-                        openai/gpt-5.2 (Premium – higher cost)
-                    </option>
-                    <option
-                        value="google/gemini-1.5-flash"
-                        :disabled="
-                            categorizationModel === 'google/gemini-1.5-flash'
-                        "
-                    >
-                        google/gemini-1.5-flash
-                    </option>
-                    <option
-                        value="google/gemini-1.5-pro"
-                        :disabled="
-                            categorizationModel === 'google/gemini-1.5-pro'
-                        "
-                    >
-                        google/gemini-1.5-pro
-                    </option>
-                    <option
-                        value="anthropic/claude-3.5-sonnet"
-                        :disabled="
-                            categorizationModel ===
-                            'anthropic/claude-3.5-sonnet'
-                        "
-                    >
-                        anthropic/claude-3.5-sonnet
-                    </option>
-                </select>
-
-                <p class="admin-card__hint" style="margin-top: 8px">
-                    Used once per weekly report to generate executive summaries
-                    and insights.
-                </p>
-            </div>
-
-            <div class="admin-form-row" style="margin-top: 16px">
-                <label class="admin-label">Provider</label>
-                <select v-model="provider" class="admin-input">
-                    <option value="openrouter">openrouter</option>
-                    <option value="openai">openai</option>
-                    <option value="anthropic">anthropic</option>
-                </select>
-            </div>
-
-            <div class="admin-form-row" style="margin-top: 12px">
-                <label class="admin-label">API Key</label>
-                <input
-                    type="password"
-                    v-model="apiKey"
-                    class="admin-input"
-                    placeholder="Enter API key (will be stored encrypted)"
-                />
-                <p class="admin-card__hint" style="margin-top: 8px">
-                    API key is stored encrypted and never returned by the API.
-                </p>
-            </div>
-
-            <div class="admin-form-row" style="margin-top: 16px">
-                <label class="admin-label">Categorization System Prompt</label>
-                <textarea
-                    v-model="categorizationSystemPrompt"
-                    class="admin-input admin-textarea"
-                    rows="6"
-                    placeholder="Leave blank to use the default categorization prompt"
-                />
-                <p class="admin-card__hint" style="margin-top: 8px">
-                    Overrides the system prompt used for call categorization.
-                </p>
-            </div>
-
-            <div class="admin-form-row" style="margin-top: 16px">
-                <label class="admin-label">Call Summary System Prompt</label>
-                <textarea
-                    v-model="summarySystemPrompt"
-                    class="admin-input admin-textarea"
-                    rows="6"
-                    placeholder="Leave blank to use the default call summary prompt"
-                />
-                <p class="admin-card__hint" style="margin-top: 8px">
-                    Overrides the system prompt used for per-call summaries.
-                </p>
-            </div>
-
-            <div style="margin-top: 16px">
-                <label
-                    style="display: inline-flex; align-items: center; gap: 8px"
+        <section class="admin-dashboard__grid">
+            <section class="admin-card admin-card--glass">
+                <div
+                    style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 16px;
+                    "
                 >
-                    <input type="checkbox" v-model="enabled" />
-                    <span>Enable AI integration</span>
-                </label>
-            </div>
+                    <div>
+                        <h2 class="admin-card__headline">
+                            Call Categorization
+                        </h2>
+                        <p class="admin-card__hint">
+                            Runs per call. Controls category accuracy and
+                            summaries.
+                        </p>
+                    </div>
+                    <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="openCategorizationModal"
+                    >
+                        Edit
+                    </BaseButton>
+                </div>
 
-            <div style="margin-top: 16px">
-                <BaseButton
-                    variant="primary"
-                    size="md"
-                    @click="save"
-                    :loading="saving"
-                    :disabled="saving || invalidChoice"
+                <div class="admin-kvGrid" style="margin-top: 16px">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Model</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ modelLabel(categorizationModel) }}
+                        </div>
+                    </div>
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">System prompt</div>
+                        <div class="admin-kv__v">
+                            {{ promptPreview(categorizationSystemPrompt) }}
+                        </div>
+                    </div>
+                    <div class="admin-kv" style="grid-column: 1 / -1">
+                        <div class="admin-kv__k">Summary prompt</div>
+                        <div class="admin-kv__v">
+                            {{ promptPreview(summarySystemPrompt) }}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="admin-card admin-card--glass">
+                <div
+                    style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 16px;
+                    "
                 >
-                    <template v-if="saving">Saving...</template>
-                    <template v-else>Save</template>
-                </BaseButton>
-            </div>
+                    <div>
+                        <h2 class="admin-card__headline">Weekly Reports</h2>
+                        <p class="admin-card__hint">
+                            Generates weekly executive summaries and insights.
+                        </p>
+                    </div>
+                    <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="openReportModal"
+                    >
+                        Edit
+                    </BaseButton>
+                </div>
 
-            <div
-                v-if="error"
-                class="admin-alert admin-alert--error"
-                style="margin-top: 12px"
-            >
-                {{ error }}
-            </div>
-            <div
-                v-if="success"
-                class="admin-alert admin-alert--success"
-                style="margin-top: 12px"
-            >
-                Saved.
-            </div>
+                <div class="admin-kvGrid" style="margin-top: 16px">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Model</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ modelLabel(reportModel) }}
+                        </div>
+                    </div>
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Run cadence</div>
+                        <div class="admin-kv__v">Weekly</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="admin-card admin-card--glass">
+                <div
+                    style="
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 16px;
+                    "
+                >
+                    <div>
+                        <h2 class="admin-card__headline">Provider & Access</h2>
+                        <p class="admin-card__hint">
+                            Manage connectivity and platform-wide AI access.
+                        </p>
+                    </div>
+                    <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="openProviderModal"
+                    >
+                        Manage
+                    </BaseButton>
+                </div>
+
+                <div class="admin-kvGrid" style="margin-top: 16px">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Provider</div>
+                        <div class="admin-kv__v admin-callsMono">
+                            {{ providerLabel(provider) }}
+                        </div>
+                    </div>
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">API Key</div>
+                        <div class="admin-kv__v">
+                            {{ apiKeyStatus }}
+                        </div>
+                    </div>
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Status</div>
+                        <div class="admin-kv__v">
+                            <BaseBadge :variant="enabled ? 'active' : 'failed'">
+                                {{ enabled ? "Enabled" : "Disabled" }}
+                            </BaseBadge>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </section>
+
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div
+                    v-if="showCategorizationModal"
+                    class="admin-modalOverlay"
+                    @click="closeCategorizationModal"
+                >
+                    <div class="admin-modal" @click.stop>
+                        <div class="admin-modal__header">
+                            <h2 class="admin-modal__title">
+                                Call Categorization
+                            </h2>
+                            <button
+                                type="button"
+                                class="admin-modal__close"
+                                @click="closeCategorizationModal"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="admin-modal__body">
+                            <div class="admin-field">
+                                <label class="admin-field__label">Model</label>
+                                <select
+                                    v-model="draftCategorizationModel"
+                                    class="admin-input"
+                                >
+                                    <option value="openai/gpt-4o-mini">
+                                        openai/gpt-4o-mini (Recommended)
+                                    </option>
+                                    <option value="openai/gpt-4.1-mini">
+                                        openai/gpt-4.1-mini (Cheapest)
+                                    </option>
+                                    <option value="google/gemini-1.5-flash">
+                                        google/gemini-1.5-flash (Fast)
+                                    </option>
+                                    <option value="google/gemini-1.5-pro">
+                                        google/gemini-1.5-pro (Premium)
+                                    </option>
+                                    <option value="anthropic/claude-3.5-sonnet">
+                                        anthropic/claude-3.5-sonnet (Premium)
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="admin-field" style="margin-top: 16px">
+                                <label class="admin-field__label">
+                                    Categorization System Prompt
+                                </label>
+                                <textarea
+                                    v-model="draftCategorizationPrompt"
+                                    class="admin-input admin-textarea"
+                                    rows="6"
+                                    placeholder="Leave blank to use the default categorization prompt"
+                                />
+                            </div>
+
+                            <div class="admin-field" style="margin-top: 16px">
+                                <label class="admin-field__label">
+                                    Call Summary System Prompt
+                                </label>
+                                <textarea
+                                    v-model="draftSummaryPrompt"
+                                    class="admin-input admin-textarea"
+                                    rows="6"
+                                    placeholder="Leave blank to use the default call summary prompt"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="admin-modal__footer">
+                            <BaseButton
+                                variant="secondary"
+                                @click="closeCategorizationModal"
+                                :disabled="saving"
+                            >
+                                Cancel
+                            </BaseButton>
+                            <BaseButton
+                                variant="primary"
+                                @click="saveCategorization"
+                                :loading="saving"
+                                :disabled="saving"
+                            >
+                                Save
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div
+                    v-if="showReportModal"
+                    class="admin-modalOverlay"
+                    @click="closeReportModal"
+                >
+                    <div class="admin-modal" @click.stop>
+                        <div class="admin-modal__header">
+                            <h2 class="admin-modal__title">Weekly Reports</h2>
+                            <button
+                                type="button"
+                                class="admin-modal__close"
+                                @click="closeReportModal"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="admin-modal__body">
+                            <div class="admin-field">
+                                <label class="admin-field__label">Model</label>
+                                <select
+                                    v-model="draftReportModel"
+                                    class="admin-input"
+                                >
+                                    <option
+                                        value="openai/gpt-4o-mini"
+                                        :disabled="
+                                            categorizationModel ===
+                                            'openai/gpt-4o-mini'
+                                        "
+                                    >
+                                        openai/gpt-4o-mini
+                                    </option>
+                                    <option
+                                        value="openai/gpt-5.2"
+                                        :disabled="
+                                            categorizationModel ===
+                                            'openai/gpt-5.2'
+                                        "
+                                    >
+                                        openai/gpt-5.2 (Premium – higher cost)
+                                    </option>
+                                    <option
+                                        value="google/gemini-1.5-flash"
+                                        :disabled="
+                                            categorizationModel ===
+                                            'google/gemini-1.5-flash'
+                                        "
+                                    >
+                                        google/gemini-1.5-flash
+                                    </option>
+                                    <option
+                                        value="google/gemini-1.5-pro"
+                                        :disabled="
+                                            categorizationModel ===
+                                            'google/gemini-1.5-pro'
+                                        "
+                                    >
+                                        google/gemini-1.5-pro
+                                    </option>
+                                    <option
+                                        value="anthropic/claude-3.5-sonnet"
+                                        :disabled="
+                                            categorizationModel ===
+                                            'anthropic/claude-3.5-sonnet'
+                                        "
+                                    >
+                                        anthropic/claude-3.5-sonnet
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div
+                                v-if="reportInvalidChoice"
+                                class="admin-alert admin-alert--error"
+                                style="margin-top: 12px"
+                            >
+                                Categorization and report models must differ.
+                            </div>
+                        </div>
+
+                        <div class="admin-modal__footer">
+                            <BaseButton
+                                variant="secondary"
+                                @click="closeReportModal"
+                                :disabled="saving"
+                            >
+                                Cancel
+                            </BaseButton>
+                            <BaseButton
+                                variant="primary"
+                                @click="saveReport"
+                                :loading="saving"
+                                :disabled="saving || reportInvalidChoice"
+                            >
+                                Save
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div
+                    v-if="showProviderModal"
+                    class="admin-modalOverlay"
+                    @click="closeProviderModal"
+                >
+                    <div class="admin-modal" @click.stop>
+                        <div class="admin-modal__header">
+                            <h2 class="admin-modal__title">
+                                Provider & Access
+                            </h2>
+                            <button
+                                type="button"
+                                class="admin-modal__close"
+                                @click="closeProviderModal"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="admin-modal__body">
+                            <div class="admin-field">
+                                <label class="admin-field__label"
+                                    >Provider</label
+                                >
+                                <select
+                                    v-model="draftProvider"
+                                    class="admin-input"
+                                >
+                                    <option value="openrouter">
+                                        openrouter
+                                    </option>
+                                    <option value="openai">openai</option>
+                                    <option value="anthropic">anthropic</option>
+                                </select>
+                            </div>
+
+                            <div class="admin-field" style="margin-top: 16px">
+                                <label class="admin-field__label"
+                                    >API Key</label
+                                >
+                                <input
+                                    type="password"
+                                    v-model="draftApiKey"
+                                    class="admin-input"
+                                    placeholder="Enter API key (stored encrypted)"
+                                />
+                                <p
+                                    class="admin-card__hint"
+                                    style="margin-top: 8px"
+                                >
+                                    API key is stored encrypted and never
+                                    returned by the API.
+                                </p>
+                            </div>
+
+                            <div style="margin-top: 16px">
+                                <label
+                                    style="
+                                        display: inline-flex;
+                                        align-items: center;
+                                        gap: 8px;
+                                    "
+                                >
+                                    <input
+                                        type="checkbox"
+                                        v-model="draftEnabled"
+                                    />
+                                    <span>Enable AI integration</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="admin-modal__footer">
+                            <BaseButton
+                                variant="secondary"
+                                @click="closeProviderModal"
+                                :disabled="saving"
+                            >
+                                Cancel
+                            </BaseButton>
+                            <BaseButton
+                                variant="primary"
+                                @click="saveProvider"
+                                :loading="saving"
+                                :disabled="saving"
+                            >
+                                Save
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
     </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { BaseButton } from "../../components/admin/base";
+import { BaseBadge, BaseButton } from "../../components/admin/base";
 import adminApi from "../../router/admin/api";
 
 const categorizationModel = ref("openai/gpt-4o-mini");
@@ -208,12 +479,32 @@ Return plain text only.`;
 const categorizationSystemPrompt = ref(defaultCategorizationPrompt);
 const summarySystemPrompt = ref(defaultSummaryPrompt);
 
+const showCategorizationModal = ref(false);
+const showReportModal = ref(false);
+const showProviderModal = ref(false);
+
+const draftCategorizationModel = ref("");
+const draftCategorizationPrompt = ref("");
+const draftSummaryPrompt = ref("");
+const draftReportModel = ref("");
+const draftProvider = ref("");
+const draftApiKey = ref("");
+const draftEnabled = ref(false);
+
 const saving = ref(false);
 const error = ref("");
 const success = ref(false);
 
 const invalidChoice = computed(
     () => categorizationModel.value === reportModel.value,
+);
+
+const reportInvalidChoice = computed(
+    () => draftReportModel.value === categorizationModel.value,
+);
+
+const apiKeyStatus = computed(() =>
+    apiKey.value ? "New key pending save" : "Stored securely (hidden)",
 );
 
 async function load() {
@@ -242,12 +533,14 @@ async function save() {
     if (invalidChoice.value) {
         error.value = "Categorization and report models must differ.";
         success.value = false;
-        return;
+        return false;
     }
 
     saving.value = true;
     error.value = "";
     success.value = false;
+
+    let ok = false;
 
     try {
         const payload = {
@@ -265,15 +558,105 @@ async function save() {
         success.value = true;
         apiKey.value = ""; // clear after submit
         showToast("AI settings saved.");
+        ok = true;
     } catch (e) {
         error.value =
             e?.response?.data?.message || "Failed to save AI settings.";
     } finally {
         saving.value = false;
     }
+
+    return ok;
 }
 
 onMounted(() => load());
+
+function modelLabel(value) {
+    const map = {
+        "openai/gpt-4o-mini": "openai/gpt-4o-mini (Recommended)",
+        "openai/gpt-4.1-mini": "openai/gpt-4.1-mini (Cheapest)",
+        "openai/gpt-5.2": "openai/gpt-5.2 (Premium)",
+        "google/gemini-1.5-flash": "google/gemini-1.5-flash (Fast)",
+        "google/gemini-1.5-pro": "google/gemini-1.5-pro (Premium)",
+        "anthropic/claude-3.5-sonnet": "anthropic/claude-3.5-sonnet",
+    };
+    return map[value] ?? value ?? "—";
+}
+
+function providerLabel(value) {
+    const map = {
+        openrouter: "OpenRouter",
+        openai: "OpenAI",
+        anthropic: "Anthropic",
+    };
+    return map[value] ?? value ?? "—";
+}
+
+function promptPreview(text) {
+    const value = String(text || "").trim();
+    if (!value) return "Default prompt";
+    if (value.length <= 140) return value;
+    return `${value.slice(0, 140)}…`;
+}
+
+function openCategorizationModal() {
+    draftCategorizationModel.value = categorizationModel.value;
+    draftCategorizationPrompt.value = categorizationSystemPrompt.value;
+    draftSummaryPrompt.value = summarySystemPrompt.value;
+    showCategorizationModal.value = true;
+}
+
+function closeCategorizationModal() {
+    showCategorizationModal.value = false;
+}
+
+function openReportModal() {
+    draftReportModel.value = reportModel.value;
+    showReportModal.value = true;
+}
+
+function closeReportModal() {
+    showReportModal.value = false;
+}
+
+function openProviderModal() {
+    draftProvider.value = provider.value;
+    draftApiKey.value = apiKey.value;
+    draftEnabled.value = enabled.value;
+    showProviderModal.value = true;
+}
+
+function closeProviderModal() {
+    showProviderModal.value = false;
+}
+
+async function saveCategorization() {
+    categorizationModel.value = draftCategorizationModel.value;
+    categorizationSystemPrompt.value = draftCategorizationPrompt.value;
+    summarySystemPrompt.value = draftSummaryPrompt.value;
+    const ok = await save();
+    if (ok) {
+        showCategorizationModal.value = false;
+    }
+}
+
+async function saveReport() {
+    reportModel.value = draftReportModel.value;
+    const ok = await save();
+    if (ok) {
+        showReportModal.value = false;
+    }
+}
+
+async function saveProvider() {
+    provider.value = draftProvider.value;
+    apiKey.value = draftApiKey.value;
+    enabled.value = draftEnabled.value;
+    const ok = await save();
+    if (ok) {
+        showProviderModal.value = false;
+    }
+}
 
 function showToast(message) {
     try {

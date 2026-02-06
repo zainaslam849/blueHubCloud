@@ -1,6 +1,11 @@
 :root {
     color-scheme: light dark;
 
+    --font-sans:
+        "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji",
+        "Segoe UI Emoji";
+
     /* Light theme tokens */
     --admin-bg: #f6f8fb;
     --admin-surface: #ffffff;
@@ -204,15 +209,7 @@ body.admin-body {
     margin: 0;
     background: var(--admin-body-bg);
     color: var(--admin-text);
-    font-family:
-        ui-sans-serif,
-        system-ui,
-        -apple-system,
-        Segoe UI,
-        Roboto,
-        Arial,
-        "Apple Color Emoji",
-        "Segoe UI Emoji";
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -238,6 +235,7 @@ body.admin-body {
     height: 100vh;
     padding: 0px;
     border-right: 1px solid var(--border-soft);
+    --sidebar-logo-size: 40px;
 
     background:
         linear-gradient(
@@ -303,6 +301,7 @@ body.admin-body {
 
 .admin-sidebar.is-collapsed {
     padding: 14px;
+    --sidebar-logo-size: 36px;
 }
 
 .admin-sidebar.is-collapsed .admin-sidebar__brand {
@@ -330,10 +329,36 @@ body.admin-body {
     color: white;
     font-weight: 700;
     font-size: 1.2rem;
-    width: 40px !important;
-    height: 40px !important;
+    width: var(--sidebar-logo-size) !important;
+    height: var(--sidebar-logo-size) !important;
     border-radius: 8px !important;
     flex-shrink: 0;
+    overflow: hidden;
+}
+
+.metronic-logo.has-image {
+    background: var(--bg-surface-2) !important;
+}
+
+.admin-sidebar__logo.has-image {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-soft);
+}
+
+.admin-sidebar__logoImg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    padding: 6px;
+    background: transparent;
+    filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.15));
+}
+
+.admin-sidebar__logoInitial {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-on-accent);
 }
 
 .metronic-collapseBtn {
@@ -398,8 +423,8 @@ body.admin-body {
 }
 
 .admin-sidebar__logo {
-    width: 34px;
-    height: 34px;
+    width: var(--sidebar-logo-size);
+    height: var(--sidebar-logo-size);
     border-radius: 12px;
     background:
         radial-gradient(
@@ -413,6 +438,27 @@ body.admin-body {
             var(--admin-logo-grad-2)
         );
     box-shadow: 0 0 0 1px var(--admin-border);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+@media (max-width: 1200px) {
+    .admin-sidebar {
+        --sidebar-logo-size: 36px;
+    }
+}
+
+@media (max-width: 960px) {
+    .admin-sidebar {
+        --sidebar-logo-size: 34px;
+    }
+}
+
+@media (max-width: 768px) {
+    .admin-sidebar {
+        --sidebar-logo-size: 32px;
+    }
 }
 
 .admin-sidebar__brandText {
@@ -1417,6 +1463,28 @@ body.admin-body {
         background-color 160ms ease;
     min-height: 44px;
     font-weight: 600;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-width: thin;
+}
+
+.admin-input::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.admin-input::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 999px;
+}
+
+.admin-input::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--scrollbar-track);
+}
+
+.admin-input::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
 }
 
 .admin-input--select {
