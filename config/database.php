@@ -1,6 +1,38 @@
 <?php
 
+use App\Services\AwsSecretsService;
 use Illuminate\Support\Str;
+
+/*
+|--------------------------------------------------------------------------
+| AWS Secrets Manager RDS Credentials (runtime)
+|--------------------------------------------------------------------------
+| Verification steps:
+| 1) Disable DB_* in .env and set USE_AWS_DB_SECRETS=true.
+| 2) Run: php artisan optimize:clear
+| 3) Confirm app connects and continues after RDS password rotation.
+|
+| NOTE: Do NOT config:cache when USE_AWS_DB_SECRETS=true.
+*/
+$useAwsDbSecrets = filter_var(env('USE_AWS_DB_SECRETS', false), FILTER_VALIDATE_BOOLEAN);
+$awsDbSecret = null;
+
+if ($useAwsDbSecrets) {
+    try {
+        $secretName = env('AWS_DB_SECRET_NAME');
+        if (is_string($secretName) && $secretName !== '') {
+            $awsDbSecret = (new AwsSecretsService())->get($secretName);
+        }
+    } catch (Throwable $e) {
+        $awsDbSecret = null;
+    }
+}
+
+$awsDbHost = $awsDbSecret['host'] ?? env('DB_HOST', '127.0.0.1');
+$awsDbPort = $awsDbSecret['port'] ?? env('DB_PORT', '3306');
+$awsDbName = $awsDbSecret['dbname'] ?? $awsDbSecret['database'] ?? env('DB_DATABASE', 'laravel');
+$awsDbUser = $awsDbSecret['username'] ?? env('DB_USERNAME', 'root');
+$awsDbPass = $awsDbSecret['password'] ?? env('DB_PASSWORD', '');
 
 return [
 
@@ -41,12 +73,12 @@ return [
 
         'mysql' => [
             'driver' => 'mysql',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
+            'url' => $useAwsDbSecrets ? null : env('DB_URL'),
+            'host' => $awsDbHost,
+            'port' => $awsDbPort,
+            'database' => $awsDbName,
+            'username' => $awsDbUser,
+            'password' => $awsDbPass,
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => env('DB_CHARSET', 'utf8mb4'),
             'collation' => env('DB_COLLATION', 'utf8mb4_0900_ai_ci'),
@@ -61,12 +93,12 @@ return [
 
         'mariadb' => [
             'driver' => 'mariadb',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'laravel'),
-            'username' => env('DB_USERNAME', 'root'),
-            'password' => env('DB_PASSWORD', ''),
+            'url' => $useAwsDbSecrets ? null : env('DB_URL'),
+            'host' => $awsDbHost,
+            'port' => $awsDbPort,
+            'database' => $awsDbName,
+            'username' => $awsDbUser,
+            'password' => $awsDbPass,
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => env('DB_CHARSET', 'utf8mb4'),
             'collation' => env('DB_COLLATION', 'utf8mb4_uca1400_ai_ci'),
