@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\Call;
 use App\Models\CompanyPbxAccount;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
@@ -9,7 +10,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class AdminTestPipelineJob implements ShouldQueue
 {
@@ -53,33 +56,62 @@ class AdminTestPipelineJob implements ShouldQueue
         Log::info('Pipeline Step 1 complete: Ingest finished', ['company_id' => $this->companyId]);
 
         // STEP 2: Queue summarization (async - will process immediately)
-        Log::info('Pipeline Step 2: Queuing summarization jobs...', ['company_id' => $this->companyId]);
-        QueueCallsForSummarizationJob::dispatch(
-            $this->companyId,
-            $this->summarizeLimit,
-            25,
-            $this->pipelineQueue
-        )->onQueue($this->pipelineQueue);
+        Log::info('Pipeline Step 2: Preparing summarization jobs...', ['company_id' => $this->companyId]);
+        $callsToSummarize = Call::query()
+            ->where('company_id', $this->companyId)
+            ->whereNotNull('transcript_text')
+            ->where('transcript_text', '!=', '')
+            ->whereNull('ai_summary')
+            ->orderByDesc('started_at')
+            ->limit($this->summarizeLimit)
+            ->get(['id']);
 
-        // STEP 3: Generate AI categories (async - runs after, skips if no summaries)
-        Log::info('Pipeline Step 3: Dispatching AI category generation...', ['company_id' => $this->companyId]);
-        GenerateAiCategoriesForCompanyJob::dispatch($this->companyId, $this->rangeDays)
-            ->onQueue($this->pipelineQueue);
+        $postSummaryChain = [
+            new GenerateAiCategoriesForCompanyJob($this->companyId, $this->rangeDays),
+            new QueueCallsForCategorizationJob(
+                $this->companyId,
+                $this->categorizeLimit,
+                25,
+                false,
+                $this->pipelineQueue
+            ),
+            new GenerateWeeklyPbxReportsJob($from, $to),
+        ];
 
-        // STEP 4: Categorize calls (async - will use categories created by step 3 or existing ones)
-        Log::info('Pipeline Step 4: Queuing categorization jobs...', ['company_id' => $this->companyId]);
-        QueueCallsForCategorizationJob::dispatch(
-            $this->companyId,
-            $this->categorizeLimit,
-            25,
-            false,
-            $this->pipelineQueue
-        )->onQueue($this->pipelineQueue);
+        if ($callsToSummarize->isEmpty()) {
+            Log::info('Pipeline Step 2: No calls to summarize, skipping directly to category generation', [
+                'company_id' => $this->companyId,
+            ]);
 
-        // STEP 5: Generate reports
-        Log::info('Pipeline Step 5: Dispatching weekly reports generation...', ['company_id' => $this->companyId]);
-        GenerateWeeklyPbxReportsJob::dispatch($from, $to)
-            ->onQueue($this->pipelineQueue);
+            Bus::chain($postSummaryChain)
+                ->onQueue($this->pipelineQueue)
+                ->dispatch();
+        } else {
+            $summaryJobs = $callsToSummarize
+                ->map(fn ($call) => (new SummarizeSingleCallJob($call->id))->onQueue($this->pipelineQueue))
+                ->all();
+
+            Log::info('Pipeline Step 2: Queuing summarization batch...', [
+                'company_id' => $this->companyId,
+                'count' => $callsToSummarize->count(),
+            ]);
+
+            Bus::batch($summaryJobs)
+                ->name('pipeline-summarize-company-' . $this->companyId)
+                ->onQueue($this->pipelineQueue)
+                ->then(function () use ($postSummaryChain) {
+                    Bus::chain($postSummaryChain)
+                        ->onQueue($this->pipelineQueue)
+                        ->dispatch();
+                })
+                ->catch(function (Throwable $e) {
+                    Log::error('Pipeline Step 2: Summarization batch failed', [
+                        'company_id' => $this->companyId,
+                        'error' => $e->getMessage(),
+                    ]);
+                })
+                ->dispatch();
+        }
 
         Log::info('Admin test pipeline queued successfully', [
             'company_id' => $this->companyId,

@@ -26,6 +26,7 @@ const navGroups = [
             { name: "Dashboard", icon: "dashboard", to: { name: "dashboard" } },
             { name: "Reports", icon: "reports", to: { name: "reports" } },
             { name: "Companies", icon: "companies", to: { name: "companies" } },
+            { name: "PBX Accounts", icon: "pbx", to: { name: "pbx-accounts" } },
             { name: "Usage", icon: "usage", to: { name: "usage" } },
             { name: "Account", icon: "account", to: { name: "account" } },
         ],

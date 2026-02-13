@@ -96,8 +96,6 @@ class SummarizeSingleCallJob implements ShouldQueue
 
             Log::info("✓ Summarized call {$this->callId} using {$aiSettings->categorization_model}");
 
-            CategorizeSingleCallJob::dispatch($call->id)->onQueue('categorization');
-
         } catch (\Exception $e) {
             Log::error("Failed to summarize call {$this->callId}: {$e->getMessage()}", [
                 'call_id' => $this->callId,

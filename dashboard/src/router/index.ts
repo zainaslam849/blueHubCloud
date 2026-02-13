@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
                 component: () => import("../views/CompaniesView.vue"),
                 meta: { title: "Companies" },
             },
+            {
+                path: "pbx-accounts",
+                name: "pbx-accounts",
+                component: () => import("../views/PbxAccountsView.vue"),
+                meta: { title: "PBX Accounts" },
+            },
         ],
     },
     {

@@ -25,6 +25,7 @@ type IconName =
     | "usage"
     | "account"
     | "companies"
+    | "pbx"
     | "collapse"
     | "calls"
     | "minutes"
@@ -44,6 +45,7 @@ const icons: Record<IconName, any> = {
     usage: BarChart3,
     account: User,
     companies: Building2,
+    pbx: Server,
     collapse: ChevronLeft,
     calls: PhoneCall,
     minutes: Clock,
