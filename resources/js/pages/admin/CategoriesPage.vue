@@ -36,15 +36,76 @@
                 </div>
             </div>
 
+            <div class="admin-card" style="margin-bottom: 16px; padding: 16px">
+                <div
+                    style="
+                        display: flex;
+                        gap: 16px;
+                        flex-wrap: wrap;
+                        align-items: flex-end;
+                    "
+                >
+                    <div style="min-width: 220px">
+                        <label class="admin-label">Company</label>
+                        <div class="admin-input" style="background: #f5f7fa">
+                            {{ companyLabel || "—" }}
+                        </div>
+                    </div>
+                    <div style="min-width: 160px">
+                        <label class="admin-label" for="filter-status"
+                            >Status</label
+                        >
+                        <select
+                            id="filter-status"
+                            v-model="filterStatus"
+                            class="admin-input"
+                        >
+                            <option value="all">All</option>
+                            <option value="active">Active</option>
+                            <option value="archived">Archived</option>
+                        </select>
+                    </div>
+                    <div style="min-width: 160px">
+                        <label class="admin-label" for="filter-source"
+                            >Source</label
+                        >
+                        <select
+                            id="filter-source"
+                            v-model="filterSource"
+                            class="admin-input"
+                        >
+                            <option value="all">All</option>
+                            <option value="ai">AI Generated</option>
+                            <option value="admin">Manual</option>
+                        </select>
+                    </div>
+                    <div style="min-width: 240px; flex: 1">
+                        <label class="admin-label" for="filter-search"
+                            >Search</label
+                        >
+                        <input
+                            id="filter-search"
+                            v-model="searchQuery"
+                            class="admin-input"
+                            type="text"
+                            placeholder="Search by name"
+                        />
+                    </div>
+                </div>
+            </div>
+
             <div v-if="loading" class="admin-tableWrap">
                 <div class="admin-loadingState">
                     <p>Loading categories...</p>
                 </div>
             </div>
 
-            <div v-else-if="categories.length === 0" class="admin-tableWrap">
+            <div
+                v-else-if="filteredCategories.length === 0"
+                class="admin-tableWrap"
+            >
                 <div class="admin-emptyState">
-                    <p>No categories yet.</p>
+                    <p>No categories match the current filters.</p>
                 </div>
             </div>
 
@@ -53,8 +114,10 @@
                     <thead>
                         <tr>
                             <th class="admin-table__th">Name</th>
-                            <th class="admin-table__th">Description</th>
+                            <th class="admin-table__th">Source</th>
                             <th class="admin-table__th">Status</th>
+                            <th class="admin-table__th">Sub-cats</th>
+                            <th class="admin-table__th">Created</th>
                             <th
                                 class="admin-table__th"
                                 style="text-align: right"
@@ -81,16 +144,26 @@
                                     </BaseBadge>
                                 </div>
                             </td>
-                            <td
-                                class="admin-table__td"
-                                data-label="Description"
-                            >
-                                {{ category.description || "—" }}
+                            <td class="admin-table__td" data-label="Source">
+                                <BaseBadge
+                                    :variant="
+                                        category.source === 'ai'
+                                            ? 'info'
+                                            : 'secondary'
+                                    "
+                                    size="sm"
+                                >
+                                    {{
+                                        category.source === "ai"
+                                            ? "AI"
+                                            : "Manual"
+                                    }}
+                                </BaseBadge>
                             </td>
                             <td class="admin-table__td" data-label="Status">
                                 <div class="admin-status__wrapper">
                                     <BaseBadge
-                                        v-if="category.is_enabled"
+                                        v-if="category.status === 'active'"
                                         variant="success"
                                         size="sm"
                                         class="admin-statusBadge admin-statusBadge--enabled"
@@ -98,18 +171,18 @@
                                         <span class="admin-statusBadge__icon"
                                             >●</span
                                         >
-                                        <span>Enabled</span>
+                                        <span>Active</span>
                                     </BaseBadge>
                                     <BaseBadge
                                         v-else
-                                        variant="secondary"
+                                        variant="warning"
                                         size="sm"
                                         class="admin-statusBadge admin-statusBadge--disabled"
                                     >
                                         <span class="admin-statusBadge__icon"
                                             >○</span
                                         >
-                                        <span>Disabled</span>
+                                        <span>Archived</span>
                                     </BaseBadge>
                                     <BaseBadge
                                         v-if="category.deleted_at"
@@ -123,6 +196,12 @@
                                         <span>Deleted</span>
                                     </BaseBadge>
                                 </div>
+                            </td>
+                            <td class="admin-table__td" data-label="Sub-cats">
+                                {{ category.sub_categories_count ?? 0 }}
+                            </td>
+                            <td class="admin-table__td" data-label="Created">
+                                {{ formatDate(category.created_at) }}
                             </td>
                             <td
                                 class="admin-table__td admin-table__td--actions"
@@ -148,36 +227,51 @@
                                             !category.deleted_at &&
                                             category.name !== 'General'
                                         "
-                                        @click="toggleCategory(category)"
+                                        @click="
+                                            setCategoryStatus(
+                                                category,
+                                                category.status === 'active'
+                                                    ? 'archived'
+                                                    : 'active',
+                                            )
+                                        "
                                         size="sm"
                                         :variant="
-                                            category.is_enabled
+                                            category.status === 'active'
                                                 ? 'warning'
                                                 : 'success'
                                         "
                                         class="admin-actionBtn"
-                                        :disabled="togglingId === category.id"
-                                        :loading="togglingId === category.id"
+                                        :disabled="
+                                            statusUpdatingId === category.id
+                                        "
+                                        :loading="
+                                            statusUpdatingId === category.id
+                                        "
                                     >
                                         <span class="admin-actionBtn__icon">{{
-                                            category.is_enabled ? "⊘" : "●"
+                                            category.status === "active"
+                                                ? "⊘"
+                                                : "●"
                                         }}</span>
                                         <span
-                                            v-if="togglingId !== category.id"
+                                            v-if="
+                                                statusUpdatingId !== category.id
+                                            "
                                             class="admin-actionBtn__text"
                                             >{{
-                                                category.is_enabled
-                                                    ? "Disable"
-                                                    : "Enable"
+                                                category.status === "active"
+                                                    ? "Archive"
+                                                    : "Activate"
                                             }}</span
                                         >
                                         <span
                                             v-else
                                             class="admin-actionBtn__text"
                                             >{{
-                                                category.is_enabled
-                                                    ? "Disabling..."
-                                                    : "Enabling..."
+                                                category.status === "active"
+                                                    ? "Archiving..."
+                                                    : "Activating..."
                                             }}</span
                                         >
                                     </BaseButton>
@@ -386,7 +480,8 @@
                     <div class="admin-modal" @click.stop>
                         <div class="admin-modal__header">
                             <h2 class="admin-modal__title">
-                                Generate AI Categories
+                                Generate categories for
+                                {{ companyLabel || "this company" }}
                             </h2>
                             <button
                                 type="button"
@@ -470,8 +565,8 @@
                                 class="admin-alert admin-alert--warning"
                                 style="margin-top: 10px"
                             >
-                                This will archive previous AI-generated
-                                categories. Admin-created categories will remain
+                                This will archive previous AI categories for
+                                this company only. Manual categories remain
                                 unchanged.
                             </div>
                         </div>
@@ -592,7 +687,7 @@ const validationErrors = ref({});
 const showDeleteConfirm = ref(false);
 const deleteTarget = ref(null);
 const deleting = ref(false);
-const togglingId = ref(null);
+const statusUpdatingId = ref(null);
 const restoringId = ref(null);
 const showSubCatsModal = ref(false);
 const selectedCategory = ref(null);
@@ -604,6 +699,10 @@ const aiGenerateRange = ref("last_30_days");
 const aiPreviewCount = ref(null);
 const aiPreviewLoading = ref(false);
 const aiPreviewError = ref("");
+const filterStatus = ref("all");
+const filterSource = ref("all");
+const searchQuery = ref("");
+const companyLabel = ref("");
 
 const formData = ref({
     name: "",
@@ -612,11 +711,37 @@ const formData = ref({
 });
 
 // Computed
+const filteredCategories = computed(() => {
+    let filtered = categories.value.slice();
+
+    if (filterStatus.value !== "all") {
+        filtered = filtered.filter(
+            (category) => category.status === filterStatus.value,
+        );
+    }
+
+    if (filterSource.value !== "all") {
+        filtered = filtered.filter(
+            (category) => category.source === filterSource.value,
+        );
+    }
+
+    if (searchQuery.value.trim()) {
+        const search = searchQuery.value.trim().toLowerCase();
+        filtered = filtered.filter((category) =>
+            String(category.name || "")
+                .toLowerCase()
+                .includes(search),
+        );
+    }
+
+    return filtered;
+});
+
 const sortedCategories = computed(() => {
-    return categories.value.slice().sort((a, b) => {
-        // Enabled first, then alphabetical
-        if (a.is_enabled !== b.is_enabled) {
-            return b.is_enabled ? 1 : -1;
+    return filteredCategories.value.slice().sort((a, b) => {
+        if (a.status !== b.status) {
+            return a.status === "active" ? -1 : 1;
         }
         return a.name.localeCompare(b.name);
     });
@@ -641,6 +766,19 @@ const fetchCategories = async () => {
         error.value = err.message || "Failed to load categories";
     } finally {
         loading.value = false;
+    }
+};
+
+const fetchCompanyLabel = async () => {
+    try {
+        const response = await adminApi.get("/me");
+        companyLabel.value =
+            response?.data?.company?.name ||
+            response?.data?.company_name ||
+            response?.data?.companyName ||
+            "";
+    } catch (err) {
+        companyLabel.value = "";
     }
 };
 
@@ -691,8 +829,9 @@ const submitAiGenerate = async () => {
     aiGenerateError.value = "";
     aiGenerateSuccess.value = "";
 
+    const label = companyLabel.value || "this company";
     const confirmed = window.confirm(
-        "This will archive previous AI-generated categories. Continue?",
+        `This will archive previous AI categories for ${label} only. Continue?`,
     );
     if (!confirmed) {
         return;
@@ -781,10 +920,12 @@ const submitForm = async () => {
     }
 };
 
-const toggleCategory = async (category) => {
+const setCategoryStatus = async (category, status) => {
     try {
-        togglingId.value = category.id;
-        await adminApi.patch(`/categories/${category.id}/toggle`);
+        statusUpdatingId.value = category.id;
+        await adminApi.put(`/categories/${category.id}`, {
+            status,
+        });
         await fetchCategories();
     } catch (err) {
         if (err.response?.data?.message) {
@@ -793,7 +934,7 @@ const toggleCategory = async (category) => {
             error.value = err.message || "Failed to toggle category";
         }
     } finally {
-        togglingId.value = null;
+        statusUpdatingId.value = null;
     }
 };
 
@@ -860,8 +1001,16 @@ const openSubCategoriesModal = (category) => {
     showSubCatsModal.value = true;
 };
 
+const formatDate = (dateValue) => {
+    if (!dateValue) return "—";
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return "—";
+    return date.toLocaleDateString();
+};
+
 // Lifecycle
 onMounted(() => {
     fetchCategories();
+    fetchCompanyLabel();
 });
 </script>

@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\CallCategory;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
+use Illuminate\Validation\Rule;
 
 class SubCategoryController extends Controller
 {
@@ -15,6 +16,10 @@ class SubCategoryController extends Controller
     public function index($categoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
 
         $subCategories = $category->subCategories()
             ->withTrashed()
@@ -32,9 +37,18 @@ class SubCategoryController extends Controller
     public function store(Request $request, $categoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:sub_categories,name',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('sub_categories', 'name')->where('category_id', $category->id),
+            ],
             'description' => 'nullable|string|max:1000',
             'is_enabled' => 'boolean',
         ]);
@@ -56,10 +70,21 @@ class SubCategoryController extends Controller
     public function update(Request $request, $categoryId, $subCategoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:sub_categories,name,' . $subCategoryId,
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('sub_categories', 'name')
+                    ->where('category_id', $category->id)
+                    ->ignore($subCategoryId),
+            ],
             'description' => 'nullable|string|max:1000',
             'is_enabled' => 'boolean',
         ]);
@@ -82,6 +107,10 @@ class SubCategoryController extends Controller
     public function toggle($categoryId, $subCategoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
         $subCategory = $category->subCategories()->findOrFail($subCategoryId);
 
         $subCategory->update([
@@ -100,6 +129,10 @@ class SubCategoryController extends Controller
     public function destroy($categoryId, $subCategoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
         $subCategory = $category->subCategories()->findOrFail($subCategoryId);
 
         $subCategory->delete();
@@ -115,6 +148,10 @@ class SubCategoryController extends Controller
     public function restore($categoryId, $subCategoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
         if (!$subCategory->deleted_at) {
@@ -137,6 +174,10 @@ class SubCategoryController extends Controller
     public function forceDelete($categoryId, $subCategoryId)
     {
         $category = CallCategory::findOrFail($categoryId);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
         $subCategory->forceDelete();

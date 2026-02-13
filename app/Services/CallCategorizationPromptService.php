@@ -54,6 +54,10 @@ PROMPT;
         ?int $companyId = null
     ): string
     {
+        if (! $companyId) {
+            throw new \InvalidArgumentException('Company ID is required for categorization prompt.');
+        }
+
         $threshold = self::CONFIDENCE_THRESHOLD;
 
         // Fetch active categories with their active sub-categories
@@ -197,6 +201,10 @@ PROMPT;
      */
     public static function validateCategorization(array $aiResponse, ?int $companyId = null): array
     {
+        if (! $companyId) {
+            throw new \InvalidArgumentException('Company ID is required for categorization validation.');
+        }
+
         // Ensure required fields
         if (!isset($aiResponse['category'])) {
             return [
@@ -218,9 +226,7 @@ PROMPT;
         $category = CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
-            ->when($companyId, function ($query) use ($companyId) {
-                $query->where('company_id', $companyId);
-            })
+            ->where('company_id', $companyId)
             ->where('name', $categoryName)
             ->first();
 
@@ -250,6 +256,8 @@ PROMPT;
                 'valid' => true,
                 'category_id' => $category->id,
                 'sub_category_id' => $subCategory->id,
+                'category_name' => $category->name,
+                'sub_category_name' => $subCategory->name,
                 'confidence' => $confidence,
             ];
         }
@@ -258,6 +266,8 @@ PROMPT;
             'valid' => true,
             'category_id' => $category->id,
             'sub_category_id' => null,
+            'category_name' => $category->name,
+            'sub_category_name' => null,
             'confidence' => $confidence,
         ];
     }
@@ -267,12 +277,14 @@ PROMPT;
      */
     private static function getActiveCategories(?int $companyId = null)
     {
+        if (! $companyId) {
+            throw new \InvalidArgumentException('Company ID is required to fetch categories.');
+        }
+
         return CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
-            ->when($companyId, function ($query) use ($companyId) {
-                $query->where('company_id', $companyId);
-            })
+            ->where('company_id', $companyId)
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)
                     ->where('status', 'active');

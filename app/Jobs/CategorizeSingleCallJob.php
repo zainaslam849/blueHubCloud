@@ -93,12 +93,28 @@ class CategorizeSingleCallJob implements ShouldQueue
                 throw new \Exception("Unsupported AI provider: {$aiSettings->provider}");
             }
 
+            $validation = CallCategorizationPromptService::validateCategorization(
+                $result,
+                $call->company_id
+            );
+
+            if (! $validation['valid']) {
+                Log::warning('AI categorization returned unknown category; skipping assignment', [
+                    'call_id' => $this->callId,
+                    'company_id' => $call->company_id,
+                    'category' => $result['category'] ?? null,
+                    'sub_category' => $result['sub_category'] ?? null,
+                    'error' => $validation['error'] ?? null,
+                ]);
+                return;
+            }
+
             // Persist categorization to database
             $persistResult = CallCategorizationPersistenceService::persistCategorization(
                 callId: $call->id,
-                categoryName: $result['category'],
-                subCategoryName: $result['sub_category'] ?? null,
-                confidence: (float) $result['confidence']
+                categoryName: $validation['category_name'] ?? $result['category'],
+                subCategoryName: $validation['sub_category_name'] ?? ($result['sub_category'] ?? null),
+                confidence: (float) ($result['confidence'] ?? 0)
             );
 
             if ($persistResult['success']) {

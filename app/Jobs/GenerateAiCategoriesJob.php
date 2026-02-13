@@ -91,22 +91,29 @@ class GenerateAiCategoriesJob implements ShouldQueue
             }
 
             DB::transaction(function () use ($categories) {
-                // Archive existing AI-generated categories
-                CallCategory::query()
+                $aiCategoryIds = CallCategory::query()
+                    ->where('company_id', $this->companyId)
                     ->where('source', 'ai')
                     ->where('status', 'active')
-                    ->update([
-                        'status' => 'archived',
-                        'is_enabled' => false,
-                    ]);
+                    ->pluck('id');
 
-                SubCategory::query()
-                    ->where('source', 'ai')
-                    ->where('status', 'active')
-                    ->update([
-                        'status' => 'archived',
-                        'is_enabled' => false,
-                    ]);
+                if ($aiCategoryIds->isNotEmpty()) {
+                    CallCategory::query()
+                        ->whereIn('id', $aiCategoryIds)
+                        ->update([
+                            'status' => 'archived',
+                            'is_enabled' => false,
+                        ]);
+
+                    SubCategory::query()
+                        ->where('source', 'ai')
+                        ->where('status', 'active')
+                        ->whereIn('category_id', $aiCategoryIds)
+                        ->update([
+                            'status' => 'archived',
+                            'is_enabled' => false,
+                        ]);
+                }
 
                 foreach ($categories as $categoryData) {
                     $categoryName = trim((string) ($categoryData['name'] ?? ''));
@@ -114,33 +121,39 @@ class GenerateAiCategoriesJob implements ShouldQueue
                         continue;
                     }
 
-                    $category = CallCategory::query()->where('name', $categoryName)->first();
+                    $category = CallCategory::query()
+                        ->where('company_id', $this->companyId)
+                        ->where('name', $categoryName)
+                        ->first();
 
                     if ($category) {
                         if ($category->source === 'admin') {
-                            $categoryId = $category->id;
+                            continue;
                         } else {
                             $category->fill([
                                 'source' => 'ai',
                                 'status' => 'active',
                                 'is_enabled' => true,
                                 'generated_by_model' => $this->model,
+                                'generated_at' => now(),
                             ])->save();
                             $categoryId = $category->id;
                         }
                     } else {
                         $category = CallCategory::create([
+                            'company_id' => $this->companyId,
                             'name' => $categoryName,
                             'description' => null,
                             'is_enabled' => true,
                             'source' => 'ai',
                             'status' => 'active',
                             'generated_by_model' => $this->model,
+                            'generated_at' => now(),
                         ]);
                         $categoryId = $category->id;
                     }
 
-                    $subcategories = $categoryData['subcategories'] ?? [];
+                    $subcategories = $categoryData['subcategories'] ?? $categoryData['sub_categories'] ?? [];
                     if (!is_array($subcategories)) {
                         continue;
                     }
@@ -151,7 +164,10 @@ class GenerateAiCategoriesJob implements ShouldQueue
                             continue;
                         }
 
-                        $subCategory = SubCategory::query()->where('name', $subName)->first();
+                        $subCategory = SubCategory::query()
+                            ->where('category_id', $categoryId)
+                            ->where('name', $subName)
+                            ->first();
                         if ($subCategory) {
                             if ($subCategory->source === 'admin') {
                                 continue;

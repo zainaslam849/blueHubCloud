@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\CallCategory;
 use App\Services\CallCategorizationPromptService;
 use App\Services\CallCategorizationPersistenceService;
-use Illuminate\Routing\Controller;
 
 class CallCategorizationController extends Controller
 {
@@ -27,14 +27,12 @@ class CallCategorizationController extends Controller
      */
     public function getEnabledCategories()
     {
-        $companyId = request()->input('company_id');
+        $company = $this->resolveAuthenticatedCompany();
 
         $categories = CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
-            ->when($companyId, function ($query) use ($companyId) {
-                $query->where('company_id', $companyId);
-            })
+            ->where('company_id', $company->id)
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)
                     ->where('status', 'active');
@@ -69,12 +67,13 @@ class CallCategorizationController extends Controller
             'category' => 'required|string',
             'sub_category' => 'nullable|string',
             'confidence' => 'required|numeric|between:0,1',
-            'company_id' => 'nullable|integer',
         ]);
+
+        $company = $this->resolveAuthenticatedCompany();
 
         $result = CallCategorizationPromptService::validateCategorization(
             $validated,
-            $validated['company_id'] ?? null
+            $company->id
         );
 
         return response()->json($result, $result['valid'] ? 200 : 400);
@@ -91,8 +90,9 @@ class CallCategorizationController extends Controller
             'status' => 'nullable|in:completed,missed,failed',
             'duration' => 'nullable|integer|min:0',
             'is_after_hours' => 'nullable|boolean',
-            'company_id' => 'nullable|integer',
         ]);
+
+        $company = $this->resolveAuthenticatedCompany();
 
         $prompt = CallCategorizationPromptService::buildPromptObject(
             $validated['transcript'],
@@ -100,7 +100,7 @@ class CallCategorizationController extends Controller
             $validated['status'] ?? 'completed',
             $validated['duration'] ?? 0,
             $validated['is_after_hours'] ?? false,
-            $validated['company_id'] ?? null
+            $company->id
         );
 
         return response()->json([
@@ -113,14 +113,12 @@ class CallCategorizationController extends Controller
      */
     private function getEnabledCategoriesWithSubcategories()
     {
-        $companyId = request()->input('company_id');
+        $company = $this->resolveAuthenticatedCompany();
 
         return CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
-            ->when($companyId, function ($query) use ($companyId) {
-                $query->where('company_id', $companyId);
-            })
+            ->where('company_id', $company->id)
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)
                     ->where('status', 'active');

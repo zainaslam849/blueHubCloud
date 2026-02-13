@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Jobs\AdminTestPipelineJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class AdminPipelineController extends Controller
 {
@@ -19,14 +18,10 @@ class AdminPipelineController extends Controller
             'categorize_limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
         ]);
 
-        $companyId = $validated['company_id'] ?? null;
+        $company = $this->resolveAuthenticatedCompany();
 
-        if (! $companyId) {
-            $companyId = DB::table('companies')->orderBy('id')->value('id');
-        }
-
-        if (! $companyId) {
-            return response()->json(['message' => 'No company found.'], 422);
+        if (isset($validated['company_id']) && (int) $validated['company_id'] !== $company->id) {
+            abort(403, 'Company mismatch.');
         }
 
         $rangeDays = (int) ($validated['range_days'] ?? 30);
@@ -34,7 +29,7 @@ class AdminPipelineController extends Controller
         $categorizeLimit = (int) ($validated['categorize_limit'] ?? 500);
 
         AdminTestPipelineJob::dispatch(
-            (int) $companyId,
+            (int) $company->id,
             $rangeDays,
             $summarizeLimit,
             $categorizeLimit,
@@ -44,7 +39,7 @@ class AdminPipelineController extends Controller
         return response()->json([
             'message' => 'Pipeline queued. Ingest, summaries, categories, categorization, and reports will run shortly.',
             'data' => [
-                'company_id' => (int) $companyId,
+                'company_id' => (int) $company->id,
                 'range_days' => $rangeDays,
             ],
         ], 202);

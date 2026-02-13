@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\CallCategory;
-use App\Models\Company;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,10 +16,27 @@ class CategoryController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $companyId = $this->resolveCompanyId();
+        $company = $this->resolveAuthenticatedCompany();
+        $validated = $request->validate([
+            'status' => ['nullable', 'in:active,archived'],
+            'source' => ['nullable', 'in:ai,admin'],
+            'search' => ['nullable', 'string', 'max:255'],
+        ]);
 
         $categories = CallCategory::withTrashed()
-            ->where('company_id', $companyId)
+            ->where('company_id', $company->id)
+            ->when($validated['status'] ?? null, function ($query, $status) {
+                $query->where('status', $status);
+            })
+            ->when($validated['source'] ?? null, function ($query, $source) {
+                $query->where('source', $source);
+            })
+            ->when($validated['search'] ?? null, function ($query, $search) {
+                $query->where('name', 'like', '%'.$search.'%');
+            })
+            ->withCount(['subCategories' => function ($query) {
+                $query->withTrashed();
+            }])
             ->orderBy('is_enabled', 'desc')
             ->orderBy('name', 'asc')
             ->get();
@@ -38,10 +54,11 @@ class CategoryController extends Controller
      */
     public function enabled(Request $request): JsonResponse
     {
-        $companyId = $this->resolveCompanyId();
+        $company = $this->resolveAuthenticatedCompany();
 
         $categories = CallCategory::enabled()
-            ->where('company_id', $companyId)
+            ->where('company_id', $company->id)
+            ->where('status', 'active')
             ->orderBy('name', 'asc')
             ->get();
 
@@ -55,8 +72,15 @@ class CategoryController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $company = $this->resolveAuthenticatedCompany();
+
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:call_categories,name'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('call_categories', 'name')->where('company_id', $company->id),
+            ],
             'description' => ['nullable', 'string', 'max:1000'],
             'is_enabled' => ['boolean'],
         ]);
@@ -64,7 +88,7 @@ class CategoryController extends Controller
         $validated['is_enabled'] = $validated['is_enabled'] ?? true;
         $validated['source'] = 'admin';
         $validated['status'] = 'active';
-        $validated['company_id'] = $this->resolveCompanyId();
+        $validated['company_id'] = $company->id;
 
         $category = CallCategory::create($validated);
 
@@ -79,6 +103,11 @@ class CategoryController extends Controller
      */
     public function show(CallCategory $category): JsonResponse
     {
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
+
         return response()->json([
             'data' => $category,
         ]);
@@ -89,6 +118,11 @@ class CategoryController extends Controller
      */
     public function update(Request $request, CallCategory $category): JsonResponse
     {
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
+
         // Prevent editing the "General" category
         if ($category->isGeneral()) {
             throw ValidationException::withMessages([
@@ -97,8 +131,15 @@ class CategoryController extends Controller
         }
 
         // Prevent disabling the last enabled category
-        if ($request->input('is_enabled') === false && $category->is_enabled) {
-            if (CallCategory::countEnabled() === 1) {
+        $willDisable = $request->input('is_enabled') === false
+            || $request->input('status') === 'archived';
+
+        if ($willDisable && $category->is_enabled) {
+            $enabledCount = CallCategory::query()
+                ->where('company_id', $company->id)
+                ->enabled()
+                ->count();
+            if ($enabledCount === 1) {
                 throw ValidationException::withMessages([
                     'is_enabled' => 'At least one category must remain enabled.',
                 ]);
@@ -107,19 +148,36 @@ class CategoryController extends Controller
 
         $validated = $request->validate([
             'name' => [
+                'sometimes',
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('call_categories', 'name')->ignore($category->id),
+                Rule::unique('call_categories', 'name')
+                    ->where('company_id', $company->id)
+                    ->ignore($category->id),
             ],
             'description' => ['nullable', 'string', 'max:1000'],
             'is_enabled' => ['boolean'],
+            'status' => ['nullable', Rule::in(['active', 'archived'])],
         ]);
 
-        // Manual edits override AI-generated values
-        $validated['source'] = 'admin';
-        $validated['status'] = 'active';
-        $validated['generated_by_model'] = null;
+        if (array_key_exists('status', $validated)) {
+            if ($validated['status'] === 'archived') {
+                $validated['is_enabled'] = false;
+            }
+            if ($validated['status'] === 'active' && ! array_key_exists('is_enabled', $validated)) {
+                $validated['is_enabled'] = true;
+            }
+        }
+
+        $manualEdit = $request->hasAny(['name', 'description']);
+        if ($manualEdit) {
+            $validated['source'] = 'admin';
+            $validated['generated_by_model'] = null;
+            if (! array_key_exists('status', $validated)) {
+                $validated['status'] = 'active';
+            }
+        }
 
         $category->update($validated);
 
@@ -134,6 +192,11 @@ class CategoryController extends Controller
      */
     public function toggle(CallCategory $category): JsonResponse
     {
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
+
         // Prevent toggling the "General" category
         if ($category->isGeneral()) {
             throw ValidationException::withMessages([
@@ -142,7 +205,12 @@ class CategoryController extends Controller
         }
 
         // Prevent disabling if it's the last enabled category
-        if ($category->is_enabled && CallCategory::countEnabled() === 1) {
+        $enabledCount = CallCategory::query()
+            ->where('company_id', $company->id)
+            ->enabled()
+            ->count();
+
+        if ($category->is_enabled && $enabledCount === 1) {
             throw ValidationException::withMessages([
                 'is_enabled' => 'At least one category must remain enabled.',
             ]);
@@ -163,6 +231,11 @@ class CategoryController extends Controller
      */
     public function destroy(CallCategory $category): JsonResponse
     {
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
+
         // Prevent deleting the "General" category
         if ($category->isGeneral()) {
             throw ValidationException::withMessages([
@@ -183,6 +256,10 @@ class CategoryController extends Controller
     public function restore(int $id): JsonResponse
     {
         $category = CallCategory::onlyTrashed()->findOrFail($id);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
 
         $category->restore();
 
@@ -198,6 +275,10 @@ class CategoryController extends Controller
     public function forceDelete(int $id): JsonResponse
     {
         $category = CallCategory::withTrashed()->findOrFail($id);
+        $company = $this->resolveAuthenticatedCompany();
+        if ($category->company_id !== $company->id) {
+            abort(403, 'Category does not belong to your company.');
+        }
 
         // Prevent force-deleting the "General" category
         if ($category->isGeneral()) {
@@ -213,8 +294,4 @@ class CategoryController extends Controller
         ]);
     }
 
-    private function resolveCompanyId(): int
-    {
-        return (int) (Company::orderBy('id')->value('id') ?? 1);
-    }
 }

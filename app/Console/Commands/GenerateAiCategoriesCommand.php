@@ -18,11 +18,12 @@ class GenerateAiCategoriesCommand extends Command
         $rangeDays = (int) $this->option('range');
         $rangeDays = $rangeDays > 0 ? $rangeDays : 30;
 
-        if ($companyId) {
-            $company = Company::find((int) $companyId);
-        } else {
-            $company = Company::orderBy('id')->first();
+        if (! $companyId) {
+            $this->error('Company ID is required. Use --company=ID');
+            return self::FAILURE;
         }
+
+        $company = Company::find((int) $companyId);
 
         if (! $company) {
             $this->error('No company found to generate categories.');

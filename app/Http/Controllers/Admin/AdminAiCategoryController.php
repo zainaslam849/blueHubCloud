@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\GenerateAiCategoriesForCompanyJob;
-use App\Models\Company;
 use App\Services\AiCategoryGenerationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -20,17 +19,12 @@ class AdminAiCategoryController extends Controller
             'range' => ['nullable', 'string', 'in:last_30_days,last_60_days,last_90_days'],
         ]);
 
-        $companyId = $this->resolveCompanyId();
-        if (! $companyId) {
-            return response()->json([
-                'message' => 'No company found for AI category generation.',
-            ], 422);
-        }
+        $company = $this->resolveAuthenticatedCompany();
 
         $rangeDays = $this->resolveRangeDays($data['range'] ?? 'last_30_days');
 
         GenerateAiCategoriesForCompanyJob::dispatch(
-            companyId: $companyId,
+            companyId: $company->id,
             rangeDays: $rangeDays
         );
 
@@ -49,19 +43,14 @@ class AdminAiCategoryController extends Controller
             'range' => ['nullable', 'string', 'in:last_30_days,last_60_days,last_90_days'],
         ]);
 
-        $companyId = $this->resolveCompanyId();
-        if (! $companyId) {
-            return response()->json([
-                'message' => 'No company found for AI category preview.',
-            ], 422);
-        }
+        $company = $this->resolveAuthenticatedCompany();
 
         $rangeDays = $this->resolveRangeDays($data['range'] ?? 'last_30_days');
 
         $start = now()->subDays($rangeDays)->toDateString();
         $end = now()->toDateString();
 
-        $count = $service->getSummaryCount($companyId, [
+        $count = $service->getSummaryCount($company->id, [
             'start' => $start,
             'end' => $end,
         ]);
@@ -72,11 +61,6 @@ class AdminAiCategoryController extends Controller
                 'summary_count' => $count,
             ],
         ]);
-    }
-
-    private function resolveCompanyId(): ?int
-    {
-        return Company::orderBy('id')->value('id');
     }
 
     private function resolveRangeDays(string $range): int

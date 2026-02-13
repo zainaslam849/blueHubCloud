@@ -19,21 +19,13 @@ class AdminWeeklyCallReportsController extends Controller
             'company_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $companyId = $validated['company_id'] ?? null;
+        $company = $this->resolveAuthenticatedCompany();
 
-        // If no company_id provided from the client, default to the first
-        // company that has an existing weekly report so the admin UI can
-        // display reports without requiring an explicit company selection.
-        if (! $companyId) {
-            $first = WeeklyCallReport::select('company_id')->first();
-            if (! $first) {
-                return response()->json(['data' => []]);
-            }
-
-            $companyId = $first->company_id;
+        if (isset($validated['company_id']) && (int) $validated['company_id'] !== $company->id) {
+            abort(403, 'Company mismatch.');
         }
 
-        $companyId = (int) $companyId;
+        $companyId = $company->id;
 
         $reports = $service->getByCompanyId($companyId)->values();
 
@@ -98,6 +90,11 @@ class AdminWeeklyCallReportsController extends Controller
     {
         $report = WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
             ->findOrFail($id);
+
+        $company = $this->resolveAuthenticatedCompany();
+        if ($report->company_id !== $company->id) {
+            return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
 
         // Attempt to get authenticated user from admin guard first, fallback to web guard
         $adminGuardUser = Auth::guard('admin')->user();
