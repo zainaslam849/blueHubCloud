@@ -16,7 +16,7 @@ class AdminTestPipelineJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
-    public int $timeout = 30;
+    public int $timeout = 60; // Just for dispatching, actual work is async
 
     public function __construct(
         public int $companyId,
@@ -36,6 +36,8 @@ class AdminTestPipelineJob implements ShouldQueue
         $to = CarbonImmutable::now('UTC')->toDateString();
         $from = CarbonImmutable::now('UTC')->subDays($this->rangeDays)->toDateString();
 
+        // STEP 1: Ingest calls (synchronous - must complete first)
+        Log::info('Pipeline Step 1: Ingesting calls...', ['company_id' => $this->companyId]);
         $accounts = CompanyPbxAccount::query()
             ->where('company_id', $this->companyId)
             ->where('status', 'active')
@@ -48,38 +50,42 @@ class AdminTestPipelineJob implements ShouldQueue
                 ['from' => $from, 'to' => $to]
             );
         }
+        Log::info('Pipeline Step 1 complete: Ingest finished', ['company_id' => $this->companyId]);
 
+        // STEP 2: Queue summarization (async - will process immediately)
+        Log::info('Pipeline Step 2: Queuing summarization jobs...', ['company_id' => $this->companyId]);
         QueueCallsForSummarizationJob::dispatch(
             $this->companyId,
             $this->summarizeLimit,
             25,
             $this->pipelineQueue
-        )
-            ->delay(now()->addMinutes(2))
-            ->onQueue($this->pipelineQueue);
+        )->onQueue($this->pipelineQueue);
 
+        // STEP 3: Generate AI categories (async - runs after, skips if no summaries)
+        Log::info('Pipeline Step 3: Dispatching AI category generation...', ['company_id' => $this->companyId]);
         GenerateAiCategoriesForCompanyJob::dispatch($this->companyId, $this->rangeDays)
-            ->delay(now()->addMinutes(4))
             ->onQueue($this->pipelineQueue);
 
+        // STEP 4: Categorize calls (async - will use categories created by step 3 or existing ones)
+        Log::info('Pipeline Step 4: Queuing categorization jobs...', ['company_id' => $this->companyId]);
         QueueCallsForCategorizationJob::dispatch(
             $this->companyId,
             $this->categorizeLimit,
             25,
             false,
             $this->pipelineQueue
-        )
-            ->delay(now()->addMinutes(5))
-            ->onQueue($this->pipelineQueue);
+        )->onQueue($this->pipelineQueue);
 
+        // STEP 5: Generate reports
+        Log::info('Pipeline Step 5: Dispatching weekly reports generation...', ['company_id' => $this->companyId]);
         GenerateWeeklyPbxReportsJob::dispatch($from, $to)
-            ->delay(now()->addMinutes(7))
             ->onQueue($this->pipelineQueue);
 
-        Log::info('Admin test pipeline queued', [
+        Log::info('Admin test pipeline queued successfully', [
             'company_id' => $this->companyId,
             'ingest_accounts' => $accounts->count(),
             'queue' => $this->pipelineQueue,
+            'note' => 'Jobs will execute asynchronously. Run: php artisan queue:work --queue=' . $this->pipelineQueue . ' --stop-when-empty',
         ]);
     }
 }

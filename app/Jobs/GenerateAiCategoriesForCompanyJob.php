@@ -74,9 +74,10 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         );
 
         if (($promptPayload['summary_count'] ?? 0) === 0) {
-            Log::warning('No AI summaries available for category generation', [
+            Log::info('Skipping AI category generation - no summaries available yet (this is expected on first run)', [
                 'company_id' => $this->companyId,
                 'date_range' => ['start' => $start, 'end' => $end],
+                'tip' => 'Ensure QueueCallsForSummarizationJob completes before running AI generation',
             ]);
             return;
         }
