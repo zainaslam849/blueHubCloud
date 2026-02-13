@@ -25,6 +25,7 @@ const navGroups = [
         items: [
             { name: "Dashboard", icon: "dashboard", to: { name: "dashboard" } },
             { name: "Reports", icon: "reports", to: { name: "reports" } },
+            { name: "Companies", icon: "companies", to: { name: "companies" } },
             { name: "Usage", icon: "usage", to: { name: "usage" } },
             { name: "Account", icon: "account", to: { name: "account" } },
         ],

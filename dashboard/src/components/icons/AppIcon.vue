@@ -16,6 +16,7 @@ import {
     Figma,
     Settings,
     LogOut,
+    Building2,
 } from "lucide-vue-next";
 
 type IconName =
@@ -23,6 +24,7 @@ type IconName =
     | "reports"
     | "usage"
     | "account"
+    | "companies"
     | "collapse"
     | "calls"
     | "minutes"
@@ -41,6 +43,7 @@ const icons: Record<IconName, any> = {
     reports: FileText,
     usage: BarChart3,
     account: User,
+    companies: Building2,
     collapse: ChevronLeft,
     calls: PhoneCall,
     minutes: Clock,
