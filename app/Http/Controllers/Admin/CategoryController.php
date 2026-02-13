@@ -18,13 +18,18 @@ class CategoryController extends Controller
     {
         $company = $this->resolveAuthenticatedCompany();
         $validated = $request->validate([
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'status' => ['nullable', 'in:active,archived'],
             'source' => ['nullable', 'in:ai,admin'],
             'search' => ['nullable', 'string', 'max:255'],
         ]);
 
+        // Admin can filter by specific company_id, otherwise default to current company
+        $companyId = $validated['company_id'] ?? $company->id;
+
         $categories = CallCategory::withTrashed()
-            ->where('company_id', $company->id)
+            ->where('company_id', $companyId)
+            ->with('company:id,name')
             ->when($validated['status'] ?? null, function ($query, $status) {
                 $query->where('status', $status);
             })

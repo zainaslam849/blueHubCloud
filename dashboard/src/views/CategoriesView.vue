@@ -4,13 +4,19 @@ import Card from "../components/ui/Card.vue";
 import PageHeader from "../components/ui/PageHeader.vue";
 import BaseButton from "../components/ui/BaseButton.vue";
 import BaseBadge from "../components/ui/BaseBadge.vue";
-import { categoriesApi, type CallCategory } from "../api/categories";
+import {
+    categoriesApi,
+    type CallCategory,
+    type Company,
+} from "../api/categories";
+import { adminApi } from "../api/adminApi";
 
 interface FormState {
     id?: number;
     name: string;
     description: string;
     is_enabled: boolean;
+    company_id?: number;
 }
 
 interface ValidationErrors {
@@ -22,12 +28,14 @@ interface ValidationErrors {
 
 // State
 const categories = ref<CallCategory[]>([]);
+const companies = ref<Company[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const showForm = ref(false);
 const isEditing = ref(false);
 const submitting = ref(false);
 const validationErrors = ref<ValidationErrors>({});
+const selectedCompanyFilter = ref<number | null>(null);
 
 const formData = ref<FormState>({
     name: "",
@@ -36,8 +44,17 @@ const formData = ref<FormState>({
 });
 
 // Computed
+const filteredCategories = computed(() => {
+    if (selectedCompanyFilter.value === null) {
+        return categories.value;
+    }
+    return categories.value.filter(
+        (cat) => cat.company_id === selectedCompanyFilter.value,
+    );
+});
+
 const sortedCategories = computed(() => {
-    return categories.value.slice().sort((a, b) => {
+    return filteredCategories.value.slice().sort((a, b) => {
         // Enabled first, then alphabetical
         if (a.is_enabled !== b.is_enabled) {
             return b.is_enabled ? 1 : -1;
@@ -55,11 +72,22 @@ const isFormValid = computed(() => {
 });
 
 // Methods
+const fetchCompanies = async () => {
+    try {
+        const response = await adminApi.get("/companies");
+        companies.value = response.data;
+    } catch (err) {
+        console.error("Failed to load companies:", err);
+    }
+};
+
 const fetchCategories = async () => {
     try {
         loading.value = true;
         error.value = null;
-        const response = await categoriesApi.getAll();
+        const response = await categoriesApi.getAll(
+            selectedCompanyFilter.value || undefined,
+        );
         categories.value = response.data;
     } catch (err) {
         error.value =
@@ -76,6 +104,7 @@ const openAddForm = () => {
         name: "",
         description: "",
         is_enabled: true,
+        company_id: selectedCompanyFilter.value || undefined,
     };
     validationErrors.value = {};
 };
@@ -88,6 +117,7 @@ const openEditForm = (category: CallCategory) => {
         name: category.name,
         description: category.description || "",
         is_enabled: category.is_enabled,
+        company_id: category.company_id,
     };
     validationErrors.value = {};
 };
@@ -183,8 +213,14 @@ const restoreCategory = async (category: CallCategory) => {
     }
 };
 
+const getCompanyName = (companyId: number): string => {
+    const company = companies.value.find((c) => c.id === companyId);
+    return company?.name || "Unknown";
+};
+
 // Lifecycle
 onMounted(() => {
+    fetchCompanies();
     fetchCategories();
 });
 </script>
@@ -213,11 +249,38 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <!-- Action buttons -->
-                <div class="flex justify-between items-center">
-                    <div class="text-sm text-gray-600">
-                        {{ sortedCategories.length }} categories total
+                <!-- Filter and Action buttons -->
+                <div
+                    class="flex flex-col gap-4 md:flex-row md:justify-between md:items-center"
+                >
+                    <div class="flex-1">
+                        <label
+                            for="company-filter"
+                            class="block text-sm font-medium mb-2"
+                        >
+                            Filter by Client
+                        </label>
+                        <select
+                            id="company-filter"
+                            v-model.number="selectedCompanyFilter"
+                            @change="fetchCategories"
+                            class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option :value="null">All Clients</option>
+                            <option
+                                v-for="company in companies"
+                                :key="company.id"
+                                :value="company.id"
+                            >
+                                {{ company.name }}
+                            </option>
+                        </select>
                     </div>
+
+                    <div class="text-sm text-gray-600">
+                        {{ sortedCategories.length }} categories
+                    </div>
+
                     <BaseButton
                         @click="openAddForm"
                         class="bg-blue-600 text-white hover:bg-blue-700"
@@ -236,6 +299,9 @@ onMounted(() => {
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-gray-200">
+                                <th class="px-4 py-3 text-left font-semibold">
+                                    Client
+                                </th>
                                 <th class="px-4 py-3 text-left font-semibold">
                                     Name
                                 </th>
@@ -256,6 +322,11 @@ onMounted(() => {
                                 :key="category.id"
                                 class="border-b border-gray-100 hover:bg-gray-50"
                             >
+                                <td
+                                    class="px-4 py-3 text-sm font-medium text-gray-700"
+                                >
+                                    {{ getCompanyName(category.company_id) }}
+                                </td>
                                 <td class="px-4 py-3">
                                     <div class="font-medium">
                                         {{ category.name }}
@@ -374,6 +445,17 @@ onMounted(() => {
                         <p class="text-sm text-blue-800">
                             The "General" category is the default and cannot be
                             edited or deleted.
+                        </p>
+                    </div>
+
+                    <!-- Show company info when editing -->
+                    <div
+                        v-if="isEditing && formData.company_id"
+                        class="bg-gray-50 p-3 rounded"
+                    >
+                        <p class="text-sm text-gray-700">
+                            <strong>Client:</strong>
+                            {{ getCompanyName(formData.company_id) }}
                         </p>
                     </div>
 

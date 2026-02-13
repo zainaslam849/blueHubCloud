@@ -1,5 +1,11 @@
 import { http } from "./http";
 
+export interface Company {
+    id: number;
+    name: string;
+    status: string;
+}
+
 export interface CallCategory {
     id: number;
     name: string;
@@ -8,6 +14,8 @@ export interface CallCategory {
     deleted_at: string | null;
     created_at: string;
     updated_at: string;
+    company_id: number;
+    company?: Company;
 }
 
 export interface CreateCategoryPayload {
@@ -26,11 +34,17 @@ export const categoriesApi = {
     /**
      * Get all categories (including soft-deleted)
      */
-    async getAll() {
+    async getAll(companyId?: number) {
+        const params = new URLSearchParams();
+        if (companyId) {
+            params.append("company_id", String(companyId));
+        }
+        const queryString = params.toString();
+        const url = `/admin/api/categories${queryString ? "?" + queryString : ""}`;
         const response = await http.get<{
             data: CallCategory[];
             meta: { total: number };
-        }>("/admin/api/categories");
+        }>(url);
         return response.data;
     },
 
