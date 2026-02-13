@@ -12,7 +12,6 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 class AdminTestPipelineJob implements ShouldQueue
 {
@@ -78,40 +77,27 @@ class AdminTestPipelineJob implements ShouldQueue
             new GenerateWeeklyPbxReportsJob($from, $to),
         ];
 
-        if ($callsToSummarize->isEmpty()) {
-            Log::info('Pipeline Step 2: No calls to summarize, skipping directly to category generation', [
-                'company_id' => $this->companyId,
-            ]);
+        Log::info('Pipeline Step 2: Queuing summarization jobs...', [
+            'company_id' => $this->companyId,
+            'count' => $callsToSummarize->count(),
+        ]);
 
-            Bus::chain($postSummaryChain)
-                ->onQueue($this->pipelineQueue)
-                ->dispatch();
-        } else {
-            $summaryJobs = $callsToSummarize
-                ->map(fn ($call) => (new SummarizeSingleCallJob($call->id))->onQueue($this->pipelineQueue))
-                ->all();
-
-            Log::info('Pipeline Step 2: Queuing summarization batch...', [
-                'company_id' => $this->companyId,
-                'count' => $callsToSummarize->count(),
-            ]);
-
-            Bus::batch($summaryJobs)
-                ->name('pipeline-summarize-company-' . $this->companyId)
-                ->onQueue($this->pipelineQueue)
-                ->then(function () use ($postSummaryChain) {
-                    Bus::chain($postSummaryChain)
-                        ->onQueue($this->pipelineQueue)
-                        ->dispatch();
-                })
-                ->catch(function (Throwable $e) {
-                    Log::error('Pipeline Step 2: Summarization batch failed', [
-                        'company_id' => $this->companyId,
-                        'error' => $e->getMessage(),
-                    ]);
-                })
-                ->dispatch();
+        // Dispatch summarization jobs without batching (SummarizeSingleCallJob doesn't use Batchable trait)
+        foreach ($callsToSummarize as $call) {
+            SummarizeSingleCallJob::dispatch($call->id)
+                ->onQueue($this->pipelineQueue);
         }
+
+        Log::info('Pipeline Step 2: Queued summarization jobs, now queuing post-summary jobs...', [
+            'company_id' => $this->companyId,
+            'summary_count' => $callsToSummarize->count(),
+        ]);
+
+        // STEP 3-5: Chain category generation → categorization → reports
+        // These will run after summaries are done (or immediately if no summaries)
+        Bus::chain($postSummaryChain)
+            ->onQueue($this->pipelineQueue)
+            ->dispatch();
 
         Log::info('Admin test pipeline queued successfully', [
             'company_id' => $this->companyId,
