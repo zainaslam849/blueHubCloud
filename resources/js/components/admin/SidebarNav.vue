@@ -472,6 +472,73 @@ const NavIcon = {
                             }),
                         ],
                     );
+                case "companies":
+                    return h(
+                        "svg",
+                        {
+                            viewBox: "0 0 24 24",
+                            fill: "none",
+                            xmlns: "http://www.w3.org/2000/svg",
+                        },
+                        [
+                            h("path", {
+                                d: "M4 20V6a2 2 0 0 1 2-2h4v16",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                                "stroke-linejoin": "round",
+                            }),
+                            h("path", {
+                                d: "M10 20V8a2 2 0 0 1 2-2h6v14",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                                "stroke-linejoin": "round",
+                            }),
+                            h("path", {
+                                d: "M6.5 8.5h1.5M6.5 12h1.5M6.5 15.5h1.5",
+                                stroke: "currentColor",
+                                "stroke-width": 1.6,
+                                "stroke-linecap": "round",
+                            }),
+                            h("path", {
+                                d: "M12.5 10.5h3M12.5 14h3M12.5 17.5h3",
+                                stroke: "currentColor",
+                                "stroke-width": 1.6,
+                                "stroke-linecap": "round",
+                            }),
+                        ],
+                    );
+                case "pbx":
+                    return h(
+                        "svg",
+                        {
+                            viewBox: "0 0 24 24",
+                            fill: "none",
+                            xmlns: "http://www.w3.org/2000/svg",
+                        },
+                        [
+                            h("rect", {
+                                x: 4,
+                                y: 5,
+                                width: 16,
+                                height: 14,
+                                rx: 2,
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                            }),
+                            h("path", {
+                                d: "M7 9h10",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                                "stroke-linecap": "round",
+                            }),
+                            h("path", {
+                                d: "M7 13h6",
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                                "stroke-linecap": "round",
+                            }),
+                        ],
+                    );
                 case "settings":
                     return h(
                         "svg",

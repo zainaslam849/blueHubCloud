@@ -81,6 +81,12 @@ const router = createRouter({
             component: () => import("../../pages/admin/UsersPage.vue"),
         },
         {
+            path: "/companies",
+            name: "admin.companies",
+            meta: { title: "Companies", breadcrumb: "Companies" },
+            component: () => import("../../pages/admin/CompaniesPage.vue"),
+        },
+        {
             path: "/settings",
             name: "admin.settings",
             meta: { title: "Settings", breadcrumb: "Settings" },
