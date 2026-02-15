@@ -36,60 +36,145 @@
                 </div>
             </div>
 
-            <div class="admin-card" style="margin-bottom: 16px; padding: 16px">
-                <div
-                    style="
-                        display: flex;
-                        gap: 16px;
-                        flex-wrap: wrap;
-                        align-items: flex-end;
-                    "
-                >
-                    <div style="min-width: 220px">
-                        <label class="admin-label">Company</label>
-                        <div class="admin-input" style="background: #f5f7fa">
-                            {{ companyLabel || "—" }}
-                        </div>
-                    </div>
-                    <div style="min-width: 160px">
-                        <label class="admin-label" for="filter-status"
-                            >Status</label
+            <div class="admin-callsToolbar">
+                <div class="admin-callsToolbar__left">
+                    <div class="admin-field admin-callsToolbar__search">
+                        <label
+                            class="admin-field__label"
+                            for="categories-search"
                         >
-                        <select
-                            id="filter-status"
-                            v-model="filterStatus"
-                            class="admin-input"
-                        >
-                            <option value="all">All</option>
-                            <option value="active">Active</option>
-                            <option value="archived">Archived</option>
-                        </select>
-                    </div>
-                    <div style="min-width: 160px">
-                        <label class="admin-label" for="filter-source"
-                            >Source</label
-                        >
-                        <select
-                            id="filter-source"
-                            v-model="filterSource"
-                            class="admin-input"
-                        >
-                            <option value="all">All</option>
-                            <option value="ai">AI Generated</option>
-                            <option value="admin">Manual</option>
-                        </select>
-                    </div>
-                    <div style="min-width: 240px; flex: 1">
-                        <label class="admin-label" for="filter-search"
-                            >Search</label
-                        >
+                            Search
+                        </label>
                         <input
-                            id="filter-search"
+                            id="categories-search"
                             v-model="searchQuery"
                             class="admin-input"
-                            type="text"
+                            type="search"
+                            autocomplete="off"
                             placeholder="Search by name"
                         />
+                    </div>
+                </div>
+
+                <div class="admin-callsToolbar__right">
+                    <div ref="filterWrap" class="admin-filterPopover">
+                        <BaseButton
+                            variant="secondary"
+                            size="sm"
+                            class="admin-filterTrigger"
+                            @click="toggleFilters"
+                        >
+                            <span
+                                class="admin-filterTrigger__icon"
+                                aria-hidden="true"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        d="M4 5H20L14 12V19L10 21V12L4 5Z"
+                                        stroke="currentColor"
+                                        stroke-width="1.8"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                            </span>
+                            Filter
+                        </BaseButton>
+
+                        <div
+                            v-if="filtersOpen && isDesktop"
+                            class="admin-filterPanel"
+                            role="dialog"
+                            aria-label="Filter options"
+                        >
+                            <div class="admin-filterPanel__header">
+                                Filter Options
+                            </div>
+
+                            <div class="admin-filterGrid">
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-company"
+                                    >
+                                        Company
+                                    </label>
+                                    <select
+                                        id="filter-company"
+                                        v-model="draftFilterCompany"
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Companies</option>
+                                        <option
+                                            v-for="company in companies"
+                                            :key="company.id"
+                                            :value="company.id"
+                                        >
+                                            {{ company.name }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-status"
+                                    >
+                                        Status
+                                    </label>
+                                    <select
+                                        id="filter-status"
+                                        v-model="draftFilterStatus"
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="active">Active</option>
+                                        <option value="archived">
+                                            Archived
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div class="admin-field">
+                                    <label
+                                        class="admin-field__label"
+                                        for="filter-source"
+                                    >
+                                        Source
+                                    </label>
+                                    <select
+                                        id="filter-source"
+                                        v-model="draftFilterSource"
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="ai">AI Generated</option>
+                                        <option value="admin">Manual</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="admin-filterActions">
+                                <BaseButton
+                                    variant="ghost"
+                                    size="sm"
+                                    @click="resetDraftFilters"
+                                >
+                                    Reset
+                                </BaseButton>
+                                <BaseButton
+                                    variant="primary"
+                                    size="sm"
+                                    @click="applyFilters"
+                                >
+                                    Apply
+                                </BaseButton>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -113,6 +198,7 @@
                 <table class="admin-table">
                     <thead>
                         <tr>
+                            <th class="admin-table__th">Company</th>
                             <th class="admin-table__th">Name</th>
                             <th class="admin-table__th">Source</th>
                             <th class="admin-table__th">Status</th>
@@ -132,6 +218,9 @@
                             :key="category.id"
                             class="admin-table__tr"
                         >
+                            <td class="admin-table__td" data-label="Company">
+                                {{ resolveCompanyName(category) }}
+                            </td>
                             <td class="admin-table__td" data-label="Name">
                                 <div class="font-medium">
                                     {{ category.name }}
@@ -669,9 +758,107 @@
             @close="showSubCatsModal = false"
         />
     </div>
+
+    <Teleport to="body">
+        <Transition name="admin-modal">
+            <div
+                v-if="filtersOpen && !isDesktop"
+                class="admin-modalOverlay"
+                @click="filtersOpen = false"
+            >
+                <div class="admin-modal" @click.stop>
+                    <div class="admin-modal__header">
+                        <h2 class="admin-modal__title">Filter Options</h2>
+                        <button
+                            type="button"
+                            class="admin-modal__close"
+                            @click="filtersOpen = false"
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    <div class="admin-modal__body">
+                        <div class="admin-filterGrid">
+                            <div class="admin-field">
+                                <label
+                                    class="admin-field__label"
+                                    for="filter-company-mobile"
+                                >
+                                    Company
+                                </label>
+                                <select
+                                    id="filter-company-mobile"
+                                    v-model="draftFilterCompany"
+                                    class="admin-input admin-input--select"
+                                >
+                                    <option value="">All Companies</option>
+                                    <option
+                                        v-for="company in companies"
+                                        :key="company.id"
+                                        :value="company.id"
+                                    >
+                                        {{ company.name }}
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="admin-field">
+                                <label
+                                    class="admin-field__label"
+                                    for="filter-status-mobile"
+                                >
+                                    Status
+                                </label>
+                                <select
+                                    id="filter-status-mobile"
+                                    v-model="draftFilterStatus"
+                                    class="admin-input admin-input--select"
+                                >
+                                    <option value="all">All</option>
+                                    <option value="active">Active</option>
+                                    <option value="archived">Archived</option>
+                                </select>
+                            </div>
+
+                            <div class="admin-field">
+                                <label
+                                    class="admin-field__label"
+                                    for="filter-source-mobile"
+                                >
+                                    Source
+                                </label>
+                                <select
+                                    id="filter-source-mobile"
+                                    v-model="draftFilterSource"
+                                    class="admin-input admin-input--select"
+                                >
+                                    <option value="all">All</option>
+                                    <option value="ai">AI Generated</option>
+                                    <option value="admin">Manual</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="admin-modal__footer">
+                        <BaseButton
+                            variant="secondary"
+                            @click="resetDraftFilters"
+                        >
+                            Reset
+                        </BaseButton>
+                        <BaseButton variant="primary" @click="applyFilters">
+                            Apply
+                        </BaseButton>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </Teleport>
 </template>
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { BaseButton, BaseBadge } from "../../components/admin/base";
 import SubCategoriesModal from "../../components/admin/SubCategoriesModal.vue";
 import adminApi from "../../router/admin/api";
@@ -703,6 +890,14 @@ const filterStatus = ref("all");
 const filterSource = ref("all");
 const searchQuery = ref("");
 const companyLabel = ref("");
+const filterCompany = ref("");
+const draftFilterCompany = ref("");
+const draftFilterStatus = ref("all");
+const draftFilterSource = ref("all");
+const filtersOpen = ref(false);
+const filterWrap = ref(null);
+const isDesktop = ref(true);
+const companies = ref([]);
 
 const formData = ref({
     name: "",
@@ -760,12 +955,25 @@ const fetchCategories = async () => {
     try {
         loading.value = true;
         error.value = null;
-        const response = await adminApi.get("/categories");
+        const params = {};
+        if (filterCompany.value) {
+            params.company_id = filterCompany.value;
+        }
+        const response = await adminApi.get("/categories", { params });
         categories.value = response.data.data;
     } catch (err) {
         error.value = err.message || "Failed to load categories";
     } finally {
         loading.value = false;
+    }
+};
+
+const fetchCompanies = async () => {
+    try {
+        const response = await adminApi.get("/companies");
+        companies.value = response?.data?.data || [];
+    } catch (err) {
+        companies.value = [];
     }
 };
 
@@ -781,6 +989,51 @@ const fetchCompanyLabel = async () => {
         companyLabel.value = "";
     }
 };
+
+function resetDraftFilters() {
+    draftFilterCompany.value = "";
+    draftFilterStatus.value = "all";
+    draftFilterSource.value = "all";
+}
+
+function syncDraftFilters() {
+    draftFilterCompany.value = filterCompany.value;
+    draftFilterStatus.value = filterStatus.value;
+    draftFilterSource.value = filterSource.value;
+}
+
+function applyFilters() {
+    filterCompany.value = draftFilterCompany.value;
+    filterStatus.value = draftFilterStatus.value;
+    filterSource.value = draftFilterSource.value;
+    filtersOpen.value = false;
+    fetchCategories();
+}
+
+function toggleFilters() {
+    filtersOpen.value = !filtersOpen.value;
+    if (filtersOpen.value) {
+        syncDraftFilters();
+    }
+}
+
+function updateViewport() {
+    isDesktop.value = window.innerWidth >= 1024;
+}
+
+function onDocumentClick(event) {
+    if (!filtersOpen.value || !isDesktop.value) return;
+    const target = event.target;
+    if (!filterWrap.value || !(target instanceof Node)) return;
+    if (filterWrap.value.contains(target)) return;
+    filtersOpen.value = false;
+}
+
+function resolveCompanyName(category) {
+    if (category?.company?.name) return category.company.name;
+    if (category?.company_name) return category.company_name;
+    return companyLabel.value || "—";
+}
 
 const openAddForm = () => {
     isEditing.value = false;
@@ -1010,7 +1263,16 @@ const formatDate = (dateValue) => {
 
 // Lifecycle
 onMounted(() => {
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    document.addEventListener("click", onDocumentClick);
+    fetchCompanies();
     fetchCategories();
     fetchCompanyLabel();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener("resize", updateViewport);
+    document.removeEventListener("click", onDocumentClick);
 });
 </script>

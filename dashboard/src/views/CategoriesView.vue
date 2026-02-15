@@ -53,7 +53,7 @@ const formData = ref<FormState>({
 const selectedCompanyName = computed(() => {
     if (!selectedCompanyFilter.value) return "All Clients";
     const company = companies.value.find(
-        (c) => c.id === selectedCompanyFilter.value
+        (c) => c.id === selectedCompanyFilter.value,
     );
     return company?.name || "Unknown";
 });
@@ -64,7 +64,7 @@ const filteredCategories = computed(() => {
     // Filter by company
     if (selectedCompanyFilter.value !== null) {
         filtered = filtered.filter(
-            (cat) => cat.company_id === selectedCompanyFilter.value
+            (cat) => cat.company_id === selectedCompanyFilter.value,
         );
     }
 
@@ -83,7 +83,7 @@ const filteredCategories = computed(() => {
     if (searchQuery.value) {
         const query = searchQuery.value.toLowerCase();
         filtered = filtered.filter((cat) =>
-            cat.name.toLowerCase().includes(query)
+            cat.name.toLowerCase().includes(query),
         );
     }
 
@@ -123,7 +123,7 @@ const fetchCategories = async () => {
         loading.value = true;
         error.value = null;
         const response = await categoriesApi.getAll(
-            selectedCompanyFilter.value || undefined
+            selectedCompanyFilter.value || undefined,
         );
         categories.value = response.data;
     } catch (err) {
@@ -340,20 +340,26 @@ onMounted(() => {
                             class="absolute top-12 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-96"
                         >
                             <div class="p-4 border-b border-gray-200">
-                                <h3 class="font-semibold text-sm">Filter Options</h3>
+                                <h3 class="font-semibold text-sm">
+                                    Filter Options
+                                </h3>
                             </div>
 
                             <div class="p-4 space-y-4">
                                 <!-- Company Filter -->
                                 <div>
-                                    <label class="block text-sm font-medium mb-2">
+                                    <label
+                                        class="block text-sm font-medium mb-2"
+                                    >
                                         Client
                                     </label>
                                     <select
                                         v-model.number="selectedCompanyFilter"
                                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option :value="null">All Clients</option>
+                                        <option :value="null">
+                                            All Clients
+                                        </option>
                                         <option
                                             v-for="company in companies"
                                             :key="company.id"
@@ -366,7 +372,9 @@ onMounted(() => {
 
                                 <!-- Status Filter -->
                                 <div>
-                                    <label class="block text-sm font-medium mb-2">
+                                    <label
+                                        class="block text-sm font-medium mb-2"
+                                    >
                                         Status
                                     </label>
                                     <select
@@ -374,16 +382,22 @@ onMounted(() => {
                                         class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     >
                                         <option value="all">All</option>
-                                        <option value="active">Active (Not Deleted)</option>
+                                        <option value="active">
+                                            Active (Not Deleted)
+                                        </option>
                                         <option value="enabled">Enabled</option>
-                                        <option value="disabled">Disabled</option>
+                                        <option value="disabled">
+                                            Disabled
+                                        </option>
                                         <option value="deleted">Deleted</option>
                                     </select>
                                 </div>
 
                                 <!-- Source Filter -->
                                 <div>
-                                    <label class="block text-sm font-medium mb-2">
+                                    <label
+                                        class="block text-sm font-medium mb-2"
+                                    >
                                         Source
                                     </label>
                                     <select
@@ -398,7 +412,9 @@ onMounted(() => {
 
                                 <!-- Search Filter -->
                                 <div>
-                                    <label class="block text-sm font-medium mb-2">
+                                    <label
+                                        class="block text-sm font-medium mb-2"
+                                    >
                                         Search
                                     </label>
                                     <input
@@ -410,7 +426,9 @@ onMounted(() => {
                                 </div>
                             </div>
 
-                            <div class="p-4 border-t border-gray-200 flex gap-2 justify-end">
+                            <div
+                                class="p-4 border-t border-gray-200 flex gap-2 justify-end"
+                            >
                                 <BaseButton
                                     @click="resetFilters"
                                     class="bg-gray-200 text-gray-800 hover:bg-gray-300"
@@ -493,13 +511,19 @@ onMounted(() => {
                                 </td>
                                 <td class="px-4 py-3">
                                     <BaseBadge
-                                        v-if="category.is_enabled && !category.deleted_at"
+                                        v-if="
+                                            category.is_enabled &&
+                                            !category.deleted_at
+                                        "
                                         class="bg-green-100 text-green-800"
                                     >
                                         Enabled
                                     </BaseBadge>
                                     <BaseBadge
-                                        v-else-if="!category.is_enabled && !category.deleted_at"
+                                        v-else-if="
+                                            !category.is_enabled &&
+                                            !category.deleted_at
+                                        "
                                         class="bg-gray-100 text-gray-800"
                                     >
                                         Disabled
