@@ -427,6 +427,18 @@
                     </tbody>
                 </table>
             </div>
+
+            <div class="admin-callsFooter">
+                <BasePagination
+                    v-model:page="page"
+                    v-model:pageSize="pageSize"
+                    :total="meta.total"
+                    :disabled="loading"
+                    :page-size-options="[10, 25, 50, 100, 200]"
+                    hint="Server-side pagination"
+                    @change="fetchCategories"
+                />
+            </div>
         </section>
 
         <!-- Category Form Modal -->
@@ -462,7 +474,10 @@
 
                             <!-- Company field -->
                             <div class="admin-field">
-                                <label for="company_id" class="admin-field__label">
+                                <label
+                                    for="company_id"
+                                    class="admin-field__label"
+                                >
                                     Company *
                                 </label>
                                 <select
@@ -471,7 +486,9 @@
                                     class="admin-input admin-input--select"
                                     :disabled="isEditing"
                                 >
-                                    <option value="" disabled>Select Company</option>
+                                    <option value="" disabled>
+                                        Select Company
+                                    </option>
                                     <option
                                         v-for="company in companies"
                                         :key="company.id"
@@ -927,6 +944,14 @@ const filtersOpen = ref(false);
 const filterWrap = ref(null);
 const isDesktop = ref(true);
 const companies = ref([]);
+const page = ref(1);
+const pageSize = ref(25);
+const meta = ref({
+    current_page: 1,
+    last_page: 1,
+    per_page: 25,
+    total: 0,
+});
 
 const formData = ref({
     name: "",
@@ -939,18 +964,7 @@ const formData = ref({
 const filteredCategories = computed(() => {
     let filtered = categories.value.slice();
 
-    if (filterStatus.value !== "all") {
-        filtered = filtered.filter(
-            (category) => category.status === filterStatus.value,
-        );
-    }
-
-    if (filterSource.value !== "all") {
-        filtered = filtered.filter(
-            (category) => category.source === filterSource.value,
-        );
-    }
-
+    // Client-side search filtering only (status and source handled by backend)
     if (searchQuery.value.trim()) {
         const search = searchQuery.value.trim().toLowerCase();
         filtered = filtered.filter((category) =>
@@ -987,12 +1001,22 @@ const fetchCategories = async () => {
     try {
         loading.value = true;
         error.value = null;
-        const params = {};
+        const params = {
+            page: page.value,
+            per_page: pageSize.value,
+        };
         if (filterCompany.value) {
             params.company_id = filterCompany.value;
         }
+        if (filterStatus.value && filterStatus.value !== "all") {
+            params.status = filterStatus.value;
+        }
+        if (filterSource.value && filterSource.value !== "all") {
+            params.source = filterSource.value;
+        }
         const response = await adminApi.get("/categories", { params });
         categories.value = response.data.data;
+        meta.value = response.data.meta ?? meta.value;
     } catch (err) {
         error.value = err.message || "Failed to load categories";
     } finally {
@@ -1039,6 +1063,7 @@ function applyFilters() {
     filterStatus.value = draftFilterStatus.value;
     filterSource.value = draftFilterSource.value;
     filtersOpen.value = false;
+    page.value = 1; // Reset to first page when filters change
     fetchCategories();
 }
 
@@ -1065,6 +1090,61 @@ function resolveCompanyName(category) {
     if (category?.company?.name) return category.company.name;
     if (category?.company_name) return category.company_name;
     return companyLabel.value || "—";
+}
+
+function showToast(message, type = "success") {
+    try {
+        let container = document.getElementById("__category_toast_container");
+        if (!container) {
+            container = document.createElement("div");
+            container.id = "__category_toast_container";
+            Object.assign(container.style, {
+                position: "fixed",
+                top: "16px",
+                right: "16px",
+                zIndex: 9999,
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+            });
+            document.body.appendChild(container);
+        }
+
+        const el = document.createElement("div");
+        el.textContent = message;
+        const bgColor = type === "error" ? "#dc3545" : "#0f5132";
+        Object.assign(el.style, {
+            background: bgColor,
+            color: "white",
+            padding: "10px 14px",
+            borderRadius: "8px",
+            boxShadow: "0 6px 18px rgba(16,24,40,0.12)",
+            opacity: "0",
+            transition: "opacity 200ms ease, transform 200ms ease",
+            transform: "translateY(-6px)",
+            fontSize: "14px",
+            lineHeight: "20px",
+        });
+
+        container.appendChild(el);
+
+        // animate in
+        requestAnimationFrame(() => {
+            el.style.opacity = "1";
+            el.style.transform = "translateY(0)";
+        });
+
+        setTimeout(() => {
+            // animate out
+            el.style.opacity = "0";
+            el.style.transform = "translateY(-6px)";
+            setTimeout(() => el.remove(), 220);
+        }, 3000);
+    } catch (e) {
+        // fallback
+        // eslint-disable-next-line no-alert
+        alert(message);
+    }
 }
 
 const openAddForm = () => {
@@ -1196,13 +1276,27 @@ const submitForm = async () => {
 
         await fetchCategories();
         closeForm();
+        showToast(
+            isEditing.value
+                ? "Category updated successfully."
+                : "Category created successfully.",
+        );
     } catch (err) {
         if (err.response?.data?.errors) {
             validationErrors.value = err.response.data.errors;
         } else if (err.response?.data?.message) {
-            validationErrors.value.general = [err.response.data.message];
+            const errorMsg = err.response.data.message;
+            // Show duplicate error in toast
+            if (
+                errorMsg.includes("already exists") ||
+                errorMsg.includes("duplicate")
+            ) {
+                showToast(errorMsg, "error");
+            }
+            validationErrors.value.general = [errorMsg];
         } else {
             error.value = err.message || "Failed to save category";
+            showToast("Failed to save category", "error");
         }
     } finally {
         submitting.value = false;
@@ -1216,8 +1310,12 @@ const setCategoryStatus = async (category, status) => {
             status,
         });
         await fetchCategories();
+        showToast(
+            `Category ${status === "active" ? "activated" : "archived"} successfully.`,
+        );
     } catch (err) {
         if (err.response?.data?.message) {
+            showToast(err.response.data.message, "error");
             validationErrors.value.general = [err.response.data.message];
         } else {
             error.value = err.message || "Failed to toggle category";
@@ -1246,8 +1344,10 @@ const confirmDelete = async () => {
         await adminApi.delete(`/categories/${deleteTarget.value.id}`);
         await fetchCategories();
         cancelDelete();
+        showToast("Category deleted successfully.");
     } catch (err) {
         if (err.response?.data?.message) {
+            showToast(err.response.data.message, "error");
             error.value = err.response.data.message;
         } else {
             error.value = err.message || "Failed to delete category";

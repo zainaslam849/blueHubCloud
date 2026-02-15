@@ -16,20 +16,23 @@ class CategoryController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
         $validated = $request->validate([
             'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'status' => ['nullable', 'in:active,archived'],
             'source' => ['nullable', 'in:ai,admin'],
             'search' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
-        // Admin can filter by specific company_id, otherwise default to current company
-        $companyId = $validated['company_id'] ?? $company->id;
+        $perPage = $validated['per_page'] ?? 25;
 
-        $categories = CallCategory::withTrashed()
-            ->where('company_id', $companyId)
+        $query = CallCategory::withTrashed()
             ->with('company:id,name')
+            ->when($validated['company_id'] ?? null, function ($query, $companyId) {
+                // Filter by specific company if provided
+                $query->where('company_id', $companyId);
+            })
             ->when($validated['status'] ?? null, function ($query, $status) {
                 $query->where('status', $status);
             })
@@ -43,13 +46,19 @@ class CategoryController extends Controller
                 $query->withTrashed();
             }])
             ->orderBy('is_enabled', 'desc')
-            ->orderBy('name', 'asc')
-            ->get();
+            ->orderBy('name', 'asc');
+
+        $categories = $query->paginate($perPage);
 
         return response()->json([
-            'data' => $categories,
+            'data' => $categories->items(),
             'meta' => [
-                'total' => $categories->count(),
+                'current_page' => $categories->currentPage(),
+                'last_page' => $categories->lastPage(),
+                'per_page' => $categories->perPage(),
+                'total' => $categories->total(),
+                'from' => $categories->firstItem(),
+                'to' => $categories->lastItem(),
             ],
         ]);
     }
