@@ -80,20 +80,34 @@ class CategoryController extends Controller
         $company = $this->resolveAuthenticatedCompany();
 
         $validated = $request->validate([
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('call_categories', 'name')->where('company_id', $company->id),
             ],
             'description' => ['nullable', 'string', 'max:1000'],
             'is_enabled' => ['boolean'],
         ]);
 
+        // Use provided company_id or fall back to authenticated user's company
+        $targetCompanyId = $validated['company_id'] ?? $company->id;
+
+        // Check unique constraint for the target company
+        $existingCategory = CallCategory::where('company_id', $targetCompanyId)
+            ->where('name', $validated['name'])
+            ->exists();
+
+        if ($existingCategory) {
+            throw ValidationException::withMessages([
+                'name' => 'A category with this name already exists for this company.',
+            ]);
+        }
+
         $validated['is_enabled'] = $validated['is_enabled'] ?? true;
         $validated['source'] = 'admin';
         $validated['status'] = 'active';
-        $validated['company_id'] = $company->id;
+        $validated['company_id'] = $targetCompanyId;
 
         $category = CallCategory::create($validated);
 

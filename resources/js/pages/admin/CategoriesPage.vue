@@ -202,7 +202,6 @@
                             <th class="admin-table__th">Name</th>
                             <th class="admin-table__th">Source</th>
                             <th class="admin-table__th">Status</th>
-                            <th class="admin-table__th">Sub-cats</th>
                             <th class="admin-table__th">Created</th>
                             <th
                                 class="admin-table__th"
@@ -285,9 +284,6 @@
                                         <span>Deleted</span>
                                     </BaseBadge>
                                 </div>
-                            </td>
-                            <td class="admin-table__td" data-label="Sub-cats">
-                                {{ category.sub_categories_count ?? 0 }}
                             </td>
                             <td class="admin-table__td" data-label="Created">
                                 {{ formatDate(category.created_at) }}
@@ -462,6 +458,39 @@
                             >
                                 The "General" category is the default and cannot
                                 be edited or deleted.
+                            </div>
+
+                            <!-- Company field -->
+                            <div class="admin-field">
+                                <label for="company_id" class="admin-field__label">
+                                    Company *
+                                </label>
+                                <select
+                                    id="company_id"
+                                    v-model.number="formData.company_id"
+                                    class="admin-input admin-input--select"
+                                    :disabled="isEditing"
+                                >
+                                    <option value="" disabled>Select Company</option>
+                                    <option
+                                        v-for="company in companies"
+                                        :key="company.id"
+                                        :value="company.id"
+                                    >
+                                        {{ company.name }}
+                                    </option>
+                                </select>
+                                <div
+                                    v-if="validationErrors.company_id"
+                                    class="admin-field__error"
+                                >
+                                    <div
+                                        v-for="error in validationErrors.company_id"
+                                        :key="error"
+                                    >
+                                        {{ error }}
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Name field -->
@@ -903,6 +932,7 @@ const formData = ref({
     name: "",
     description: "",
     is_enabled: true,
+    company_id: "",
 });
 
 // Computed
@@ -947,7 +977,9 @@ const isGeneralCategory = computed(() => {
 });
 
 const isFormValid = computed(() => {
-    return formData.value.name.trim().length > 0;
+    const hasName = formData.value.name.trim().length > 0;
+    const hasCompany = isEditing.value || formData.value.company_id !== "";
+    return hasName && hasCompany;
 });
 
 // Methods
@@ -1042,6 +1074,7 @@ const openAddForm = () => {
         name: "",
         description: "",
         is_enabled: true,
+        company_id: filterCompany.value || "",
     };
     validationErrors.value = {};
 };
@@ -1123,6 +1156,7 @@ const openEditForm = (category) => {
         name: category.name,
         description: category.description || "",
         is_enabled: category.is_enabled,
+        company_id: category.company_id,
     };
     validationErrors.value = {};
 };
@@ -1133,6 +1167,7 @@ const closeForm = () => {
         name: "",
         description: "",
         is_enabled: true,
+        company_id: "",
     };
     validationErrors.value = {};
 };
@@ -1155,6 +1190,7 @@ const submitForm = async () => {
                 name: formData.value.name,
                 description: formData.value.description || null,
                 is_enabled: formData.value.is_enabled,
+                company_id: formData.value.company_id,
             });
         }
 
