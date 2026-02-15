@@ -1,4 +1,9 @@
 <template>
+    <!-- Top Loading Bar -->
+    <div v-if="isLoading" class="admin-topLoader">
+        <div class="admin-topLoader__bar"></div>
+    </div>
+
     <div v-if="isAuthShell" class="admin-authShell">
         <RouterView v-slot="{ Component }">
             <Transition name="admin-route" mode="out-in">
@@ -40,13 +45,17 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import SidebarNav from "../../components/admin/SidebarNav.vue";
 import TopBar from "../../components/admin/TopBar.vue";
 import adminApi from "../../router/admin/api";
 
 const route = useRoute();
+const router = useRouter();
+
+const isLoading = ref(false);
+let loadingTimeout = null;
 
 const isAuthShell = computed(() => {
     if (!route.name) return true;
@@ -129,10 +138,35 @@ function handleSettingsUpdated(event) {
 onMounted(() => {
     loadSettings();
     window.addEventListener("admin-settings-updated", handleSettingsUpdated);
+
+    // Router loading bar
+    router.beforeEach((to, from) => {
+        // Show loading bar only if navigating between different routes
+        if (to.path !== from.path) {
+            // Small delay to avoid flashing for instant navigations
+            loadingTimeout = setTimeout(() => {
+                isLoading.value = true;
+            }, 100);
+        }
+    });
+
+    router.afterEach(() => {
+        // Clear timeout if navigation completed quickly
+        if (loadingTimeout) {
+            clearTimeout(loadingTimeout);
+            loadingTimeout = null;
+        }
+        // Hide loading bar
+        isLoading.value = false;
+    });
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener("admin-settings-updated", handleSettingsUpdated);
+    if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        loadingTimeout = null;
+    }
 });
 
 const navItems = [
