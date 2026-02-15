@@ -35,7 +35,13 @@ const showForm = ref(false);
 const isEditing = ref(false);
 const submitting = ref(false);
 const validationErrors = ref<ValidationErrors>({});
+
+// Filter state
+const showFilterModal = ref(false);
 const selectedCompanyFilter = ref<number | null>(null);
+const selectedStatusFilter = ref<string>("all");
+const selectedSourceFilter = ref<string>("all");
+const searchQuery = ref("");
 
 const formData = ref<FormState>({
     name: "",
@@ -44,13 +50,44 @@ const formData = ref<FormState>({
 });
 
 // Computed
-const filteredCategories = computed(() => {
-    if (selectedCompanyFilter.value === null) {
-        return categories.value;
-    }
-    return categories.value.filter(
-        (cat) => cat.company_id === selectedCompanyFilter.value,
+const selectedCompanyName = computed(() => {
+    if (!selectedCompanyFilter.value) return "All Clients";
+    const company = companies.value.find(
+        (c) => c.id === selectedCompanyFilter.value
     );
+    return company?.name || "Unknown";
+});
+
+const filteredCategories = computed(() => {
+    let filtered = categories.value;
+
+    // Filter by company
+    if (selectedCompanyFilter.value !== null) {
+        filtered = filtered.filter(
+            (cat) => cat.company_id === selectedCompanyFilter.value
+        );
+    }
+
+    // Filter by status (is_enabled)
+    if (selectedStatusFilter.value === "enabled") {
+        filtered = filtered.filter((cat) => cat.is_enabled && !cat.deleted_at);
+    } else if (selectedStatusFilter.value === "disabled") {
+        filtered = filtered.filter((cat) => !cat.is_enabled && !cat.deleted_at);
+    } else if (selectedStatusFilter.value === "deleted") {
+        filtered = filtered.filter((cat) => cat.deleted_at);
+    } else if (selectedStatusFilter.value === "active") {
+        filtered = filtered.filter((cat) => !cat.deleted_at);
+    }
+
+    // Filter by search
+    if (searchQuery.value) {
+        const query = searchQuery.value.toLowerCase();
+        filtered = filtered.filter((cat) =>
+            cat.name.toLowerCase().includes(query)
+        );
+    }
+
+    return filtered;
 });
 
 const sortedCategories = computed(() => {
@@ -86,7 +123,7 @@ const fetchCategories = async () => {
         loading.value = true;
         error.value = null;
         const response = await categoriesApi.getAll(
-            selectedCompanyFilter.value || undefined,
+            selectedCompanyFilter.value || undefined
         );
         categories.value = response.data;
     } catch (err) {
@@ -95,6 +132,28 @@ const fetchCategories = async () => {
     } finally {
         loading.value = false;
     }
+};
+
+const toggleFilterModal = () => {
+    showFilterModal.value = !showFilterModal.value;
+};
+
+const closeFilterModal = () => {
+    showFilterModal.value = false;
+};
+
+const resetFilters = () => {
+    selectedCompanyFilter.value = null;
+    selectedStatusFilter.value = "all";
+    selectedSourceFilter.value = "all";
+    searchQuery.value = "";
+    fetchCategories();
+    closeFilterModal();
+};
+
+const applyFilters = () => {
+    fetchCategories();
+    closeFilterModal();
 };
 
 const openAddForm = () => {
@@ -253,28 +312,119 @@ onMounted(() => {
                 <div
                     class="flex flex-col gap-4 md:flex-row md:justify-between md:items-center"
                 >
-                    <div class="flex-1">
-                        <label
-                            for="company-filter"
-                            class="block text-sm font-medium mb-2"
+                    <div class="relative">
+                        <BaseButton
+                            @click="toggleFilterModal"
+                            class="bg-gray-200 text-gray-800 hover:bg-gray-300 inline-flex items-center gap-2"
                         >
-                            Filter by Client
-                        </label>
-                        <select
-                            id="company-filter"
-                            v-model.number="selectedCompanyFilter"
-                            @change="fetchCategories"
-                            class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            <option :value="null">All Clients</option>
-                            <option
-                                v-for="company in companies"
-                                :key="company.id"
-                                :value="company.id"
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                                class="w-4 h-4"
                             >
-                                {{ company.name }}
-                            </option>
-                        </select>
+                                <path
+                                    d="M4 5H20L14 12V19L10 21V12L4 5Z"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                            Filter
+                        </BaseButton>
+
+                        <!-- Filter Popup Modal -->
+                        <div
+                            v-if="showFilterModal"
+                            class="absolute top-12 left-0 z-50 bg-white border border-gray-200 rounded-lg shadow-lg min-w-96"
+                        >
+                            <div class="p-4 border-b border-gray-200">
+                                <h3 class="font-semibold text-sm">Filter Options</h3>
+                            </div>
+
+                            <div class="p-4 space-y-4">
+                                <!-- Company Filter -->
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">
+                                        Client
+                                    </label>
+                                    <select
+                                        v-model.number="selectedCompanyFilter"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option :value="null">All Clients</option>
+                                        <option
+                                            v-for="company in companies"
+                                            :key="company.id"
+                                            :value="company.id"
+                                        >
+                                            {{ company.name }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <!-- Status Filter -->
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">
+                                        Status
+                                    </label>
+                                    <select
+                                        v-model="selectedStatusFilter"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="active">Active (Not Deleted)</option>
+                                        <option value="enabled">Enabled</option>
+                                        <option value="disabled">Disabled</option>
+                                        <option value="deleted">Deleted</option>
+                                    </select>
+                                </div>
+
+                                <!-- Source Filter -->
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">
+                                        Source
+                                    </label>
+                                    <select
+                                        v-model="selectedSourceFilter"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="ai">AI Generated</option>
+                                        <option value="admin">Manual</option>
+                                    </select>
+                                </div>
+
+                                <!-- Search Filter -->
+                                <div>
+                                    <label class="block text-sm font-medium mb-2">
+                                        Search
+                                    </label>
+                                    <input
+                                        v-model="searchQuery"
+                                        type="text"
+                                        placeholder="Search by name"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="p-4 border-t border-gray-200 flex gap-2 justify-end">
+                                <BaseButton
+                                    @click="resetFilters"
+                                    class="bg-gray-200 text-gray-800 hover:bg-gray-300"
+                                >
+                                    Reset
+                                </BaseButton>
+                                <BaseButton
+                                    @click="applyFilters"
+                                    class="bg-blue-600 text-white hover:bg-blue-700"
+                                >
+                                    Apply
+                                </BaseButton>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="text-sm text-gray-600">
@@ -343,20 +493,20 @@ onMounted(() => {
                                 </td>
                                 <td class="px-4 py-3">
                                     <BaseBadge
-                                        v-if="category.is_enabled"
+                                        v-if="category.is_enabled && !category.deleted_at"
                                         class="bg-green-100 text-green-800"
                                     >
                                         Enabled
                                     </BaseBadge>
                                     <BaseBadge
-                                        v-else
+                                        v-else-if="!category.is_enabled && !category.deleted_at"
                                         class="bg-gray-100 text-gray-800"
                                     >
                                         Disabled
                                     </BaseBadge>
                                     <BaseBadge
                                         v-if="category.deleted_at"
-                                        class="ml-2 bg-red-100 text-red-800"
+                                        class="bg-red-100 text-red-800"
                                     >
                                         Deleted
                                     </BaseBadge>
@@ -419,10 +569,10 @@ onMounted(() => {
 
                 <!-- Empty state -->
                 <div
-                    v-if="!loading && categories.length === 0"
+                    v-if="!loading && sortedCategories.length === 0"
                     class="py-8 text-center text-gray-500"
                 >
-                    No categories yet.
+                    No categories match the current filters.
                 </div>
             </div>
         </Card>
