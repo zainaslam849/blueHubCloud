@@ -131,11 +131,6 @@ class CategoryController extends Controller
      */
     public function show(CallCategory $category): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
-        }
-
         return response()->json([
             'data' => $category,
         ]);
@@ -146,11 +141,6 @@ class CategoryController extends Controller
      */
     public function update(Request $request, CallCategory $category): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
-        }
-
         // Prevent editing the "General" category
         if ($category->isGeneral()) {
             throw ValidationException::withMessages([
@@ -259,11 +249,6 @@ class CategoryController extends Controller
      */
     public function destroy(CallCategory $category): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
-        }
-
         // Prevent deleting the "General" category
         if ($category->isGeneral()) {
             throw ValidationException::withMessages([
@@ -284,10 +269,6 @@ class CategoryController extends Controller
     public function restore(int $id): JsonResponse
     {
         $category = CallCategory::onlyTrashed()->findOrFail($id);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
-        }
 
         $category->restore();
 
@@ -303,10 +284,6 @@ class CategoryController extends Controller
     public function forceDelete(int $id): JsonResponse
     {
         $category = CallCategory::withTrashed()->findOrFail($id);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
-        }
 
         // Prevent force-deleting the "General" category
         if ($category->isGeneral()) {
