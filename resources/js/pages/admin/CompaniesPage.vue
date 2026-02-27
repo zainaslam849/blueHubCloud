@@ -25,6 +25,33 @@
         </header>
 
         <section class="admin-card admin-card--glass">
+            <!-- Search and Filter Toolbar -->
+            <div class="admin-companiesToolbar">
+                <div class="admin-field admin-companiesToolbar__search" style="flex: 1;">
+                    <label class="admin-field__label" for="companies-search">
+                        Search
+                    </label>
+                    <input
+                        id="companies-search"
+                        v-model="search"
+                        class="admin-input"
+                        type="search"
+                        autocomplete="off"
+                        placeholder="Company name, server ID, tenant code…"
+                    />
+                </div>
+                <BaseButton
+                    variant="secondary"
+                    size="sm"
+                    :loading="loading"
+                    @click="refresh"
+                    style="align-self: flex-end; margin-bottom: 8px"
+                >
+                    <span style="margin-right: 4px">↻</span>
+                    Refresh
+                </BaseButton>
+            </div>
+
             <div v-if="error" class="admin-alert admin-alert--error">
                 {{ error }}
             </div>
@@ -35,7 +62,7 @@
                 </div>
             </div>
 
-            <div v-else-if="companies.length === 0" class="admin-tableWrap">
+            <div v-else-if="rows.length === 0" class="admin-tableWrap">
                 <div class="admin-emptyState">
                     <p>No companies found.</p>
                 </div>
@@ -45,11 +72,29 @@
                 <table class="admin-table">
                     <thead>
                         <tr>
-                            <th class="admin-table__th">Name</th>
+                            <th class="admin-table__th">
+                                <button
+                                    type="button"
+                                    class="admin-companiesSortBtn"
+                                    @click="toggleSort('name')"
+                                >
+                                    Name
+                                    <span class="admin-companiesSortBtn__chev">{{ sortGlyph('name') }}</span>
+                                </button>
+                            </th>
                             <th class="admin-table__th">Server ID</th>
                             <th class="admin-table__th">Tenant Code</th>
                             <th class="admin-table__th">Package</th>
-                            <th class="admin-table__th">Status</th>
+                            <th class="admin-table__th">
+                                <button
+                                    type="button"
+                                    class="admin-companiesSortBtn"
+                                    @click="toggleSort('status')"
+                                >
+                                    Status
+                                    <span class="admin-companiesSortBtn__chev">{{ sortGlyph('status') }}</span>
+                                </button>
+                            </th>
                             <th
                                 class="admin-table__th"
                                 style="text-align: right"
@@ -60,7 +105,7 @@
                     </thead>
                     <tbody class="admin-table__body">
                         <tr
-                            v-for="company in companies"
+                            v-for="company in rows"
                             :key="company.id"
                             class="admin-table__tr"
                         >
@@ -142,6 +187,19 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Pagination Footer -->
+            <div class="admin-companiesFooter">
+                <BasePagination
+                    v-model:page="page"
+                    v-model:pageSize="pageSize"
+                    :total="meta.total"
+                    :disabled="loading"
+                    :page-size-options="[10, 25, 50, 100, 200]"
+                    hint="Server-side pagination"
+                    @change="fetchCompanies"
+                />
             </div>
         </section>
 
@@ -589,9 +647,22 @@
 <script setup>
 import { onMounted, ref, reactive, watch } from "vue";
 import adminApi from "../../router/admin/api";
-import { BaseBadge, BaseButton } from "../../components/admin/base";
+import { BaseBadge, BaseButton, BasePagination } from "../../components/admin/base";
 
-const companies = ref([]);
+// Pagination and search state
+const search = ref("");
+const page = ref(1);
+const pageSize = ref(25);
+const sortBy = ref("name");
+const sortDirection = ref("asc");
+const rows = ref([]);
+const meta = ref({
+    currentPage: 1,
+    perPage: 25,
+    total: 0,
+    lastPage: 1,
+});
+
 const loading = ref(true);
 const error = ref("");
 const pbxProviders = ref([]);
@@ -635,17 +706,48 @@ const showDeleteConfirm = ref(false);
 const deleteTarget = ref(null);
 const deleting = ref(false);
 
-async function loadCompanies() {
+async function fetchCompanies() {
     loading.value = true;
     error.value = "";
     try {
-        const res = await adminApi.get("/companies");
-        companies.value = res?.data?.data || [];
+        const params = {
+            page: page.value,
+            per_page: pageSize.value,
+            search: search.value || undefined,
+            sort: sortBy.value,
+            direction: sortDirection.value,
+        };
+
+        const res = await adminApi.get("/companies", { params });
+        const payload = res?.data;
+        rows.value = Array.isArray(payload?.data) ? payload.data : [];
+        meta.value = payload?.meta ?? meta.value;
     } catch (e) {
+        rows.value = [];
         error.value = e?.response?.data?.message || "Failed to load companies.";
     } finally {
         loading.value = false;
     }
+}
+
+function sortGlyph(key) {
+    if (sortBy.value !== key) return "";
+    return sortDirection.value === "asc" ? "▲" : "▼";
+}
+
+function toggleSort(key) {
+    if (sortBy.value === key) {
+        sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
+    } else {
+        sortBy.value = key;
+        sortDirection.value = "asc";
+    }
+    page.value = 1;
+    fetchCompanies();
+}
+
+function refresh() {
+    fetchCompanies();
 }
 
 async function loadPbxProviders() {
@@ -682,6 +784,19 @@ watch(
         if (match && match.tenant_code) {
             formData.tenant_code = match.tenant_code;
         }
+    },
+);
+
+// Watch search and reset pagination
+let searchTimeout;
+watch(
+    () => search.value,
+    () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            page.value = 1;
+            fetchCompanies();
+        }, 300);
     },
 );
 
@@ -739,7 +854,7 @@ async function submitForm() {
                 ? "Company updated successfully."
                 : "Company created successfully.",
         );
-        await loadCompanies();
+        await fetchCompanies();
         closeForm();
     } catch (err) {
         if (err.response?.data?.errors) {
@@ -779,7 +894,7 @@ async function performSync() {
         });
         syncResult.value = res?.data || {};
         showToast("Tenants synced successfully!");
-        await loadCompanies();
+        await fetchCompanies();
     } catch (err) {
         syncError.value =
             err?.response?.data?.message || "Failed to sync tenants";
@@ -870,6 +985,6 @@ function showToast(message, type = "success") {
 
 onMounted(async () => {
     await loadPbxProviders();
-    await loadCompanies();
+    await fetchCompanies();
 });
 </script>

@@ -3381,6 +3381,64 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     margin-top: 12px;
 }
 
+/* Companies module */
+.admin-companiesToolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.admin-companiesToolbar__search {
+    flex: 1;
+    min-width: 200px;
+}
+
+.admin-companiesSortBtn {
+    appearance: none;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 750;
+    padding: 6px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition:
+        background-color 140ms ease,
+        border-color 140ms ease,
+        color 140ms ease,
+        transform 140ms ease;
+}
+
+.admin-companiesSortBtn:hover {
+    color: var(--text-primary);
+    background: var(--accent-hover-bg);
+    border-color: var(--accent-border);
+    transform: translateY(-1px);
+}
+
+.admin-companiesSortBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.admin-companiesSortBtn__chev {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.admin-companiesFooter {
+    margin-top: 12px;
+}
+
 /* Transcriptions module */
 /* Premium Transcriptions Header */
 .admin-transcriptionsHeader {

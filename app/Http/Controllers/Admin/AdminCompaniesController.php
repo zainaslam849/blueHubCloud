@@ -24,33 +24,87 @@ class AdminCompaniesController extends Controller
     }
 
     /**
-     * List all companies with their PBX account info
+     * List all companies with their PBX account info - with pagination, search, and sorting
      */
     public function index(Request $request): JsonResponse
     {
-        $companies = Company::query()
+        $validated = $request->validate([
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
+            'search' => ['sometimes', 'string', 'max:255'],
+            'sort' => ['sometimes', 'in:name,status,timezone,created_at'],
+            'direction' => ['sometimes', 'in:asc,desc'],
+            'status' => ['sometimes', 'in:active,inactive'],
+        ]);
+
+        $page = $validated['page'] ?? 1;
+        $perPage = $validated['per_page'] ?? 25;
+        $search = $validated['search'] ?? '';
+        $sort = $validated['sort'] ?? 'name';
+        $direction = $validated['direction'] ?? 'asc';
+        $statusFilter = $validated['status'] ?? null;
+
+        $query = Company::query()
             ->with('companyPbxAccounts.pbxProvider:id,name')
-            ->select('id', 'name', 'status', 'timezone', 'created_at')
-            ->orderBy('name')
-            ->get()
-            ->map(function ($company) {
-                $account = $company->companyPbxAccounts->first();
+            ->select('id', 'name', 'status', 'timezone', 'created_at');
 
-                return [
-                    'id' => $company->id,
-                    'name' => $company->name,
-                    'status' => $company->status,
-                    'timezone' => $company->timezone,
-                    'server_id' => $account?->server_id,
-                    'tenant_code' => $account?->tenant_code,
-                    'package_name' => $account?->package_name,
-                    'pbx_provider_id' => $account?->pbx_provider_id,
-                    'pbx_provider_name' => $account?->pbxProvider?->name,
-                    'created_at' => $company->created_at?->toISOString(),
-                ];
+        // Apply search
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%')
+                    ->orWhereHas('companyPbxAccounts', function ($accountQ) use ($search) {
+                        $accountQ->where('server_id', 'like', '%' . $search . '%')
+                            ->orWhere('tenant_code', 'like', '%' . $search . '%');
+                    });
             });
+        }
 
-        return response()->json(['data' => $companies]);
+        // Apply status filter
+        if (!empty($statusFilter)) {
+            $query->where('status', $statusFilter);
+        }
+
+        // Apply sorting
+        if (in_array($sort, ['name', 'status', 'timezone', 'created_at'])) {
+            $query->orderBy($sort, $direction);
+        } else {
+            $query->orderBy('name', 'asc');
+        }
+
+        // Get total count before pagination
+        $total = $query->count();
+
+        // Apply pagination
+        $companies = $query->paginate($perPage, ['*'], 'page', $page)
+            ->items();
+
+        // Map to response format
+        $companiesData = array_map(function ($company) {
+            $account = $company->companyPbxAccounts->first();
+
+            return [
+                'id' => $company->id,
+                'name' => $company->name,
+                'status' => $company->status,
+                'timezone' => $company->timezone,
+                'server_id' => $account?->server_id,
+                'tenant_code' => $account?->tenant_code,
+                'package_name' => $account?->package_name,
+                'pbx_provider_id' => $account?->pbx_provider_id,
+                'pbx_provider_name' => $account?->pbxProvider?->name,
+                'created_at' => $company->created_at?->toISOString(),
+            ];
+        }, $companies);
+
+        return response()->json([
+            'data' => $companiesData,
+            'meta' => [
+                'currentPage' => $page,
+                'perPage' => $perPage,
+                'total' => $total,
+                'lastPage' => (int) ceil($total / $perPage),
+            ],
+        ]);
     }
 
     /**
