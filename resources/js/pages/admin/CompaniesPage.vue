@@ -258,24 +258,20 @@
                                     class="admin-field__label"
                                     for="company-server"
                                 >
-                                    PBXware Server
+                                    PBXware Server ID
                                 </label>
-                                <select
+                                <input
                                     id="company-server"
                                     v-model="formData.server_id"
-                                    class="admin-input admin-input--select"
-                                >
-                                    <option value="">— No Server —</option>
-                                    <option
-                                        v-for="tenant in currentAvailableTenants"
-                                        :key="tenant.server_id"
-                                        :value="tenant.server_id"
-                                    >
-                                        {{ tenant.name }} ({{
-                                            tenant.server_id
-                                        }})
-                                    </option>
-                                </select>
+                                    class="admin-input"
+                                    type="text"
+                                    placeholder="e.g., 3, 83, 23"
+                                />
+                                <p class="admin-field__help">
+                                    Enter the Server ID from PBXware. This is
+                                    automatically populated when you sync
+                                    tenants.
+                                </p>
                                 <span
                                     v-if="validationErrors.server_id"
                                     class="admin-field__error"
@@ -307,20 +303,46 @@
                             </div>
 
                             <div class="admin-field">
-                                <label class="admin-field__label">
-                                    <input
-                                        v-model="formData.status"
-                                        type="checkbox"
-                                        :checked="formData.status === 'active'"
-                                        @change="
-                                            formData.status =
-                                                formData.status === 'active'
-                                                    ? 'inactive'
-                                                    : 'active'
-                                        "
-                                    />
-                                    <span>Active</span>
+                                <label
+                                    class="admin-field__label"
+                                    for="company-status"
+                                >
+                                    Status
                                 </label>
+                                <div class="admin-toggle-wrapper">
+                                    <label class="admin-toggle">
+                                        <input
+                                            id="company-status"
+                                            type="checkbox"
+                                            :checked="
+                                                formData.status === 'active'
+                                            "
+                                            @change="
+                                                formData.status =
+                                                    formData.status === 'active'
+                                                        ? 'inactive'
+                                                        : 'active'
+                                            "
+                                        />
+                                        <span
+                                            class="admin-toggle__slider"
+                                        ></span>
+                                        <span class="admin-toggle__label">
+                                            {{
+                                                formData.status === "active"
+                                                    ? "Active"
+                                                    : "Inactive"
+                                            }}
+                                        </span>
+                                    </label>
+                                    <p
+                                        class="admin-field__help"
+                                        style="margin-top: 0.5rem"
+                                    >
+                                        Only active companies will process PBX
+                                        call records.
+                                    </p>
+                                </div>
                             </div>
                         </div>
 

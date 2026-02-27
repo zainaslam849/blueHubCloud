@@ -1705,6 +1705,93 @@ html[data-theme="dark"] .admin-input--select {
     color: var(--status-failed-text);
 }
 
+/* Field Help Text */
+.admin-field__help {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+/* Field Error Text */
+.admin-field__error {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #dc2626;
+    font-weight: 600;
+    margin: 0;
+}
+
+html[data-theme="dark"] .admin-field__error {
+    color: #fca5a5;
+}
+
+/* Toggle Switch */
+.admin-toggle-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.admin-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.admin-toggle input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.admin-toggle__slider {
+    position: relative;
+    width: 52px;
+    height: 30px;
+    background: var(--border-default);
+    border-radius: 999px;
+    transition: background-color 200ms ease;
+    border: 1px solid var(--border-soft);
+}
+
+.admin-toggle__slider::before {
+    content: "";
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    left: 3px;
+    top: 3px;
+    background: var(--bg-surface);
+    border-radius: 50%;
+    transition: transform 200ms ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.admin-toggle input[type="checkbox"]:checked + .admin-toggle__slider {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.admin-toggle input[type="checkbox"]:checked + .admin-toggle__slider::before {
+    transform: translateX(22px);
+}
+
+.admin-toggle input[type="checkbox"]:focus-visible + .admin-toggle__slider {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.admin-toggle__label {
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--text-primary);
+}
+
 .admin-btn {
     appearance: none;
     border: 1px solid var(--accent-border);
