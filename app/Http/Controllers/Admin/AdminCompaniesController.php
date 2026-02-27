@@ -286,27 +286,35 @@ class AdminCompaniesController extends Controller
      */
     public function availableTenants(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'pbx_provider_id' => ['required', 'integer', 'exists:pbx_providers,id'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'pbx_provider_id' => ['required', 'integer', 'exists:pbx_providers,id'],
+            ]);
 
-        $tenants = PbxwareTenant::where('pbx_provider_id', $validated['pbx_provider_id'])
-            ->leftJoin('company_pbx_accounts', function ($join) {
-                $join->on('pbxware_tenants.server_id', '=', 'company_pbx_accounts.server_id')
-                    ->on('pbxware_tenants.pbx_provider_id', '=', 'company_pbx_accounts.pbx_provider_id');
-            })
-            ->whereNull('company_pbx_accounts.id') // Only unmapped tenants
-            ->select(
-                'pbxware_tenants.server_id',
-                'pbxware_tenants.tenant_code',
-                'pbxware_tenants.name',
-                'pbxware_tenants.package_name',
-                'pbxware_tenants.synced_at'
-            )
-            ->orderBy('pbxware_tenants.name')
-            ->get();
+            $tenants = PbxwareTenant::where('pbx_provider_id', $validated['pbx_provider_id'])
+                ->leftJoin('company_pbx_accounts', function ($join) use ($validated) {
+                    $join->on('pbxware_tenants.server_id', '=', 'company_pbx_accounts.server_id')
+                        ->where('company_pbx_accounts.pbx_provider_id', '=', $validated['pbx_provider_id']);
+                })
+                ->whereNull('company_pbx_accounts.id') // Only unmapped tenants
+                ->select(
+                    'pbxware_tenants.server_id',
+                    'pbxware_tenants.tenant_code',
+                    'pbxware_tenants.name',
+                    'pbxware_tenants.package_name',
+                    'pbxware_tenants.synced_at'
+                )
+                ->orderBy('pbxware_tenants.name')
+                ->get();
 
-        return response()->json(['data' => $tenants]);
+            return response()->json(['data' => $tenants]);
+        } catch (\Exception $e) {
+            Log::error('Failed to load available tenants', [
+                'error' => $e->getMessage(),
+                'pbx_provider_id' => $request->input('pbx_provider_id'),
+            ]);
+            return response()->json(['data' => []], 200);
+        }
     }
 
     /**

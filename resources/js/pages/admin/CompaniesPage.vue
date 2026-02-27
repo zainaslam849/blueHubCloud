@@ -91,16 +91,16 @@
                                 <span v-else class="text-muted">—</span>
                             </td>
                             <td class="admin-table__td" data-label="Status">
-                                <BaseBadge
-                                    :variant="
+                                <span
+                                    :class="[
+                                        'admin-status-badge',
                                         company.status === 'active'
-                                            ? 'success'
-                                            : 'secondary'
-                                    "
-                                    size="sm"
+                                            ? 'admin-status-badge--active'
+                                            : 'admin-status-badge--inactive'
+                                    ]"
                                 >
-                                    {{ company.status }}
-                                </BaseBadge>
+                                    {{ company.status === 'active' ? 'Active' : 'Inactive' }}
+                                </span>
                             </td>
                             <td
                                 class="admin-table__td admin-table__td--actions"
@@ -216,13 +216,29 @@
                                 >
                                     Timezone
                                 </label>
-                                <input
+                                <select
                                     id="company-timezone"
                                     v-model="formData.timezone"
-                                    class="admin-input"
-                                    type="text"
-                                    placeholder="e.g., UTC, America/New_York"
-                                />
+                                    class="admin-input admin-input--select"
+                                >
+                                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                                    <option value="America/New_York">America/New_York (EST/EDT)</option>
+                                    <option value="America/Chicago">America/Chicago (CST/CDT)</option>
+                                    <option value="America/Denver">America/Denver (MST/MDT)</option>
+                                    <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                                    <option value="America/Phoenix">America/Phoenix (MST)</option>
+                                    <option value="America/Toronto">America/Toronto</option>
+                                    <option value="America/Vancouver">America/Vancouver</option>
+                                    <option value="Europe/London">Europe/London (GMT/BST)</option>
+                                    <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
+                                    <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
+                                    <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                                    <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                                    <option value="Australia/Sydney">Australia/Sydney (AEDT/AEST)</option>
+                                    <option value="Pacific/Auckland">Pacific/Auckland (NZDT/NZST)</option>
+                                </select>
                             </div>
 
                             <div class="admin-field">
