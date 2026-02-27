@@ -27,7 +27,10 @@
         <section class="admin-card admin-card--glass">
             <!-- Search and Filter Toolbar -->
             <div class="admin-companiesToolbar">
-                <div class="admin-field admin-companiesToolbar__search" style="flex: 1;">
+                <div
+                    class="admin-field admin-companiesToolbar__search"
+                    style="flex: 1"
+                >
                     <label class="admin-field__label" for="companies-search">
                         Search
                     </label>
@@ -79,7 +82,10 @@
                                     @click="toggleSort('name')"
                                 >
                                     Name
-                                    <span class="admin-companiesSortBtn__chev">{{ sortGlyph('name') }}</span>
+                                    <span
+                                        class="admin-companiesSortBtn__chev"
+                                        >{{ sortGlyph("name") }}</span
+                                    >
                                 </button>
                             </th>
                             <th class="admin-table__th">Server ID</th>
@@ -92,7 +98,10 @@
                                     @click="toggleSort('status')"
                                 >
                                     Status
-                                    <span class="admin-companiesSortBtn__chev">{{ sortGlyph('status') }}</span>
+                                    <span
+                                        class="admin-companiesSortBtn__chev"
+                                        >{{ sortGlyph("status") }}</span
+                                    >
                                 </button>
                             </th>
                             <th
@@ -141,10 +150,14 @@
                                         'admin-status-badge',
                                         company.status === 'active'
                                             ? 'admin-status-badge--active'
-                                            : 'admin-status-badge--inactive'
+                                            : 'admin-status-badge--inactive',
                                     ]"
                                 >
-                                    {{ company.status === 'active' ? 'Active' : 'Inactive' }}
+                                    {{
+                                        company.status === "active"
+                                            ? "Active"
+                                            : "Inactive"
+                                    }}
                                 </span>
                             </td>
                             <td
@@ -279,23 +292,57 @@
                                     v-model="formData.timezone"
                                     class="admin-input admin-input--select"
                                 >
-                                    <option value="UTC">UTC (Coordinated Universal Time)</option>
-                                    <option value="America/New_York">America/New_York (EST/EDT)</option>
-                                    <option value="America/Chicago">America/Chicago (CST/CDT)</option>
-                                    <option value="America/Denver">America/Denver (MST/MDT)</option>
-                                    <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
-                                    <option value="America/Phoenix">America/Phoenix (MST)</option>
-                                    <option value="America/Toronto">America/Toronto</option>
-                                    <option value="America/Vancouver">America/Vancouver</option>
-                                    <option value="Europe/London">Europe/London (GMT/BST)</option>
-                                    <option value="Europe/Paris">Europe/Paris (CET/CEST)</option>
-                                    <option value="Europe/Berlin">Europe/Berlin (CET/CEST)</option>
-                                    <option value="Asia/Dubai">Asia/Dubai (GST)</option>
-                                    <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                                    <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-                                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                                    <option value="Australia/Sydney">Australia/Sydney (AEDT/AEST)</option>
-                                    <option value="Pacific/Auckland">Pacific/Auckland (NZDT/NZST)</option>
+                                    <option value="UTC">
+                                        UTC (Coordinated Universal Time)
+                                    </option>
+                                    <option value="America/New_York">
+                                        America/New_York (EST/EDT)
+                                    </option>
+                                    <option value="America/Chicago">
+                                        America/Chicago (CST/CDT)
+                                    </option>
+                                    <option value="America/Denver">
+                                        America/Denver (MST/MDT)
+                                    </option>
+                                    <option value="America/Los_Angeles">
+                                        America/Los_Angeles (PST/PDT)
+                                    </option>
+                                    <option value="America/Phoenix">
+                                        America/Phoenix (MST)
+                                    </option>
+                                    <option value="America/Toronto">
+                                        America/Toronto
+                                    </option>
+                                    <option value="America/Vancouver">
+                                        America/Vancouver
+                                    </option>
+                                    <option value="Europe/London">
+                                        Europe/London (GMT/BST)
+                                    </option>
+                                    <option value="Europe/Paris">
+                                        Europe/Paris (CET/CEST)
+                                    </option>
+                                    <option value="Europe/Berlin">
+                                        Europe/Berlin (CET/CEST)
+                                    </option>
+                                    <option value="Asia/Dubai">
+                                        Asia/Dubai (GST)
+                                    </option>
+                                    <option value="Asia/Kolkata">
+                                        Asia/Kolkata (IST)
+                                    </option>
+                                    <option value="Asia/Singapore">
+                                        Asia/Singapore (SGT)
+                                    </option>
+                                    <option value="Asia/Tokyo">
+                                        Asia/Tokyo (JST)
+                                    </option>
+                                    <option value="Australia/Sydney">
+                                        Australia/Sydney (AEDT/AEST)
+                                    </option>
+                                    <option value="Pacific/Auckland">
+                                        Pacific/Auckland (NZDT/NZST)
+                                    </option>
                                 </select>
                             </div>
 
@@ -647,7 +694,11 @@
 <script setup>
 import { onMounted, ref, reactive, watch } from "vue";
 import adminApi from "../../router/admin/api";
-import { BaseBadge, BaseButton, BasePagination } from "../../components/admin/base";
+import {
+    BaseBadge,
+    BaseButton,
+    BasePagination,
+} from "../../components/admin/base";
 
 // Pagination and search state
 const search = ref("");

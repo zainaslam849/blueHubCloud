@@ -27,6 +27,12 @@ class Kernel extends ConsoleKernel
             ->everyFiveMinutes()
             ->withoutOverlapping();
 
+        // Auto-sync PBXware tenants hourly (picks up enabled/scheduled settings)
+        $schedule->command('pbx:sync-tenants')
+            ->hourly()
+            ->withoutOverlapping()
+            ->name('pbx-tenant-sync');
+
         // Hardcoded AI category generation schedule (every week)
         $schedule->command('ai:generate-categories --company=1 --range=30')
             ->weekly()

@@ -263,6 +263,11 @@ const navItems = [
                 label: "AI Settings",
                 to: { name: "admin.settings.ai" },
             },
+            {
+                key: "settings-tenant-sync",
+                label: "Tenant Sync",
+                to: { name: "admin.settings.tenantSync" },
+            },
         ],
         requiredRoles: ["admin"],
         requiredPermissions: ["admin.settings.view"],

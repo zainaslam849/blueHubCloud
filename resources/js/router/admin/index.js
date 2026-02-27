@@ -105,6 +105,13 @@ const router = createRouter({
             component: () => import("../../pages/admin/CategoriesPage.vue"),
         },
         {
+            path: "/settings/tenant-sync",
+            name: "admin.settings.tenantSync",
+            meta: { title: "Tenant Sync Settings", breadcrumb: "Tenant Sync" },
+            component: () =>
+                import("../../pages/admin/TenantSyncSettingsPage.vue"),
+        },
+        {
             path: "/:pathMatch(.*)*",
             name: "admin.notFound",
             meta: { title: "Not found" },

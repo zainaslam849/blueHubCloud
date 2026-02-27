@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AdminCompaniesController;
 use App\Http\Controllers\Admin\AdminPbxAccountsController;
 use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
+use App\Http\Controllers\Admin\AdminTenantSyncController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\CallCategorizationController;
@@ -31,6 +32,12 @@ Route::prefix('admin/api')->group(function () {
         Route::delete('/companies/{id}', [AdminCompaniesController::class, 'destroy']);
         Route::post('/companies/sync-tenants', [AdminCompaniesController::class, 'syncTenants']);
         Route::get('/companies/available-tenants', [AdminCompaniesController::class, 'availableTenants']);
+        
+        // Tenant sync settings
+        Route::get('/tenant-sync-settings', [AdminTenantSyncController::class, 'index']);
+        Route::get('/tenant-sync-settings/{providerId}', [AdminTenantSyncController::class, 'show']);
+        Route::put('/tenant-sync-settings/{providerId}', [AdminTenantSyncController::class, 'update']);
+        Route::post('/tenant-sync-settings/{providerId}/trigger', [AdminTenantSyncController::class, 'triggerSync']);
         
         // PBX Accounts management
         Route::get('/pbx-accounts', [AdminPbxAccountsController::class, 'index']);
