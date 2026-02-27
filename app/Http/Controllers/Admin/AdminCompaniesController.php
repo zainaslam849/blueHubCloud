@@ -30,17 +30,22 @@ class AdminCompaniesController extends Controller
     {
         $companies = Company::query()
             ->with('companyPbxAccounts.pbxProvider:id,name')
-            ->select('id', 'name', 'status', 'created_at')
+            ->select('id', 'name', 'status', 'timezone', 'created_at')
             ->orderBy('name')
             ->get()
             ->map(function ($company) {
+                $account = $company->companyPbxAccounts->first();
+
                 return [
                     'id' => $company->id,
                     'name' => $company->name,
                     'status' => $company->status,
-                    'server_id' => $company->companyPbxAccounts->first()?->server_id,
-                    'tenant_code' => $company->companyPbxAccounts->first()?->tenant_code,
-                    'pbx_provider_name' => $company->companyPbxAccounts->first()?->pbxProvider?->name,
+                    'timezone' => $company->timezone,
+                    'server_id' => $account?->server_id,
+                    'tenant_code' => $account?->tenant_code,
+                    'package_name' => $account?->package_name,
+                    'pbx_provider_id' => $account?->pbx_provider_id,
+                    'pbx_provider_name' => $account?->pbxProvider?->name,
                     'created_at' => $company->created_at?->toISOString(),
                 ];
             });
@@ -59,6 +64,7 @@ class AdminCompaniesController extends Controller
             'status' => ['sometimes', 'in:active,inactive'],
             'server_id' => ['sometimes', 'string', 'max:100'],
             'pbx_provider_id' => ['sometimes', 'integer', 'exists:pbx_providers,id'],
+            'tenant_code' => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
         $company = Company::create([
@@ -98,7 +104,7 @@ class AdminCompaniesController extends Controller
                 'company_id' => $company->id,
                 'pbx_provider_id' => $validated['pbx_provider_id'],
                 'server_id' => $validated['server_id'],
-                'tenant_code' => $tenant?->tenant_code,
+                'tenant_code' => $validated['tenant_code'] ?? $tenant?->tenant_code,
                 'package_name' => $tenant?->package_name,
                 'status' => 'active',
                 'pbx_synced_at' => now(),
@@ -135,6 +141,9 @@ class AdminCompaniesController extends Controller
             $pbxProviderId = $validated['pbx_provider_id'];
             $newTenants = [];
             $existingTenants = [];
+            $createdCompanies = 0;
+            $linkedCompanies = 0;
+            $skippedCompanies = 0;
 
             // Process each tenant returned from PBXware
             foreach ($tenants as $serverId => $tenantData) {
@@ -186,12 +195,81 @@ class AdminCompaniesController extends Controller
                         'package' => $tenantData['package'] ?? null,
                     ];
                 }
+
+                CompanyPbxAccount::where('server_id', (string) $serverId)
+                    ->where('pbx_provider_id', $pbxProviderId)
+                    ->where(function ($query) use ($tenantCode, $tenantData) {
+                        $query->whereNull('tenant_code')
+                            ->orWhereNull('package_name')
+                            ->orWhere('tenant_code', '!=', $tenantCode)
+                            ->orWhere('package_name', '!=', $tenantData['package'] ?? null);
+                    })
+                    ->update([
+                        'tenant_code' => $tenantCode,
+                        'package_name' => $tenantData['package'] ?? null,
+                        'pbx_synced_at' => now(),
+                    ]);
+
+                $tenantName = $tenantData['name'] ?? null;
+                if (is_string($tenantName) && trim($tenantName) !== '') {
+                    $tenantName = trim($tenantName);
+                    $company = Company::where('name', $tenantName)->first();
+
+                    if (! $company) {
+                        $company = Company::create([
+                            'name' => $tenantName,
+                            'timezone' => 'UTC',
+                            'status' => 'inactive',
+                        ]);
+                        $createdCompanies++;
+                    }
+
+                    $providerAccountQuery = CompanyPbxAccount::where('company_id', $company->id)
+                        ->where('pbx_provider_id', $pbxProviderId);
+
+                    $existingAccount = $providerAccountQuery
+                        ->where('server_id', (string) $serverId)
+                        ->first();
+
+                    if (! $existingAccount && ! $providerAccountQuery->exists()) {
+                        $serverTaken = CompanyPbxAccount::where('server_id', (string) $serverId)
+                            ->where('pbx_provider_id', $pbxProviderId)
+                            ->where('company_id', '!=', $company->id)
+                            ->exists();
+
+                        $tenantCodeTaken = ! empty($tenantCode)
+                            ? CompanyPbxAccount::where('tenant_code', $tenantCode)
+                                ->where('server_id', '!=', (string) $serverId)
+                                ->exists()
+                            : false;
+
+                        if (! $serverTaken && ! $tenantCodeTaken) {
+                            CompanyPbxAccount::create([
+                                'company_id' => $company->id,
+                                'pbx_provider_id' => $pbxProviderId,
+                                'server_id' => (string) $serverId,
+                                'tenant_code' => $tenantCode,
+                                'package_name' => $tenantData['package'] ?? null,
+                                'status' => $company->status === 'active' ? 'active' : 'inactive',
+                                'pbx_synced_at' => now(),
+                            ]);
+                            $linkedCompanies++;
+                        } else {
+                            $skippedCompanies++;
+                        }
+                    } elseif (! $existingAccount) {
+                        $skippedCompanies++;
+                    }
+                }
             }
 
             return response()->json([
                 'message' => 'Tenants synced successfully',
                 'new_count' => count($newTenants),
                 'existing_count' => count($existingTenants),
+                'created_companies' => $createdCompanies,
+                'linked_companies' => $linkedCompanies,
+                'skipped_companies' => $skippedCompanies,
                 'new_tenants' => $newTenants,
             ]);
         } catch (PbxwareClientException $e) {
@@ -244,6 +322,7 @@ class AdminCompaniesController extends Controller
             'status' => ['sometimes', 'in:active,inactive'],
             'server_id' => ['sometimes', 'string', 'max:100'],
             'pbx_provider_id' => ['sometimes', 'integer', 'exists:pbx_providers,id'],
+            'tenant_code' => ['sometimes', 'nullable', 'string', 'max:100'],
         ]);
 
         $company->update([
@@ -272,7 +351,7 @@ class AdminCompaniesController extends Controller
                     ['company_id' => $company->id, 'pbx_provider_id' => $validated['pbx_provider_id']],
                     [
                         'server_id' => $validated['server_id'],
-                        'tenant_code' => $tenant?->tenant_code,
+                        'tenant_code' => $validated['tenant_code'] ?? $tenant?->tenant_code,
                         'package_name' => $tenant?->package_name,
                         'status' => 'active',
                         'pbx_synced_at' => now(),

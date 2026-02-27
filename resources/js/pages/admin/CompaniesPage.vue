@@ -285,6 +285,28 @@
                             </div>
 
                             <div class="admin-field">
+                                <label
+                                    class="admin-field__label"
+                                    for="company-tenant-code"
+                                >
+                                    Tenant Code
+                                </label>
+                                <input
+                                    id="company-tenant-code"
+                                    v-model="formData.tenant_code"
+                                    class="admin-input"
+                                    type="text"
+                                    placeholder="e.g., 501"
+                                />
+                                <span
+                                    v-if="validationErrors.tenant_code"
+                                    class="admin-field__error"
+                                >
+                                    {{ validationErrors.tenant_code[0] }}
+                                </span>
+                            </div>
+
+                            <div class="admin-field">
                                 <label class="admin-field__label">
                                     <input
                                         v-model="formData.status"
@@ -527,7 +549,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, reactive } from "vue";
+import { onMounted, ref, reactive, watch } from "vue";
 import adminApi from "../../router/admin/api";
 import { BaseBadge, BaseButton } from "../../components/admin/base";
 
@@ -550,6 +572,7 @@ const formData = reactive({
     status: "active",
     pbx_provider_id: "",
     server_id: "",
+    tenant_code: "",
 });
 
 const defaultFormData = {
@@ -559,6 +582,7 @@ const defaultFormData = {
     status: "active",
     pbx_provider_id: "",
     server_id: "",
+    tenant_code: "",
 };
 
 // Sync modal state
@@ -610,6 +634,19 @@ async function loadAvailableTenants(providerId) {
     }
 }
 
+watch(
+    () => formData.server_id,
+    (serverId) => {
+        if (!serverId) return;
+        const match = currentAvailableTenants.value.find(
+            (tenant) => tenant.server_id === serverId,
+        );
+        if (match && match.tenant_code) {
+            formData.tenant_code = match.tenant_code;
+        }
+    },
+);
+
 function openAddForm() {
     isEditing.value = false;
     Object.assign(formData, defaultFormData);
@@ -626,6 +663,7 @@ function openEditForm(company) {
     formData.status = company.status;
     formData.pbx_provider_id = company.pbx_provider_id || "";
     formData.server_id = company.server_id || "";
+    formData.tenant_code = company.tenant_code || "";
     validationErrors.value = {};
     loadAvailableTenants(formData.pbx_provider_id);
     showForm.value = true;
@@ -649,6 +687,7 @@ async function submitForm() {
             status: formData.status,
             pbx_provider_id: formData.pbx_provider_id || null,
             server_id: formData.server_id || null,
+            tenant_code: formData.tenant_code || null,
         };
 
         if (isEditing.value && formData.id) {
@@ -702,6 +741,7 @@ async function performSync() {
         });
         syncResult.value = res?.data || {};
         showToast("Tenants synced successfully!");
+        await loadCompanies();
     } catch (err) {
         syncError.value =
             err?.response?.data?.message || "Failed to sync tenants";

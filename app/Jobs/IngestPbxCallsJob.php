@@ -42,6 +42,22 @@ class IngestPbxCallsJob implements ShouldQueue
             return;
         }
 
+        $company = $pbxAccount->company;
+        if (! $company) {
+            Log::warning('Company not found for PBX account', ['company_pbx_account_id' => $this->companyPbxAccountId]);
+            return;
+        }
+
+        if ($company->status !== 'active' || $pbxAccount->status !== 'active') {
+            Log::info('Skipping PBX ingest for inactive company/account', [
+                'company_id' => $company->id,
+                'company_status' => $company->status,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'pbx_account_status' => $pbxAccount->status,
+            ]);
+            return;
+        }
+
         $serverId = is_string($pbxAccount->server_id ?? null) ? trim((string) $pbxAccount->server_id) : '';
         if ($serverId === '') {
             throw new PbxwareClientException('PBX server_id must be configured for this account');

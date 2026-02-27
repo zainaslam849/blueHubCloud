@@ -241,12 +241,6 @@ const navItems = [
         to: { name: "admin.dashboard" },
     },
     {
-        key: "pbx-accounts",
-        label: "PBX Accounts",
-        icon: "server",
-        to: { name: "admin.pbxAccounts" },
-    },
-    {
         key: "calls",
         label: "Calls",
         icon: "phone",

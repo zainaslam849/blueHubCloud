@@ -240,15 +240,6 @@ const navItems = [
         featureKey: "admin_companies",
     },
     {
-        key: "pbxAccounts",
-        label: "PBX Accounts",
-        icon: "pbx",
-        to: { name: "admin.pbxAccounts" },
-        requiredRoles: ["admin"],
-        requiredPermissions: ["admin.pbxAccounts.view"],
-        featureKey: "admin_pbx_accounts",
-    },
-    {
         key: "categories",
         label: "Categories",
         icon: "categories",
