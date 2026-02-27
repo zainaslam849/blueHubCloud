@@ -14,14 +14,16 @@ class AdminTenantSyncController extends Controller
      */
     public function index(): JsonResponse
     {
-        $settings = TenantSyncSetting::with('pbxProvider')
-            ->orderBy('pbx_provider_id')
-            ->get()
-            ->map(function ($setting) {
+        $providers = \App\Models\PbxProvider::all();
+        
+        $settings = $providers->map(function ($provider) {
+            $setting = TenantSyncSetting::where('pbx_provider_id', $provider->id)->first();
+            
+            if ($setting) {
                 return [
                     'id' => $setting->id,
                     'pbx_provider_id' => $setting->pbx_provider_id,
-                    'pbx_provider_name' => $setting->pbxProvider?->name,
+                    'pbx_provider_name' => $provider->name,
                     'enabled' => $setting->enabled,
                     'frequency' => $setting->frequency,
                     'scheduled_time' => $setting->scheduled_time,
@@ -30,9 +32,24 @@ class AdminTenantSyncController extends Controller
                     'last_sync_count' => $setting->last_sync_count,
                     'last_sync_log' => $setting->last_sync_log,
                 ];
-            });
+            } else {
+                // Return defaults for providers without settings
+                return [
+                    'id' => null,
+                    'pbx_provider_id' => $provider->id,
+                    'pbx_provider_name' => $provider->name,
+                    'enabled' => false,
+                    'frequency' => 'daily',
+                    'scheduled_time' => '02:00',
+                    'scheduled_day' => 'monday',
+                    'last_synced_at' => null,
+                    'last_sync_count' => 0,
+                    'last_sync_log' => null,
+                ];
+            }
+        });
 
-        return response()->json(['data' => $settings]);
+        return response()->json($settings);
     }
 
     /**

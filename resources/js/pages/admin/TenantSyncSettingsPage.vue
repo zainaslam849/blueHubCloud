@@ -56,12 +56,14 @@
                         <div class="admin-toggle-wrapper">
                             <input
                                 :id="`enabled-${provider.pbx_provider_id}`"
-                                v-model="
-                                    settings[provider.pbx_provider_id].enabled
+                                :checked="
+                                    getSetting(provider.pbx_provider_id).enabled
                                 "
                                 type="checkbox"
                                 class="admin-toggle"
-                                @change="saveSettings(provider.pbx_provider_id)"
+                                @change="
+                                    toggleEnabled(provider.pbx_provider_id)
+                                "
                             />
                             <label
                                 :for="`enabled-${provider.pbx_provider_id}`"
@@ -70,7 +72,7 @@
                         </div>
                         <span class="text-sm">
                             {{
-                                settings[provider.pbx_provider_id].enabled
+                                getSetting(provider.pbx_provider_id).enabled
                                     ? "Enabled"
                                     : "Disabled"
                             }}
@@ -83,11 +85,18 @@
                     <div class="admin-field">
                         <label class="admin-field__label"> Frequency </label>
                         <select
-                            v-model="
-                                settings[provider.pbx_provider_id].frequency
+                            :value="
+                                getSetting(provider.pbx_provider_id).frequency
                             "
                             class="admin-input"
-                            @change="saveSettings(provider.pbx_provider_id)"
+                            @change="
+                                (e) =>
+                                    updateSetting(
+                                        provider.pbx_provider_id,
+                                        'frequency',
+                                        e.target.value,
+                                    )
+                            "
                         >
                             <option value="hourly">Hourly</option>
                             <option value="daily">Daily</option>
@@ -101,31 +110,46 @@
                             Scheduled Time (UTC)
                         </label>
                         <input
-                            v-model="
-                                settings[provider.pbx_provider_id]
+                            :value="
+                                getSetting(provider.pbx_provider_id)
                                     .scheduled_time
                             "
                             type="time"
                             class="admin-input"
-                            @change="saveSettings(provider.pbx_provider_id)"
+                            @change="
+                                (e) =>
+                                    updateSetting(
+                                        provider.pbx_provider_id,
+                                        'scheduled_time',
+                                        e.target.value,
+                                    )
+                            "
                         />
                     </div>
 
                     <!-- Weekly Day Selection -->
                     <div
                         v-if="
-                            settings[provider.pbx_provider_id].frequency ===
+                            getSetting(provider.pbx_provider_id).frequency ===
                             'weekly'
                         "
                         class="admin-field"
                     >
                         <label class="admin-field__label"> Day of Week </label>
                         <select
-                            v-model="
-                                settings[provider.pbx_provider_id].scheduled_day
+                            :value="
+                                getSetting(provider.pbx_provider_id)
+                                    .scheduled_day
                             "
                             class="admin-input"
-                            @change="saveSettings(provider.pbx_provider_id)"
+                            @change="
+                                (e) =>
+                                    updateSetting(
+                                        provider.pbx_provider_id,
+                                        'scheduled_day',
+                                        e.target.value,
+                                    )
+                            "
                         >
                             <option value="monday">Monday</option>
                             <option value="tuesday">Tuesday</option>
@@ -234,6 +258,34 @@ const settings = reactive<Record<number, SyncSettings>>({});
 onMounted(async () => {
     await loadSettings();
 });
+
+const getSetting = (providerId: number): SyncSettings => {
+    if (!settings[providerId]) {
+        settings[providerId] = {
+            enabled: false,
+            frequency: "daily",
+            scheduled_time: "02:00",
+            scheduled_day: "monday",
+        };
+    }
+    return settings[providerId];
+};
+
+const updateSetting = async (
+    providerId: number,
+    key: keyof SyncSettings,
+    value: any,
+) => {
+    const setting = getSetting(providerId);
+    (setting as any)[key] = value;
+    await saveSettings(providerId);
+};
+
+const toggleEnabled = async (providerId: number) => {
+    const setting = getSetting(providerId);
+    setting.enabled = !setting.enabled;
+    await saveSettings(providerId);
+};
 
 const loadSettings = async () => {
     try {
