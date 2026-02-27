@@ -171,7 +171,10 @@
                             </button>
                         </div>
 
-                        <div class="admin-modal__body">
+                        <div
+                            class="admin-modal__body"
+                            style="max-height: 60vh; overflow-y: auto"
+                        >
                             <div
                                 v-if="validationErrors.general"
                                 class="admin-alert admin-alert--error"
@@ -338,7 +341,10 @@
                             </button>
                         </div>
 
-                        <div class="admin-modal__body">
+                        <div
+                            class="admin-modal__body"
+                            style="max-height: 60vh; overflow-y: auto"
+                        >
                             <div
                                 v-if="syncError"
                                 class="admin-alert admin-alert--error"
