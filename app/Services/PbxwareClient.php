@@ -504,4 +504,48 @@ class PbxwareClient
         $trim = ltrim($body);
         return $trim !== '' && ($trim[0] === '{' || $trim[0] === '[');
     }
+
+    /**
+     * Fetch list of available tenants/servers from PBXware
+     * Returns array keyed by server_id: { "2": { name, tenantcode, package, ... }, "3": { ... } }
+     */
+    public function fetchTenantList(): array
+    {
+        try {
+            $response = $this->sendRequest('GET', 'pbxware.tenant.list', []);
+
+            if ($response->failed()) {
+                Log::error('PbxwareClient: tenant.list failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                throw new PbxwareClientException("Tenant list request failed with status {$response->status()}");
+            }
+
+            $body = (string) $response->body();
+            if (trim($body) === '') {
+                Log::warning('PbxwareClient: tenant.list returned empty response');
+                return [];
+            }
+
+            $contentType = strtolower((string) ($response->header('Content-Type') ?? ''));
+            if (str_contains($contentType, 'json') || $this->looksLikeJson($body)) {
+                $data = $response->json();
+                Log::info('PbxwareClient: tenant.list success', [
+                    'count' => is_array($data) ? count($data) : 0,
+                ]);
+                return is_array($data) ? $data : [];
+            }
+
+            Log::warning('PbxwareClient: tenant.list returned non-JSON response');
+            return [];
+        } catch (\Exception $e) {
+            Log::error('PbxwareClient: tenant.list exception', [
+                'message' => $e->getMessage(),
+                'exception' => get_class($e),
+            ]);
+            throw new PbxwareClientException("Failed to fetch tenant list: {$e->getMessage()}", 0, $e);
+        }
+    }
 }
+

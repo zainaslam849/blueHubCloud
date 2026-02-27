@@ -23,7 +23,14 @@ Route::prefix('admin/api')->group(function () {
 
     Route::middleware(['admin'])->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
+        
+        // Companies management
         Route::get('/companies', [AdminCompaniesController::class, 'index']);
+        Route::post('/companies', [AdminCompaniesController::class, 'store']);
+        Route::put('/companies/{id}', [AdminCompaniesController::class, 'update']);
+        Route::delete('/companies/{id}', [AdminCompaniesController::class, 'destroy']);
+        Route::post('/companies/sync-tenants', [AdminCompaniesController::class, 'syncTenants']);
+        Route::get('/companies/available-tenants', [AdminCompaniesController::class, 'availableTenants']);
         
         // PBX Accounts management
         Route::get('/pbx-accounts', [AdminPbxAccountsController::class, 'index']);

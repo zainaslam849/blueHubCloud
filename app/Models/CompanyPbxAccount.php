@@ -12,6 +12,8 @@ class CompanyPbxAccount extends Model
         'company_id',
         'pbx_provider_id',
         'server_id',
+        'tenant_code',
+        'package_name',
         'status',
     ];
 
