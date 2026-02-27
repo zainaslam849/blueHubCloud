@@ -124,7 +124,7 @@ class AdminPbxAccountsController extends Controller
      */
     public function providers(): JsonResponse
     {
-        $providers = PbxProvider::select('id', 'name', 'type')
+        $providers = PbxProvider::select('id', 'name')
             ->orderBy('name')
             ->get();
 
