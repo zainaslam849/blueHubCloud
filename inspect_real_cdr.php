@@ -24,7 +24,7 @@ if (!$account) {
     exit(1);
 }
 
-$serverId = trim((string) ($account->server_id ?? ''));
+$serverId = 87;
 if ($serverId === '') {
     echo "❌ Active PBX account has empty server_id\n";
     exit(1);
