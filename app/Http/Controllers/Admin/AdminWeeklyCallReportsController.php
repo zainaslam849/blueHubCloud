@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Call;
 use App\Models\WeeklyCallReport;
 use App\Services\WeeklyCallReportQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 
@@ -153,6 +155,34 @@ class AdminWeeklyCallReportsController extends Controller
 
         $metrics = $report->metrics ?? [];
 
+        $categoryBreakdowns = [
+            'counts' => $metrics['category_counts'] ?? [],
+            'details' => $metrics['category_breakdowns'] ?? [],
+            'top_dids' => $metrics['top_dids'] ?? [],
+            'hourly_distribution' => $metrics['hourly_distribution'] ?? [],
+        ];
+
+        $hasCategoryCounts = false;
+        if (is_array($categoryBreakdowns['counts'])) {
+            if (array_is_list($categoryBreakdowns['counts'])) {
+                foreach ($categoryBreakdowns['counts'] as $item) {
+                    if (is_array($item) && ((int) ($item['call_count'] ?? 0) > 0)) {
+                        $hasCategoryCounts = true;
+                        break;
+                    }
+                }
+            } else {
+                $hasCategoryCounts = count($categoryBreakdowns['counts']) > 0;
+            }
+        }
+
+        if (! $hasCategoryCounts) {
+            $fallback = $this->buildCategoryBreakdownFromReportCalls($report->id);
+            if (! empty($fallback['counts'])) {
+                $categoryBreakdowns = $fallback;
+            }
+        }
+
         return response()->json([
             'data' => [
                 // Header info
@@ -198,12 +228,7 @@ class AdminWeeklyCallReportsController extends Controller
                 ],
 
                 // Category breakdowns
-                'category_breakdowns' => [
-                    'counts' => $metrics['category_counts'] ?? [],
-                    'details' => $metrics['category_breakdowns'] ?? [],
-                    'top_dids' => $metrics['top_dids'] ?? [],
-                    'hourly_distribution' => $metrics['hourly_distribution'] ?? [],
-                ],
+                'category_breakdowns' => $categoryBreakdowns,
 
                 // Insights
                 'insights' => $metrics['insights'] ?? [
@@ -273,5 +298,88 @@ class AdminWeeklyCallReportsController extends Controller
         }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * Build category breakdown from calls assigned to a specific weekly report.
+     * Used as fallback when persisted metrics are stale/empty.
+     */
+    private function buildCategoryBreakdownFromReportCalls(int $reportId): array
+    {
+        $rows = Call::query()
+            ->leftJoin('call_categories', 'call_categories.id', '=', 'calls.category_id')
+            ->leftJoin('sub_categories', 'sub_categories.id', '=', 'calls.sub_category_id')
+            ->where('calls.weekly_call_report_id', $reportId)
+            ->whereNotNull('calls.category_id')
+            ->select([
+                'calls.category_id',
+                DB::raw('COALESCE(call_categories.name, CONCAT("Category #", calls.category_id)) as category_name'),
+                'calls.sub_category_id',
+                DB::raw('COALESCE(sub_categories.name, calls.sub_category_label) as sub_category_name'),
+                'calls.did',
+                DB::raw('HOUR(calls.started_at) as hour_bucket'),
+            ])
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [
+                'counts' => [],
+                'details' => [],
+                'top_dids' => [],
+                'hourly_distribution' => [],
+            ];
+        }
+
+        $counts = [];
+        $details = [];
+        $didCounts = [];
+        $hourly = [];
+
+        foreach ($rows as $row) {
+            $categoryName = (string) ($row->category_name ?? 'Uncategorized');
+            $subCategoryName = is_string($row->sub_category_name ?? null) ? trim((string) $row->sub_category_name) : '';
+            $did = is_string($row->did ?? null) ? trim((string) $row->did) : '';
+            $hour = isset($row->hour_bucket) ? (string) ((int) $row->hour_bucket) : null;
+
+            $counts[$categoryName] = ($counts[$categoryName] ?? 0) + 1;
+
+            if (! isset($details[$categoryName])) {
+                $details[$categoryName] = [
+                    'count' => 0,
+                    'sub_categories' => [],
+                    'sample_calls' => [],
+                ];
+            }
+
+            $details[$categoryName]['count']++;
+
+            if ($subCategoryName !== '') {
+                $details[$categoryName]['sub_categories'][$subCategoryName] = ($details[$categoryName]['sub_categories'][$subCategoryName] ?? 0) + 1;
+            }
+
+            if ($did !== '') {
+                $didCounts[$did] = ($didCounts[$did] ?? 0) + 1;
+            }
+
+            if ($hour !== null) {
+                $hourly[$hour] = ($hourly[$hour] ?? 0) + 1;
+            }
+        }
+
+        arsort($didCounts);
+        $topDids = [];
+        foreach (array_slice($didCounts, 0, 10, true) as $did => $count) {
+            $topDids[] = [
+                'did' => $did,
+                'calls' => $count,
+            ];
+        }
+
+        return [
+            'counts' => $counts,
+            'details' => $details,
+            'top_dids' => $topDids,
+            'hourly_distribution' => $hourly,
+        ];
     }
 }
