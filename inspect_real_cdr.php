@@ -21,7 +21,7 @@ if (!$account) {
     exit(1);
 }
 
-$serverId = $account->server_id;
+$serverId = '87';
 echo "✓ Using server ID: $serverId\n";
 echo "✓ Company: {$account->company->name}\n\n";
 
