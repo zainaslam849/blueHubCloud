@@ -92,7 +92,7 @@
                             :key="company.id"
                             :value="company.id"
                         >
-                            {{ company.name }}
+                            {{ company.display_label }}
                         </option>
                     </select>
                 </div>
@@ -360,7 +360,7 @@ async function runPipeline() {
 
 async function loadCompanies() {
     try {
-        const res = await adminApi.get("/companies");
+        const res = await adminApi.get("/companies/dropdown");
         companies.value = res?.data?.data ?? [];
     } catch (e) {
         companies.value = [];

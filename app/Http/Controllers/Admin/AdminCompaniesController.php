@@ -117,6 +117,36 @@ class AdminCompaniesController extends Controller
     }
 
     /**
+     * Get companies for dropdown - only active companies with server info
+     */
+    public function dropdown(Request $request): JsonResponse
+    {
+        $companies = Company::query()
+            ->where('status', 'active')
+            ->with('companyPbxAccounts:company_id,server_id,status')
+            ->select('id', 'name', 'status')
+            ->orderBy('name', 'asc')
+            ->get()
+            ->map(function ($company) {
+                $pbxAccount = $company->companyPbxAccounts->first();
+                
+                return [
+                    'id' => $company->id,
+                    'name' => $company->name,
+                    'status' => $company->status,
+                    'server_id' => $pbxAccount?->server_id,
+                    'has_server' => !is_null($pbxAccount?->server_id),
+                    'display_label' => $pbxAccount && $pbxAccount->server_id
+                        ? "{$company->name} (Server: {$pbxAccount->server_id})"
+                        : $company->name,
+                ];
+            })
+            ->values();
+
+        return response()->json(['data' => $companies]);
+    }
+
+    /**
      * Create new company with optional PBX account linking
      */
     public function store(Request $request): JsonResponse

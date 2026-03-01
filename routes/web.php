@@ -70,6 +70,7 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         
         // Companies management
+        Route::get('/companies/dropdown', [AdminCompaniesController::class, 'dropdown']);
         Route::get('/companies', [AdminCompaniesController::class, 'index']);
         Route::post('/companies', [AdminCompaniesController::class, 'store']);
         Route::put('/companies/{id}', [AdminCompaniesController::class, 'update']);

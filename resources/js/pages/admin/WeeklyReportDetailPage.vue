@@ -174,6 +174,11 @@
                 :loading="loading"
                 :insights="report?.insights"
             />
+
+            <AutomationPriorityViews
+                :loading="loading"
+                :advanced="report?.advanced_views"
+            />
         </div>
     </div>
 </template>
@@ -189,6 +194,7 @@ import ExecutiveSummary from "../../components/admin/reports/ExecutiveSummary.vu
 import QuantitativeAnalysis from "../../components/admin/reports/QuantitativeAnalysis.vue";
 import CategoryBreakdowns from "../../components/admin/reports/CategoryBreakdowns.vue";
 import InsightsRecommendations from "../../components/admin/reports/InsightsRecommendations.vue";
+import AutomationPriorityViews from "../../components/admin/reports/AutomationPriorityViews.vue";
 
 const route = useRoute();
 

@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\WeeklyCallReport;
 use App\Repositories\AiSettingsRepository;
+use App\Services\AdvancedReportGenerationService;
 use App\Services\ReportInsightsAiService;
 use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
@@ -429,6 +430,23 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     // Non-fatal: indexing of calls to reports should not stop report generation
                     \Illuminate\Support\Facades\Log::error('Failed to assign calls to weekly report', [
                         'report_id' => $reportModel->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                // Generate advanced analytics views for this weekly report
+                try {
+                    app(AdvancedReportGenerationService::class)->generateComprehensiveReports(
+                        $companyId,
+                        $weekStart,
+                        $weekEnd,
+                        $reportModel->id
+                    );
+                } catch (\Throwable $e) {
+                    // Non-fatal: advanced views should not block core weekly report generation
+                    \Illuminate\Support\Facades\Log::error('Failed to generate advanced report analytics', [
+                        'report_id' => $reportModel->id,
+                        'company_id' => $companyId,
                         'error' => $e->getMessage(),
                     ]);
                 }
