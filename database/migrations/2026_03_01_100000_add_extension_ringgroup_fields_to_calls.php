@@ -10,24 +10,33 @@ return new class extends Migration
     {
         Schema::table('calls', function (Blueprint $table) {
             // Extension information
-            $table->string('answered_by_extension')->nullable()->after('to')->index();
-            $table->string('caller_extension')->nullable()->after('answered_by_extension')->index();
+            if (!Schema::hasColumn('calls', 'answered_by_extension')) {
+                $table->string('answered_by_extension')->nullable()->after('to')->index();
+            }
+            if (!Schema::hasColumn('calls', 'caller_extension')) {
+                $table->string('caller_extension')->nullable()->after('answered_by_extension')->index();
+            }
             
             // Ring group / Queue / Department
-            $table->string('ring_group')->nullable()->after('caller_extension')->index();
-            $table->string('queue_name')->nullable()->after('ring_group')->index();
-            $table->string('department')->nullable()->after('queue_name')->index();
+            if (!Schema::hasColumn('calls', 'ring_group')) {
+                $table->string('ring_group')->nullable()->after('caller_extension')->index();
+            }
+            if (!Schema::hasColumn('calls', 'queue_name')) {
+                $table->string('queue_name')->nullable()->after('ring_group')->index();
+            }
+            if (!Schema::hasColumn('calls', 'department')) {
+                $table->string('department')->nullable()->after('queue_name')->index();
+            }
             
             // DID (already exists but ensure indexed)
             if (!Schema::hasColumn('calls', 'did')) {
                 $table->string('did')->nullable()->after('department')->index();
-            } else {
-                // Just add index if column exists
-                $table->index('did');
             }
             
             // Metadata for additional PBX data
-            $table->json('pbx_metadata')->nullable()->after('did');
+            if (!Schema::hasColumn('calls', 'pbx_metadata')) {
+                $table->json('pbx_metadata')->nullable()->after('did');
+            }
         });
     }
 
