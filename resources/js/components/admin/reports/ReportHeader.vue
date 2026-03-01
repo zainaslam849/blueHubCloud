@@ -17,7 +17,13 @@
             <div class="admin-kv">
                 <div class="admin-kv__k">PBX Account</div>
                 <div class="admin-kv__v">
-                    {{ header?.pbx_account?.name || "—" }}
+                    {{
+                        header?.pbx_account?.display ||
+                        header?.pbx_account?.name ||
+                        (header?.pbx_account?.server_id
+                            ? `Server ${header.pbx_account.server_id}`
+                            : "—")
+                    }}
                 </div>
             </div>
 

@@ -239,7 +239,12 @@ class AdminWeeklyCallReportsController extends Controller
                     ],
                     'pbx_account' => [
                         'id' => $report->companyPbxAccount?->id,
-                        'name' => $report->companyPbxAccount?->name,
+                        'name' => $report->companyPbxAccount?->tenant_code,
+                        'server_id' => $report->companyPbxAccount?->server_id ?? $report->server_id,
+                        'pbx_provider_id' => $report->companyPbxAccount?->pbx_provider_id,
+                        'display' => $report->companyPbxAccount?->tenant_code
+                            ?? ($report->companyPbxAccount?->server_id ? 'Server '.$report->companyPbxAccount->server_id : null)
+                            ?? ($report->server_id ? 'Server '.$report->server_id : null),
                     ],
                     'week_range' => [
                         'start' => $report->week_start_date?->toDateString(),
