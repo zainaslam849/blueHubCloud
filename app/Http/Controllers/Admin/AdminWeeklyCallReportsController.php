@@ -8,6 +8,7 @@ use App\Models\CategoryAnalyticsReport;
 use App\Models\ExtensionPerformanceReport;
 use App\Models\RingGroupPerformanceReport;
 use App\Models\WeeklyCallReport;
+use App\Services\AdvancedReportGenerationService;
 use App\Services\WeeklyCallReportQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -419,6 +420,41 @@ class AdminWeeklyCallReportsController extends Controller
             ->where('weekly_call_report_id', $report->id)
             ->orderByDesc('total_calls')
             ->get();
+
+        // Lazy-generate advanced analytics if report exists but analytics tables are empty.
+        if ($extensionReports->isEmpty() && $ringGroupReports->isEmpty() && $categoryReports->isEmpty()) {
+            try {
+                $service = app(AdvancedReportGenerationService::class);
+                $service->generateComprehensiveReports(
+                    (int) $report->company_id,
+                    \Carbon\CarbonImmutable::parse($report->week_start_date),
+                    \Carbon\CarbonImmutable::parse($report->week_end_date),
+                    (int) $report->id,
+                );
+
+                $extensionReports = ExtensionPerformanceReport::query()
+                    ->where('weekly_call_report_id', $report->id)
+                    ->orderByDesc('automation_impact_score')
+                    ->get();
+
+                $ringGroupReports = RingGroupPerformanceReport::query()
+                    ->where('weekly_call_report_id', $report->id)
+                    ->orderByDesc('automation_priority_score')
+                    ->get();
+
+                $categoryReports = CategoryAnalyticsReport::query()
+                    ->with('category:id,name')
+                    ->where('weekly_call_report_id', $report->id)
+                    ->orderByDesc('total_calls')
+                    ->get();
+            } catch (\Throwable $e) {
+                Log::warning('Failed lazy generation of advanced views', [
+                    'report_id' => $report->id,
+                    'company_id' => $report->company_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $topCategories = $this->normalizeCategoryCountsForDisplay($categoryBreakdowns['counts'] ?? []);
 
