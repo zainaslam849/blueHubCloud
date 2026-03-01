@@ -275,9 +275,15 @@ class PbxwareClient
 
         // Determine timeout: secret-provided timeout (seconds) or default 30s
         $timeout = (int) ($this->credentials['timeout'] ?? $options['timeout'] ?? 30);
+        // Connection timeout: how long to wait for initial connection (default: same as request timeout)
+        $connect_timeout = (int) ($this->credentials['connect_timeout'] ?? $options['connect_timeout'] ?? $timeout);
         try {
             $start = microtime(true);
-            $requestOptions = array_merge($options['guzzle'] ?? [], ['stream' => $options['stream'] ?? false, 'timeout' => $timeout]);
+            $requestOptions = array_merge($options['guzzle'] ?? [], [
+                'stream' => $options['stream'] ?? false, 
+                'timeout' => $timeout,
+                'connect_timeout' => $connect_timeout,
+            ]);
 
             // Build full query URL for PBXware (apikey/action/server + extra params)
             $url = $this->buildQueryUrl($path, $params);
