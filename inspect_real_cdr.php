@@ -56,7 +56,7 @@ $today = now();
 // First attempt exactly what IngestPbxCallsJob sends (M-d-Y + status=8).
 $attempts = [];
 
-foreach ([1, 7, 30, 90, 365, 1825] as $days) {
+foreach ([170, 1, 7, 30, 90, 365, 1825] as $days) {
     $attempts[] = [
         'name' => "Ingest format M-d-Y, last {$days} days",
         'params' => [
