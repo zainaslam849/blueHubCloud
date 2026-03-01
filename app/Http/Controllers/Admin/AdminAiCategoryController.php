@@ -16,15 +16,14 @@ class AdminAiCategoryController extends Controller
     public function generate(Request $request): JsonResponse
     {
         $data = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'range' => ['nullable', 'string', 'in:last_30_days,last_60_days,last_90_days'],
         ]);
-
-        $company = $this->resolveAuthenticatedCompany();
 
         $rangeDays = $this->resolveRangeDays($data['range'] ?? 'last_30_days');
 
         GenerateAiCategoriesForCompanyJob::dispatch(
-            companyId: $company->id,
+            companyId: $data['company_id'],
             rangeDays: $rangeDays
         );
 
@@ -40,17 +39,16 @@ class AdminAiCategoryController extends Controller
     public function preview(Request $request, AiCategoryGenerationService $service): JsonResponse
     {
         $data = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'range' => ['nullable', 'string', 'in:last_30_days,last_60_days,last_90_days'],
         ]);
-
-        $company = $this->resolveAuthenticatedCompany();
 
         $rangeDays = $this->resolveRangeDays($data['range'] ?? 'last_30_days');
 
         $start = now()->subDays($rangeDays)->toDateString();
         $end = now()->toDateString();
 
-        $count = $service->getSummaryCount($company->id, [
+        $count = $service->getSummaryCount($data['company_id'], [
             'start' => $start,
             'end' => $end,
         ]);

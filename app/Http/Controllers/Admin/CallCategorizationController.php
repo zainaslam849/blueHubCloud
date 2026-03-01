@@ -13,26 +13,32 @@ class CallCategorizationController extends Controller
      * Get the AI categorization prompt for a call
      * Used by AI services to categorize calls
      */
-    public function generatePrompt()
+    public function generatePrompt(Request $request)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
         return response()->json([
             'system_prompt' => CallCategorizationPromptService::getSystemPrompt(),
             'model_parameters' => CallCategorizationPromptService::getModelParameters(),
-            'categories' => $this->getEnabledCategoriesWithSubcategories(),
+            'categories' => $this->getEnabledCategoriesWithSubcategories($validated['company_id']),
         ]);
     }
 
     /**
      * Get enabled categories for display/selection
      */
-    public function getEnabledCategories()
+    public function getEnabledCategories(Request $request)
     {
-        $company = $this->resolveAuthenticatedCompany();
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
 
         $categories = CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
-            ->where('company_id', $company->id)
+            ->where('company_id', $validated['company_id'])
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)
                     ->where('status', 'active');
@@ -61,19 +67,18 @@ class CallCategorizationController extends Controller
     /**
      * Validate AI categorization response
      */
-    public function validateCategorization()
+    public function validateCategorization(Request $request)
     {
-        $validated = request()->validate([
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'category' => 'required|string',
             'sub_category' => 'nullable|string',
             'confidence' => 'required|numeric|between:0,1',
         ]);
 
-        $company = $this->resolveAuthenticatedCompany();
-
         $result = CallCategorizationPromptService::validateCategorization(
             $validated,
-            $company->id
+            $validated['company_id']
         );
 
         return response()->json($result, $result['valid'] ? 200 : 400);
@@ -82,9 +87,10 @@ class CallCategorizationController extends Controller
     /**
      * Get full prompt for a specific call
      */
-    public function buildCallPrompt()
+    public function buildCallPrompt(Request $request)
     {
-        $validated = request()->validate([
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'transcript' => 'required|string',
             'direction' => 'nullable|in:inbound,outbound',
             'status' => 'nullable|in:completed,missed,failed',
@@ -92,15 +98,13 @@ class CallCategorizationController extends Controller
             'is_after_hours' => 'nullable|boolean',
         ]);
 
-        $company = $this->resolveAuthenticatedCompany();
-
         $prompt = CallCategorizationPromptService::buildPromptObject(
             $validated['transcript'],
             $validated['direction'] ?? 'inbound',
             $validated['status'] ?? 'completed',
             $validated['duration'] ?? 0,
             $validated['is_after_hours'] ?? false,
-            $company->id
+            $validated['company_id']
         );
 
         return response()->json([
@@ -111,14 +115,12 @@ class CallCategorizationController extends Controller
     /**
      * Helper to get enabled categories with sub-categories
      */
-    private function getEnabledCategoriesWithSubcategories()
+    private function getEnabledCategoriesWithSubcategories(int $companyId)
     {
-        $company = $this->resolveAuthenticatedCompany();
-
         return CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
-            ->where('company_id', $company->id)
+            ->where('company_id', $companyId)
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)
                     ->where('status', 'active');

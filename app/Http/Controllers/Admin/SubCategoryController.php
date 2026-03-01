@@ -13,12 +13,15 @@ class SubCategoryController extends Controller
     /**
      * Get all sub-categories for a category
      */
-    public function index($categoryId)
+    public function index(Request $request, $categoryId)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
         $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
         }
 
         $subCategories = $category->subCategories()
@@ -36,22 +39,22 @@ class SubCategoryController extends Controller
      */
     public function store(Request $request, $categoryId)
     {
-        $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
-        }
-
         $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'name' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('sub_categories', 'name')->where('category_id', $category->id),
+                Rule::unique('sub_categories', 'name')->where('category_id', $categoryId),
             ],
             'description' => 'nullable|string|max:1000',
             'is_enabled' => 'boolean',
         ]);
+
+        $category = CallCategory::findOrFail($categoryId);
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
+        }
 
         $validated['source'] = 'admin';
         $validated['status'] = 'active';
@@ -69,15 +72,24 @@ class SubCategoryController extends Controller
      */
     public function update(Request $request, $categoryId, $subCategoryId)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'name' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('sub_categories', 'name')->where('category_id', $categoryId)->ignore($subCategoryId),
+            ],
+            'description' => 'nullable|string|max:1000',
+            'is_enabled' => 'boolean',
+        ]);
+
         $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
         }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
-
-        $validated = $request->validate([
-            'name' => [
                 'required',
                 'string',
                 'max:255',
@@ -104,12 +116,15 @@ class SubCategoryController extends Controller
     /**
      * Toggle sub-category enabled/disabled
      */
-    public function toggle($categoryId, $subCategoryId)
+    public function toggle(Request $request, $categoryId, $subCategoryId)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
         $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
         }
         $subCategory = $category->subCategories()->findOrFail($subCategoryId);
 
@@ -126,12 +141,15 @@ class SubCategoryController extends Controller
     /**
      * Soft delete a sub-category
      */
-    public function destroy($categoryId, $subCategoryId)
+    public function destroy(Request $request, $categoryId, $subCategoryId)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
         $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
         }
         $subCategory = $category->subCategories()->findOrFail($subCategoryId);
 
@@ -145,12 +163,15 @@ class SubCategoryController extends Controller
     /**
      * Restore a soft-deleted sub-category
      */
-    public function restore($categoryId, $subCategoryId)
+    public function restore(Request $request, $categoryId, $subCategoryId)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
         $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
         }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
@@ -171,11 +192,14 @@ class SubCategoryController extends Controller
     /**
      * Force delete a sub-category
      */
-    public function forceDelete($categoryId, $subCategoryId)
+    public function forceDelete(Request $request, $categoryId, $subCategoryId)
     {
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
         $category = CallCategory::findOrFail($categoryId);
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
+        if ($category->company_id !== $validated['company_id']) {
             abort(403, 'Category does not belong to your company.');
         }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);

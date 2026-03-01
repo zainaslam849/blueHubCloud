@@ -68,10 +68,12 @@ class CategoryController extends Controller
      */
     public function enabled(Request $request): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
 
         $categories = CallCategory::enabled()
-            ->where('company_id', $company->id)
+            ->where('company_id', $validated['company_id'])
             ->where('status', 'active')
             ->orderBy('name', 'asc')
             ->get();
@@ -86,10 +88,8 @@ class CategoryController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
-
         $validated = $request->validate([
-            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
             'name' => [
                 'required',
                 'string',
@@ -99,11 +99,8 @@ class CategoryController extends Controller
             'is_enabled' => ['boolean'],
         ]);
 
-        // Use provided company_id or fall back to authenticated user's company
-        $targetCompanyId = $validated['company_id'] ?? $company->id;
-
         // Check unique constraint for the target company
-        $existingCategory = CallCategory::where('company_id', $targetCompanyId)
+        $existingCategory = CallCategory::where('company_id', $validated['company_id'])
             ->where('name', $validated['name'])
             ->exists();
 
@@ -116,7 +113,6 @@ class CategoryController extends Controller
         $validated['is_enabled'] = $validated['is_enabled'] ?? true;
         $validated['source'] = 'admin';
         $validated['status'] = 'active';
-        $validated['company_id'] = $targetCompanyId;
 
         $category = CallCategory::create($validated);
 
@@ -154,7 +150,7 @@ class CategoryController extends Controller
 
         if ($willDisable && $category->is_enabled) {
             $enabledCount = CallCategory::query()
-                ->where('company_id', $company->id)
+                ->where('company_id', $category->company_id)
                 ->enabled()
                 ->count();
             if ($enabledCount === 1) {
@@ -171,7 +167,7 @@ class CategoryController extends Controller
                 'string',
                 'max:255',
                 Rule::unique('call_categories', 'name')
-                    ->where('company_id', $company->id)
+                    ->where('company_id', $category->company_id)
                     ->ignore($category->id),
             ],
             'description' => ['nullable', 'string', 'max:1000'],
@@ -208,11 +204,14 @@ class CategoryController extends Controller
     /**
      * Toggle category enabled/disabled status
      */
-    public function toggle(CallCategory $category): JsonResponse
+    public function toggle(Request $request, CallCategory $category): JsonResponse
     {
-        $company = $this->resolveAuthenticatedCompany();
-        if ($category->company_id !== $company->id) {
-            abort(403, 'Category does not belong to your company.');
+        $validated = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+        ]);
+
+        if ($category->company_id !== $validated['company_id']) {
+            abort(403, 'Category does not belong to this company.');
         }
 
         // Prevent toggling the "General" category
@@ -224,7 +223,7 @@ class CategoryController extends Controller
 
         // Prevent disabling if it's the last enabled category
         $enabledCount = CallCategory::query()
-            ->where('company_id', $company->id)
+            ->where('company_id', $validated['company_id'])
             ->enabled()
             ->count();
 
