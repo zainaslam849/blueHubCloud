@@ -1,7 +1,6 @@
 <?php
 /**
- * Fetch REAL CDR data and show all columns
- * This will help identify which columns contain extension, ring_group, queue, dept
+ * Try multiple CDR queries to find actual data
  * Run: php inspect_real_cdr.php
  */
 
@@ -11,13 +10,11 @@ $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
 use App\Models\CompanyPbxAccount;
 use App\Services\PbxwareClient;
-use Illuminate\Support\Facades\Log;
 
 echo "╔════════════════════════════════════════════════════════╗\n";
-echo "║          REAL CDR COLUMN INSPECTOR                     ║\n";
+echo "║          CDR DATA DISCOVERY                            ║\n";
 echo "╚════════════════════════════════════════════════════════╝\n\n";
 
-// Get first active PBX account
 $account = CompanyPbxAccount::where('status', 'active')->first();
 if (!$account) {
     echo "❌ No active PBX accounts found\n";
@@ -28,81 +25,100 @@ $serverId = $account->server_id;
 echo "✓ Using server ID: $serverId\n";
 echo "✓ Company: {$account->company->name}\n\n";
 
-// Create real client (not mock)
 $client = new PbxwareClient();
 
-$now = now();
-$params = [
-    'server' => $serverId,
-    'start' => $now->clone()->subDays(7)->format('Y-m-d H:i:s'),
-    'end' => $now->format('Y-m-d H:i:s'),
-    'status' => '8', // All calls
+// Try multiple approaches
+$approaches = [
+    [
+        'name' => 'Last 30 days, Status=8 (all)',
+        'params' => [
+            'server' => $serverId,
+            'start' => now()->subDays(30)->format('Y-m-d'),
+            'end' => now()->format('Y-m-d'),
+            'status' => '8',
+        ]
+    ],
+    [
+        'name' => 'Last 30 days, Status=4 (answered)',
+        'params' => [
+            'server' => $serverId,
+            'start' => now()->subDays(30)->format('Y-m-d'),
+            'end' => now()->format('Y-m-d'),
+            'status' => '4',
+        ]
+    ],
+    [
+        'name' => 'Last 60 days, no status filter',
+        'params' => [
+            'server' => $serverId,
+            'start' => now()->subDays(60)->format('Y-m-d'),
+            'end' => now()->format('Y-m-d'),
+        ]
+    ],
 ];
 
-echo "Fetching CDR records from PBX...\n";
-echo "Date range: " . $params['start'] . " to " . $params['end'] . "\n\n";
+$foundData = false;
 
-try {
-    $result = $client->fetchCdrRecords($params);
+foreach ($approaches as $approach) {
+    echo "Trying: {$approach['name']}\n";
+    echo "Params: " . json_encode($approach['params']) . "\n";
     
-    if (!is_array($result) || !isset($result['csv']) || count($result['csv']) === 0) {
-        echo "❌ No CDR records returned\n";
-        exit(1);
-    }
-
-    $headers = $result['header'] ?? [];
-    $csvRows = $result['csv'];
-
-    echo "╔════════════════════════════════════════════════════════╗\n";
-    echo "║          CDR COLUMN HEADERS                            ║\n";
-    echo "╚════════════════════════════════════════════════════════╝\n\n";
-
-    echo "Total columns: " . count($headers) . "\n";
-    echo "Total rows: " . count($csvRows) . "\n\n";
-
-    foreach ($headers as $idx => $name) {
-        echo "  [$idx] => $name\n";
-    }
-
-    echo "\n╔════════════════════════════════════════════════════════╗\n";
-    echo "║          FIRST SAMPLE ROW DATA                         ║\n";
-    echo "╚════════════════════════════════════════════════════════╝\n\n";
-
-    if (count($csvRows) > 0) {
-        $firstRow = $csvRows[0];
-        foreach ($firstRow as $idx => $value) {
-            $header = $headers[$idx] ?? "col_$idx";
-            $displayValue = $value;
+    try {
+        $result = $client->fetchCdrRecords($approach['params']);
+        
+        if (is_array($result) && isset($result['csv'])) {
+            $count = count($result['csv']);
+            echo "✓ Found $count records!\n\n";
             
-            // Truncate long values
-            if (is_string($displayValue) && strlen($displayValue) > 60) {
-                $displayValue = substr($displayValue, 0, 60) . '...';
+            if ($count > 0) {
+                $headers = $result['header'] ?? [];
+                $firstRow = $result['csv'][0];
+                
+                echo "╔════════════════════════════════════════════════════════╗\n";
+                echo "║          CDR COLUMN STRUCTURE                          ║\n";
+                echo "╚════════════════════════════════════════════════════════╝\n\n";
+
+                echo "Total Columns: " . count($headers) . "\n\n";
+
+                foreach ($headers as $idx => $name) {
+                    $value = $firstRow[$idx] ?? null;
+                    $displayValue = $value;
+                    if (is_string($displayValue) && strlen($displayValue) > 50) {
+                        $displayValue = substr($displayValue, 0, 50) . '...';
+                    }
+                    
+                    echo "[$idx] $name\n";
+                    echo "     Value: " . json_encode($displayValue) . "\n";
+                    echo "\n";
+                }
+
+                $foundData = true;
+                break;
             }
-            
-            echo "  [$idx] $header\n";
-            echo "       => " . json_encode($displayValue) . "\n\n";
+        } else {
+            echo "✗ No data\n\n";
         }
+    } catch (\Exception $e) {
+        echo "✗ Error: " . substr($e->getMessage(), 0, 100) . "\n\n";
     }
+}
 
-    echo "╔════════════════════════════════════════════════════════╗\n";
-    echo "║          NEXT STEP: IDENTIFY COLUMNS                  ║\n";
-    echo "╚════════════════════════════════════════════════════════╝\n\n";
-
-    echo "Please identify which columns (indices) contain:\n\n";
-    echo "1. Answering Extension: Column [?]  (e.g., 4301, 4302, etc)\n";
-    echo "2. Ring Group / Queue:  Column [?]  (e.g., Sales, Support, etc)\n";
-    echo "3. Caller Extension:    Column [?]  (e.g., external number, caller ID)\n";
-    echo "4. Department:          Column [?]  (optional)\n\n";
-
-    echo "Once you identify these, I'll update the ingest job automatically.\n";
-    echo "Reply with the column indices and I'll wire them in.\n\n";
-
-} catch (\Exception $e) {
-    echo "❌ Error: {$e->getMessage()}\n";
-    echo "\nThis usually means:\n";
-    echo "- Network connection issue to PBX\n";
-    echo "- Invalid credentials\n";
-    echo "- Invalid server ID\n";
-    exit(1);
+if (!$foundData) {
+    echo "❌ Could not find any CDR records with any approach\n\n";
+    echo "This might mean:\n";
+    echo "1. Your account/server has no call history in PBX\n";
+    echo "2. The calls are older than 60 days\n";
+    echo "3. Different status codes are needed\n\n";
+    echo "Try:\n";
+    echo "1. Check if you have calls in the PBX system\n";
+    echo "2. Verify the server ID is correct\n";
+    echo "3. Contact PBXware support for available date ranges\n";
+} else {
+    echo "✓ Please review the columns above and tell me:\n";
+    echo "  - Which column [index] has the answering extension?\n";
+    echo "  - Which column [index] has the ring group/queue?\n";
+    echo "  - Which column [index] has the caller extension?\n";
+    echo "  - Any other relevant columns?\n\n";
+    echo "Reply with the indices and I'll update the ingest job.\n";
 }
 ?>
