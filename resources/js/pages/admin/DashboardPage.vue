@@ -78,9 +78,15 @@
                 "
             >
                 <div>
-                    <label class="admin-label">Company</label>
-                    <select v-model="pipelineCompanyId" class="admin-input">
-                        <option value="">Auto (first company)</option>
+                    <label class="admin-label"
+                        >Company <span style="color: #e74c3c">*</span></label
+                    >
+                    <select
+                        v-model="pipelineCompanyId"
+                        class="admin-input"
+                        required
+                    >
+                        <option value="">-- Select Company --</option>
                         <option
                             v-for="company in companies"
                             :key="company.id"
@@ -326,9 +332,16 @@ async function runPipeline() {
     pipelineError.value = "";
     pipelineSuccess.value = "";
 
+    // Validate company selection
+    if (!pipelineCompanyId.value) {
+        pipelineError.value = "Please select a company first.";
+        pipelineRunning.value = false;
+        return;
+    }
+
     try {
         const payload = {
-            company_id: pipelineCompanyId.value || null,
+            company_id: parseInt(pipelineCompanyId.value),
             range_days: pipelineRangeDays.value,
             summarize_limit: pipelineSummarizeLimit.value,
             categorize_limit: pipelineCategorizeLimit.value,
