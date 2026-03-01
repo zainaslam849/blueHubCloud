@@ -1023,21 +1023,28 @@ function closeDeleteConfirm() {
 }
 
 async function confirmDelete() {
-    if (!deleteTarget.value) return;
+    if (!deleteTarget.value || deleting.value) return;
+
+    const targetId = deleteTarget.value.id;
+    const isPermanentDelete = deleteMode.value === "permanent";
 
     deleting.value = true;
     try {
-        if (deleteMode.value === "permanent") {
-            await adminApi.delete(
-                `/companies/${deleteTarget.value.id}/force-delete`,
-            );
+        if (isPermanentDelete) {
+            await adminApi.delete(`/companies/${targetId}/force-delete`);
             showToast("Company permanently deleted successfully.");
         } else {
-            await adminApi.delete(`/companies/${deleteTarget.value.id}`);
+            await adminApi.delete(`/companies/${targetId}`);
             showToast("Company deleted successfully.");
         }
-        await fetchCompanies();
+
         closeDeleteConfirm();
+
+        try {
+            await fetchCompanies();
+        } catch {
+            // Keep success state even if refresh fails.
+        }
     } catch (err) {
         showToast(
             err?.response?.data?.message || "Failed to delete company",
