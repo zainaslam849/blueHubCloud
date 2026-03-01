@@ -185,7 +185,16 @@ class AdminWeeklyCallReportsController extends Controller
             }
         }
 
-        $advancedViews = $this->buildAdvancedViews($report, $categoryBreakdowns);
+        // Build advanced views with error handling for missing tables
+        try {
+            $advancedViews = $this->buildAdvancedViews($report, $categoryBreakdowns);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to build advanced views for report', [
+                'report_id' => $report->id,
+                'error' => $e->getMessage(),
+            ]);
+            $advancedViews = $this->getEmptyAdvancedViews();
+        }
 
         return response()->json([
             'data' => [
@@ -670,5 +679,35 @@ class AdminWeeklyCallReportsController extends Controller
         usort($normalized, fn ($a, $b) => $b['count'] <=> $a['count']);
 
         return $normalized;
+    }
+
+    /**
+     * Return empty advanced views structure when tables don't exist or data unavailable
+     */
+    private function getEmptyAdvancedViews(): array
+    {
+        return [
+            'company_dashboard' => [
+                'summary' => [
+                    'total_calls' => 0,
+                    'total_minutes' => 0,
+                    'answer_rate' => 0,
+                    'missed_calls' => 0,
+                ],
+                'top_categories' => [],
+                'top_automation_opportunities' => [],
+                'peak_missed_times' => [],
+                'trend_vs_last_period' => [
+                    'has_previous' => false,
+                    'period' => 'weekly',
+                    'calls_delta' => null,
+                    'calls_delta_pct' => null,
+                ],
+            ],
+            'ring_group_dashboard' => [],
+            'extension_leaderboard' => [],
+            'extension_scorecards' => [],
+            'category_drilldown' => [],
+        ];
     }
 }
