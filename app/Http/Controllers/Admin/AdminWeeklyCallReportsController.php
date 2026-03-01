@@ -16,12 +16,49 @@ class AdminWeeklyCallReportsController extends Controller
     public function index(Request $request, WeeklyCallReportQueryService $service): JsonResponse
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $companyId = (int) $validated['company_id'];
+        // If company_id provided, use service method; otherwise get all reports
+        if (!empty($validated['company_id'])) {
+            $reports = $service->getByCompanyId((int) $validated['company_id']);
+        } else {
+            // Get all reports across all companies
+            $reports = WeeklyCallReport::query()
+                ->leftJoin('companies', 'companies.id', '=', 'weekly_call_reports.company_id')
+                ->orderByDesc('week_start_date')
+                ->get([
+                    'weekly_call_reports.id',
+                    'weekly_call_reports.company_id',
+                    'weekly_call_reports.server_id',
+                    'weekly_call_reports.company_pbx_account_id',
+                    'weekly_call_reports.week_start_date',
+                    'weekly_call_reports.week_end_date',
+                    'weekly_call_reports.total_calls',
+                    'weekly_call_reports.answered_calls',
+                    'weekly_call_reports.missed_calls',
+                    'weekly_call_reports.calls_with_transcription',
+                    'weekly_call_reports.total_call_duration_seconds',
+                    'weekly_call_reports.avg_call_duration_seconds',
+                    'weekly_call_reports.first_call_at',
+                    'weekly_call_reports.last_call_at',
+                    'weekly_call_reports.created_at',
+                    'weekly_call_reports.updated_at',
+                    'companies.name as company_name',
+                ])
+                ->map(function ($r) {
+                    if (is_object($r) && method_exists($r, 'toArray')) {
+                        $arr = $r->toArray();
+                    } else {
+                        $arr = (array) $r;
+                    }
+                    $arr['company'] = ['name' => $arr['company_name'] ?? null];
+                    return $arr;
+                })
+                ->values();
+        }
 
-        $reports = $service->getByCompanyId($companyId)->values();
+        $reports = $reports->values();
 
         $mapped = $reports->map(function ($r) {
             $total = (int) ($r['total_calls'] ?? 0);

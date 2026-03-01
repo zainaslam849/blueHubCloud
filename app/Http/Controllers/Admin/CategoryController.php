@@ -69,14 +69,19 @@ class CategoryController extends Controller
     public function enabled(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $categories = CallCategory::enabled()
-            ->where('company_id', $validated['company_id'])
+        $query = CallCategory::enabled()
             ->where('status', 'active')
-            ->orderBy('name', 'asc')
-            ->get();
+            ->orderBy('name', 'asc');
+
+        // If company_id provided, filter by it
+        if (!empty($validated['company_id'])) {
+            $query->where('company_id', $validated['company_id']);
+        }
+
+        $categories = $query->get();
 
         return response()->json([
             'data' => $categories,
