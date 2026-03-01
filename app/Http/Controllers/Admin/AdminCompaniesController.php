@@ -276,8 +276,17 @@ class AdminCompaniesController extends Controller
                 $tenantName = $tenantData['name'] ?? null;
                 if (is_string($tenantName) && trim($tenantName) !== '') {
                     $tenantName = trim($tenantName);
-                    $company = Company::where('name', $tenantName)->first();
+                    
+                    // Check for company including soft-deleted ones
+                    $company = Company::withTrashed()->where('name', $tenantName)->first();
 
+                    // Skip if company is soft-deleted
+                    if ($company && $company->trashed()) {
+                        $skippedCompanies++;
+                        continue;
+                    }
+
+                    // Create new company only if it doesn't exist at all
                     if (! $company) {
                         $company = Company::create([
                             'name' => $tenantName,
@@ -286,6 +295,7 @@ class AdminCompaniesController extends Controller
                         ]);
                         $createdCompanies++;
                     }
+                    // If company exists, keep its current status - don't change it
 
                     $providerAccountQuery = CompanyPbxAccount::where('company_id', $company->id)
                         ->where('pbx_provider_id', $pbxProviderId);

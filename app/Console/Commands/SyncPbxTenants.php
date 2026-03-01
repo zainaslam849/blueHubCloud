@@ -205,33 +205,32 @@ class SyncPbxTenants extends Command
                 $tenantName = $tenantData['name'] ?? null;
                 if (is_string($tenantName) && trim($tenantName) !== '') {
                     $tenantName = trim($tenantName);
-                    $company = \App\Models\Company::where(
-                        'name',
-                        $tenantName
-                    )->first();
+                    
+                    // Check for company including soft-deleted ones
+                    $company = \App\Models\Company::withTrashed()
+                        ->where('name', $tenantName)
+                        ->first();
 
-                    // If not found, check for soft-deleted company and restore
-                    if (!$company) {
-                        $trashedCompany = \App\Models\Company::onlyTrashed()
-                            ->where('name', $tenantName)
-                            ->first();
-                        
-                        if ($trashedCompany) {
-                            $trashedCompany->restore();
-                            $company = $trashedCompany;
-                            Log::info('Restored soft-deleted company during sync', [
-                                'company_id' => $company->id,
-                                'name' => $tenantName,
-                            ]);
-                        } else {
-                            $company = \App\Models\Company::create([
-                                'name' => $tenantName,
-                                'timezone' => 'UTC',
-                                'status' => 'inactive',
-                            ]);
-                            $createdCompanies++;
-                        }
+                    // Skip if company is soft-deleted (don't restore or create duplicate)
+                    if ($company && $company->trashed()) {
+                        $skippedCompanies++;
+                        Log::info('Skipped soft-deleted company during sync', [
+                            'company_id' => $company->id,
+                            'name' => $tenantName,
+                        ]);
+                        continue;
                     }
+
+                    // Create new company only if it doesn't exist at all
+                    if (!$company) {
+                        $company = \App\Models\Company::create([
+                            'name' => $tenantName,
+                            'timezone' => 'UTC',
+                            'status' => 'inactive',
+                        ]);
+                        $createdCompanies++;
+                    }
+                    // If company exists (active/inactive), keep its current status - don't change it
 
                     $providerAccountQuery = \App\Models\CompanyPbxAccount::where(
                         'company_id',
