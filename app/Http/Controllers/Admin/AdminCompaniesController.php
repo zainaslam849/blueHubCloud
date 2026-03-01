@@ -40,7 +40,7 @@ class AdminCompaniesController extends Controller
             'sort' => ['sometimes', 'in:name,status,timezone,created_at'],
             'direction' => ['sometimes', 'in:asc,desc'],
             'status' => ['sometimes', 'in:active,inactive'],
-            'include_deleted' => ['sometimes', 'boolean'],
+            'include_deleted' => ['sometimes', 'in:true,false,1,0'],
         ]);
 
         $page = $validated['page'] ?? 1;
@@ -49,7 +49,7 @@ class AdminCompaniesController extends Controller
         $sort = $validated['sort'] ?? 'name';
         $direction = $validated['direction'] ?? 'asc';
         $statusFilter = $validated['status'] ?? null;
-        $includeDeleted = (bool) ($validated['include_deleted'] ?? false);
+        $includeDeleted = $request->boolean('include_deleted');
 
         $query = Company::query()
             ->when($includeDeleted, fn ($q) => $q->withTrashed())
