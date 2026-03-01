@@ -231,6 +231,7 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from "vue";
 import { BaseButton } from "../../components/admin/base";
+import adminApi from "../../router/admin/api";
 
 interface SyncSettings {
     enabled: boolean;
@@ -290,10 +291,8 @@ const toggleEnabled = async (providerId: number) => {
 const loadSettings = async () => {
     try {
         loading.value = true;
-        const response = await fetch("/admin/api/tenant-sync-settings");
-        if (!response.ok) throw new Error("Failed to load settings");
-
-        const data = await response.json();
+        const response = await adminApi.get("/tenant-sync-settings");
+        const data = response.data;
         providers.value = data;
 
         // Initialize settings object
@@ -318,19 +317,10 @@ const saveSettings = async (providerId: number) => {
         error.value = null;
         const payload = settings[providerId];
 
-        const response = await fetch(
-            `/admin/api/tenant-sync-settings/${providerId}`,
-            {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            },
+        const response = await adminApi.put(
+            `/tenant-sync-settings/${providerId}`,
+            payload,
         );
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.message || "Failed to save settings");
-        }
 
         success.value = "Settings saved successfully";
         setTimeout(() => {
@@ -350,18 +340,9 @@ const triggerSync = async (providerId: number) => {
         syncing.value = providerId;
         error.value = null;
 
-        const response = await fetch(
-            `/admin/api/tenant-sync-settings/${providerId}/trigger`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-            },
+        const response = await adminApi.post(
+            `/tenant-sync-settings/${providerId}/trigger`,
         );
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.message || "Failed to trigger sync");
-        }
 
         success.value = "Sync triggered successfully";
         setTimeout(() => {

@@ -1,4 +1,4 @@
-import adminApi from "./api";
+import adminApi, { setCsrfToken } from "./api";
 
 let cachedUser = null;
 let loaded = false;
@@ -15,6 +15,11 @@ export async function getAdminUser(force = false) {
         const res = await adminApi.get("/me");
         cachedUser = res?.data?.user ?? null;
         access = cachedUser ? "ok" : "unauthenticated";
+
+        // Update CSRF token if present in response
+        if (res?.data?.csrf_token) {
+            setCsrfToken(res.data.csrf_token);
+        }
     } catch (e) {
         // Axios error objects usually include response.status.
         // We treat 403 as a distinct "forbidden" state.
