@@ -148,15 +148,19 @@
                                 <span
                                     :class="[
                                         'admin-status-badge',
-                                        company.status === 'active'
-                                            ? 'admin-status-badge--active'
-                                            : 'admin-status-badge--inactive',
+                                        company.deleted_at
+                                            ? 'admin-status-badge--inactive'
+                                            : company.status === 'active'
+                                              ? 'admin-status-badge--active'
+                                              : 'admin-status-badge--inactive',
                                     ]"
                                 >
                                     {{
-                                        company.status === "active"
-                                            ? "Active"
-                                            : "Inactive"
+                                        company.deleted_at
+                                            ? "Deleted"
+                                            : company.status === "active"
+                                              ? "Active"
+                                              : "Inactive"
                                     }}
                                 </span>
                             </td>
@@ -166,6 +170,7 @@
                             >
                                 <div class="admin-table__actions">
                                     <BaseButton
+                                        v-if="!company.deleted_at"
                                         @click="openEditForm(company)"
                                         size="sm"
                                         variant="secondary"
@@ -179,6 +184,7 @@
                                         >
                                     </BaseButton>
                                     <BaseButton
+                                        v-if="!company.deleted_at"
                                         @click="openDeleteConfirm(company)"
                                         size="sm"
                                         variant="danger"
@@ -193,6 +199,26 @@
                                         >
                                         <span class="admin-actionBtn__text"
                                             >Delete</span
+                                        >
+                                    </BaseButton>
+                                    <BaseButton
+                                        v-if="company.deleted_at"
+                                        @click="
+                                            openPermanentDeleteConfirm(company)
+                                        "
+                                        size="sm"
+                                        variant="danger"
+                                        class="admin-actionBtn admin-actionBtn--delete"
+                                        :disabled="
+                                            deleting &&
+                                            deleteTarget?.id === company.id
+                                        "
+                                    >
+                                        <span class="admin-actionBtn__icon"
+                                            >⚠</span
+                                        >
+                                        <span class="admin-actionBtn__text"
+                                            >Delete Permanently</span
                                         >
                                     </BaseButton>
                                 </div>
@@ -651,7 +677,13 @@
                 >
                     <div class="admin-modal" @click.stop>
                         <div class="admin-modal__header">
-                            <h2 class="admin-modal__title">Delete Company</h2>
+                            <h2 class="admin-modal__title">
+                                {{
+                                    deleteMode === "permanent"
+                                        ? "Delete Company Permanently"
+                                        : "Delete Company"
+                                }}
+                            </h2>
                             <button
                                 type="button"
                                 class="admin-modal__close"
@@ -662,11 +694,27 @@
                         </div>
 
                         <div class="admin-modal__body">
-                            <p>
+                            <p v-if="deleteMode === 'soft'">
                                 Are you sure you want to delete
                                 <strong>{{ deleteTarget?.name }}</strong>
-                                ? This action cannot be undone.
+                                ? This will move the company to deleted state.
                             </p>
+                            <div v-else>
+                                <p>
+                                    You are about to permanently delete
+                                    <strong>{{ deleteTarget?.name }}</strong>
+                                    . This action cannot be undone.
+                                </p>
+                                <p style="margin-top: 10px">
+                                    This will permanently remove all company
+                                    data including calls, transcriptions, weekly
+                                    reports/files, PBX account mappings,
+                                    categories and sub-categories.
+                                </p>
+                                <p style="margin-top: 10px; font-weight: 600">
+                                    Do you want to continue?
+                                </p>
+                            </div>
                         </div>
 
                         <div class="admin-modal__footer">
@@ -681,7 +729,11 @@
                                 @click="confirmDelete"
                                 :loading="deleting"
                             >
-                                Delete
+                                {{
+                                    deleteMode === "permanent"
+                                        ? "Yes, Delete Permanently"
+                                        : "Delete"
+                                }}
                             </BaseButton>
                         </div>
                     </div>
@@ -694,11 +746,7 @@
 <script setup>
 import { onMounted, ref, reactive, watch } from "vue";
 import adminApi from "../../router/admin/api";
-import {
-    BaseBadge,
-    BaseButton,
-    BasePagination,
-} from "../../components/admin/base";
+import { BaseButton, BasePagination } from "../../components/admin/base";
 
 // Pagination and search state
 const search = ref("");
@@ -756,6 +804,7 @@ const syncFormData = reactive({ pbx_provider_id: "" });
 const showDeleteConfirm = ref(false);
 const deleteTarget = ref(null);
 const deleting = ref(false);
+const deleteMode = ref("soft");
 
 async function fetchCompanies() {
     loading.value = true;
@@ -767,6 +816,7 @@ async function fetchCompanies() {
             search: search.value || undefined,
             sort: sortBy.value,
             direction: sortDirection.value,
+            include_deleted: true,
         };
 
         const res = await adminApi.get("/companies", { params });
@@ -956,12 +1006,20 @@ async function performSync() {
 
 function openDeleteConfirm(company) {
     deleteTarget.value = company;
+    deleteMode.value = "soft";
+    showDeleteConfirm.value = true;
+}
+
+function openPermanentDeleteConfirm(company) {
+    deleteTarget.value = company;
+    deleteMode.value = "permanent";
     showDeleteConfirm.value = true;
 }
 
 function closeDeleteConfirm() {
     showDeleteConfirm.value = false;
     deleteTarget.value = null;
+    deleteMode.value = "soft";
 }
 
 async function confirmDelete() {
@@ -969,9 +1027,16 @@ async function confirmDelete() {
 
     deleting.value = true;
     try {
-        await adminApi.delete(`/companies/${deleteTarget.value.id}`);
-        showToast("Company deleted successfully.");
-        await loadCompanies();
+        if (deleteMode.value === "permanent") {
+            await adminApi.delete(
+                `/companies/${deleteTarget.value.id}/force-delete`,
+            );
+            showToast("Company permanently deleted successfully.");
+        } else {
+            await adminApi.delete(`/companies/${deleteTarget.value.id}`);
+            showToast("Company deleted successfully.");
+        }
+        await fetchCompanies();
         closeDeleteConfirm();
     } catch (err) {
         showToast(

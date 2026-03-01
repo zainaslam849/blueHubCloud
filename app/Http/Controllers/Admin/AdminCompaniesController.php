@@ -5,14 +5,19 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\CompanyPbxAccount;
+use App\Models\Call;
+use App\Models\CallCategory;
 use App\Models\PbxProvider;
 use App\Models\PbxwareTenant;
+use App\Models\WeeklyCallReport;
 use App\Services\PbxwareClient;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class AdminCompaniesController extends Controller
 {
@@ -35,6 +40,7 @@ class AdminCompaniesController extends Controller
             'sort' => ['sometimes', 'in:name,status,timezone,created_at'],
             'direction' => ['sometimes', 'in:asc,desc'],
             'status' => ['sometimes', 'in:active,inactive'],
+            'include_deleted' => ['sometimes', 'boolean'],
         ]);
 
         $page = $validated['page'] ?? 1;
@@ -43,10 +49,12 @@ class AdminCompaniesController extends Controller
         $sort = $validated['sort'] ?? 'name';
         $direction = $validated['direction'] ?? 'asc';
         $statusFilter = $validated['status'] ?? null;
+        $includeDeleted = (bool) ($validated['include_deleted'] ?? false);
 
         $query = Company::query()
+            ->when($includeDeleted, fn ($q) => $q->withTrashed())
             ->with('companyPbxAccounts.pbxProvider:id,name')
-            ->select('id', 'name', 'status', 'timezone', 'created_at');
+            ->select('id', 'name', 'status', 'timezone', 'created_at', 'deleted_at');
 
         // Apply search
         if (!empty($search)) {
@@ -93,6 +101,7 @@ class AdminCompaniesController extends Controller
                 'pbx_provider_id' => $account?->pbx_provider_id,
                 'pbx_provider_name' => $account?->pbxProvider?->name,
                 'created_at' => $company->created_at?->toISOString(),
+                'deleted_at' => $company->deleted_at?->toISOString(),
             ];
         }, $companies);
 
@@ -436,6 +445,75 @@ class AdminCompaniesController extends Controller
         $company = Company::findOrFail($id);
         $company->delete();
 
-        return response()->json(['message' => 'Company deleted successfully']);
+        return response()->json(['message' => 'Company soft-deleted successfully']);
+    }
+
+    /**
+     * Permanently delete a previously soft-deleted company and all related data.
+     */
+    public function forceDelete(int $id): JsonResponse
+    {
+        $company = Company::withTrashed()->findOrFail($id);
+
+        if (! $company->trashed()) {
+            return response()->json([
+                'message' => 'Company must be soft-deleted before permanent deletion.',
+            ], 422);
+        }
+
+        $callsCount = Call::where('company_id', $company->id)->count();
+        $reports = WeeklyCallReport::where('company_id', $company->id)
+            ->get(['id', 'pdf_disk', 'pdf_path', 'csv_disk', 'csv_path']);
+        $reportCount = $reports->count();
+        $categoriesCount = CallCategory::withTrashed()
+            ->where('company_id', $company->id)
+            ->count();
+        $pbxAccountsCount = CompanyPbxAccount::where('company_id', $company->id)->count();
+
+        foreach ($reports as $report) {
+            if (! empty($report->pdf_path)) {
+                $pdfDisk = $report->pdf_disk ?: config('services.reports.storage_disk', 'local');
+                try {
+                    Storage::disk($pdfDisk)->delete($report->pdf_path);
+                } catch (\Throwable $e) {
+                    Log::warning('Failed deleting report PDF during company force delete', [
+                        'company_id' => $company->id,
+                        'report_id' => $report->id,
+                        'disk' => $pdfDisk,
+                        'path' => $report->pdf_path,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            if (! empty($report->csv_path)) {
+                $csvDisk = $report->csv_disk ?: config('services.reports.storage_disk', 'local');
+                try {
+                    Storage::disk($csvDisk)->delete($report->csv_path);
+                } catch (\Throwable $e) {
+                    Log::warning('Failed deleting report CSV during company force delete', [
+                        'company_id' => $company->id,
+                        'report_id' => $report->id,
+                        'disk' => $csvDisk,
+                        'path' => $report->csv_path,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        DB::transaction(function () use ($company) {
+            $company->forceDelete();
+        });
+
+        return response()->json([
+            'message' => 'Company permanently deleted with all related data.',
+            'deleted' => [
+                'calls' => $callsCount,
+                'reports' => $reportCount,
+                'categories' => $categoriesCount,
+                'pbx_accounts' => $pbxAccountsCount,
+            ],
+        ]);
     }
 }

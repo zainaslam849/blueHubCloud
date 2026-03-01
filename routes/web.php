@@ -12,11 +12,55 @@ use App\Http\Controllers\Admin\SubCategoryController;
 use App\Http\Controllers\Admin\CallCategorizationController;
 use App\Http\Controllers\Admin\CategoryOverrideController;
 use App\Http\Controllers\Admin\AdminAiCategoryController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return redirect('/admin/login');
 });
+
+Route::get('/cron/pbx-sync', function (Request $request) {
+    $configuredToken = (string) config('services.scheduler.token', '');
+    $providedToken = (string) $request->query('token', '');
+
+    if ($configuredToken === '' || $providedToken === '' || !hash_equals($configuredToken, $providedToken)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Unauthorized',
+        ], 403);
+    }
+
+    try {
+        Artisan::call('pbx:sync-tenants');
+        $output = trim(Artisan::output());
+
+        Log::info('Cron webhook executed pbx:sync-tenants', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'exit_code' => 0,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tenant sync triggered.',
+            'output' => $output,
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('Cron webhook failed to execute pbx:sync-tenants', [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'error' => $e->getMessage(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Tenant sync failed to trigger.',
+            'error' => $e->getMessage(),
+        ], 500);
+    }
+})->name('cron.pbx-sync')->middleware('throttle:20,1');
 
 // Admin auth API (session-based)
 Route::prefix('admin/api')->group(function () {
@@ -30,6 +74,7 @@ Route::prefix('admin/api')->group(function () {
         Route::post('/companies', [AdminCompaniesController::class, 'store']);
         Route::put('/companies/{id}', [AdminCompaniesController::class, 'update']);
         Route::delete('/companies/{id}', [AdminCompaniesController::class, 'destroy']);
+        Route::delete('/companies/{id}/force-delete', [AdminCompaniesController::class, 'forceDelete']);
         Route::post('/companies/sync-tenants', [AdminCompaniesController::class, 'syncTenants']);
         Route::get('/companies/available-tenants', [AdminCompaniesController::class, 'availableTenants']);
         

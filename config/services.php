@@ -12,4 +12,8 @@ return [
         'timeout' => env('PBXWARE_TIMEOUT', 30),
     ],
 
+    'scheduler' => [
+        'token' => env('SCHEDULER_WEBHOOK_TOKEN'),
+    ],
+
 ];
