@@ -100,6 +100,10 @@ class IngestPbxCallsJob implements ShouldQueue
                 ? $client->fetchCdrRecords($params)
                 : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
 
+            $headers = (is_array($result) && isset($result['header']) && is_array($result['header']))
+                ? $result['header']
+                : [];
+
             $csvRows = $this->extractCsvRows($result);
             $rowCount = count($csvRows);
             $cdrRowsReturned += $rowCount;
@@ -117,12 +121,29 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
 
                 // Bluehub PBXWare API contract (fixed column indexes):
+                // - csv[0] = From
+                // - csv[1] = To
                 // - csv[2] = Date/Time (epoch seconds)
+                // - csv[3] = Total Duration
                 // - csv[6] = Status
                 // - csv[7] = Unique ID
+                // - csv[10] = Location Type
+                $fromValue = array_key_exists(0, $row) ? trim((string) ($row[0] ?? '')) : null;
+                $toValue = array_key_exists(1, $row) ? trim((string) ($row[1] ?? '')) : null;
                 $epoch = $row[2] ?? null;
                 $status = $row[6] ?? null;
                 $callUid = $row[7] ?? null;
+                $locationType = array_key_exists(10, $row) ? trim((string) ($row[10] ?? '')) : null;
+
+                if ($fromValue === '') {
+                    $fromValue = null;
+                }
+                if ($toValue === '') {
+                    $toValue = null;
+                }
+                if ($locationType === '') {
+                    $locationType = null;
+                }
 
                 $durationSeconds = null;
                 if (array_key_exists(3, $row) && is_numeric($row[3])) {
@@ -152,6 +173,29 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Ensure duration is an integer billsec
                 $billsec = is_numeric($durationSeconds) ? (int) $durationSeconds : 0;
 
+                // Best-effort caller extension extraction from CDR From field.
+                // Keep this conservative to avoid false positives from full phone numbers.
+                $callerExtension = null;
+                if (is_string($fromValue) && preg_match('/^\d{2,6}$/', $fromValue)) {
+                    $callerExtension = $fromValue;
+                }
+
+                $pbxMetadata = null;
+                if (! empty($headers) && count($headers) === count($row)) {
+                    try {
+                        $pbxMetadata = array_combine($headers, $row) ?: null;
+                    } catch (\Throwable $e) {
+                        $pbxMetadata = null;
+                    }
+                }
+
+                // Include raw row for diagnostics and future column mapping enhancements.
+                if (is_array($pbxMetadata)) {
+                    $pbxMetadata['raw_row'] = $row;
+                } else {
+                    $pbxMetadata = ['raw_row' => $row];
+                }
+
                 // Compute ended_at when possible (started epoch + billsec)
                 $endedAt = null;
                 if ($billsec > 0 && is_numeric($epoch)) {
@@ -166,11 +210,13 @@ class IngestPbxCallsJob implements ShouldQueue
                     ],
                     array_filter([
                         'company_id' => $this->companyId,
-                        // Direction/from/to are not provided by the authoritative Bluehub PBXware CDR contract.
-                        // Use stable placeholders to satisfy schema constraints.
+                        // Direction is not provided by this CDR payload, keep stable placeholder.
                         'direction' => 'unknown',
-                        'from' => null,
-                        'to' => null,
+                        'from' => $fromValue,
+                        'to' => $toValue,
+                        'caller_extension' => $callerExtension,
+                        'department' => $locationType,
+                        'pbx_metadata' => $pbxMetadata,
                         'started_at' => $startedAt,
                         // Final mapped status (do not set PROCESSING for CDR-based calls)
                         'status' => $finalStatus,
