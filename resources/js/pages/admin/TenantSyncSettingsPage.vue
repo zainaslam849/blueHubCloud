@@ -47,6 +47,11 @@
                     <div>
                         <h2 class="admin-card__headline">
                             {{ provider.pbx_provider_name }}
+                            <span
+                                v-if="hasChanges(provider.pbx_provider_id)"
+                                class="unsaved-badge"
+                                >●</span
+                            >
                         </h2>
                         <p class="admin-card__hint">
                             Automatic tenant discovery and linking.
@@ -56,13 +61,13 @@
                         <div class="admin-toggle-wrapper">
                             <input
                                 :id="`enabled-${provider.pbx_provider_id}`"
-                                :checked="
+                                v-model="
                                     getSetting(provider.pbx_provider_id).enabled
                                 "
                                 type="checkbox"
                                 class="admin-toggle"
                                 @change="
-                                    toggleEnabled(provider.pbx_provider_id)
+                                    markAsChanged(provider.pbx_provider_id)
                                 "
                             />
                             <label
@@ -85,18 +90,11 @@
                     <div class="admin-field">
                         <label class="admin-field__label"> Frequency </label>
                         <select
-                            :value="
+                            v-model="
                                 getSetting(provider.pbx_provider_id).frequency
                             "
                             class="admin-input"
-                            @change="
-                                (e) =>
-                                    updateSetting(
-                                        provider.pbx_provider_id,
-                                        'frequency',
-                                        e.target.value,
-                                    )
-                            "
+                            @change="markAsChanged(provider.pbx_provider_id)"
                         >
                             <option value="hourly">Hourly</option>
                             <option value="daily">Daily</option>
@@ -110,20 +108,13 @@
                             Scheduled Time (UTC)
                         </label>
                         <input
-                            :value="
+                            v-model="
                                 getSetting(provider.pbx_provider_id)
                                     .scheduled_time
                             "
                             type="time"
                             class="admin-input"
-                            @change="
-                                (e) =>
-                                    updateSetting(
-                                        provider.pbx_provider_id,
-                                        'scheduled_time',
-                                        e.target.value,
-                                    )
-                            "
+                            @change="markAsChanged(provider.pbx_provider_id)"
                         />
                     </div>
 
@@ -137,19 +128,12 @@
                     >
                         <label class="admin-field__label"> Day of Week </label>
                         <select
-                            :value="
+                            v-model="
                                 getSetting(provider.pbx_provider_id)
                                     .scheduled_day
                             "
                             class="admin-input"
-                            @change="
-                                (e) =>
-                                    updateSetting(
-                                        provider.pbx_provider_id,
-                                        'scheduled_day',
-                                        e.target.value,
-                                    )
-                            "
+                            @change="markAsChanged(provider.pbx_provider_id)"
                         >
                             <option value="monday">Monday</option>
                             <option value="tuesday">Tuesday</option>
@@ -211,8 +195,24 @@
                         </div>
                     </div>
 
-                    <!-- Manual Trigger Button -->
-                    <div style="margin-top: 20px; display: flex; gap: 10px">
+                    <!-- Action Buttons -->
+                    <div
+                        style="
+                            margin-top: 20px;
+                            display: flex;
+                            gap: 10px;
+                            flex-wrap: wrap;
+                        "
+                    >
+                        <BaseButton
+                            variant="primary"
+                            size="sm"
+                            @click="saveSettings(provider.pbx_provider_id)"
+                            :loading="saving === provider.pbx_provider_id"
+                            :disabled="!hasChanges(provider.pbx_provider_id)"
+                        >
+                            💾 Update Settings
+                        </BaseButton>
                         <BaseButton
                             variant="secondary"
                             size="sm"
@@ -249,12 +249,14 @@ interface Provider {
 }
 
 const loading = ref(true);
+const saving = ref<number | null>(null);
 const syncing = ref<number | null>(null);
 const error = ref<string | null>(null);
 const success = ref<string | null>(null);
 
 const providers = ref<Provider[]>([]);
 const settings = reactive<Record<number, SyncSettings>>({});
+const changedProviders = ref<Set<number>>(new Set());
 
 onMounted(async () => {
     await loadSettings();
@@ -272,20 +274,12 @@ const getSetting = (providerId: number): SyncSettings => {
     return settings[providerId];
 };
 
-const updateSetting = async (
-    providerId: number,
-    key: keyof SyncSettings,
-    value: any,
-) => {
-    const setting = getSetting(providerId);
-    (setting as any)[key] = value;
-    await saveSettings(providerId);
+const markAsChanged = (providerId: number) => {
+    changedProviders.value.add(providerId);
 };
 
-const toggleEnabled = async (providerId: number) => {
-    const setting = getSetting(providerId);
-    setting.enabled = !setting.enabled;
-    await saveSettings(providerId);
+const hasChanges = (providerId: number): boolean => {
+    return changedProviders.value.has(providerId);
 };
 
 const loadSettings = async () => {
@@ -304,6 +298,9 @@ const loadSettings = async () => {
                 scheduled_day: provider.scheduled_day || "monday",
             };
         });
+        
+        // Clear changed tracking after load
+        changedProviders.value.clear();
     } catch (err) {
         error.value =
             err instanceof Error ? err.message : "Failed to load settings";
@@ -314,6 +311,7 @@ const loadSettings = async () => {
 
 const saveSettings = async (providerId: number) => {
     try {
+        saving.value = providerId;
         error.value = null;
         const payload = settings[providerId];
 
@@ -323,6 +321,7 @@ const saveSettings = async (providerId: number) => {
         );
 
         success.value = "Settings saved successfully";
+        changedProviders.value.delete(providerId);
         setTimeout(() => {
             success.value = null;
         }, 3000);
@@ -332,6 +331,8 @@ const saveSettings = async (providerId: number) => {
     } catch (err) {
         error.value =
             err instanceof Error ? err.message : "Failed to save settings";
+    } finally {
+        saving.value = null;
     }
 };
 
@@ -441,6 +442,24 @@ const parseSyncLog = (logString: string) => {
 
 .text-muted {
     color: rgba(255, 255, 255, 0.5);
+}
+
+.unsaved-badge {
+    display: inline-block;
+    margin-left: 8px;
+    color: #fbbf24;
+    font-size: 1.2em;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
 }
 
 @media (max-width: 768px) {
