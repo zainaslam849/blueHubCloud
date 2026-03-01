@@ -326,6 +326,28 @@ const requiresScheduledDay = (providerId: number): boolean => {
     return getSetting(providerId).frequency === "weekly";
 };
 
+const normalizeTimeValue = (value?: string): string => {
+    if (!value) return "02:00";
+
+    const trimmed = value.trim();
+    const hhmmMatch = trimmed.match(/^(\d{2}:\d{2})/);
+    if (hhmmMatch) return hhmmMatch[1];
+
+    const amPmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*([APap][Mm])$/);
+    if (amPmMatch) {
+        let hours = Number(amPmMatch[1]);
+        const minutes = amPmMatch[2];
+        const period = amPmMatch[3].toUpperCase();
+
+        if (period === "PM" && hours < 12) hours += 12;
+        if (period === "AM" && hours === 12) hours = 0;
+
+        return `${String(hours).padStart(2, "0")}:${minutes}`;
+    }
+
+    return "02:00";
+};
+
 const loadSettings = async () => {
     try {
         loading.value = true;
@@ -339,7 +361,7 @@ const loadSettings = async () => {
                 enabled: provider.enabled || false,
                 frequency: provider.frequency || "daily",
                 interval_minutes: Number(provider.interval_minutes || 5),
-                scheduled_time: provider.scheduled_time || "02:00",
+                scheduled_time: normalizeTimeValue(provider.scheduled_time),
                 scheduled_day: provider.scheduled_day || "monday",
             };
         });
@@ -358,7 +380,23 @@ const saveSettings = async (providerId: number) => {
     try {
         saving.value = providerId;
         error.value = null;
-        const payload = settings[providerId];
+        const setting = settings[providerId];
+        const frequency = setting.frequency;
+
+        const payload = {
+            enabled: setting.enabled,
+            frequency,
+            interval_minutes:
+                frequency === "every_minutes"
+                    ? Math.min(Math.max(Number(setting.interval_minutes || 5), 1), 59)
+                    : null,
+            scheduled_time: requiresScheduledTime(providerId)
+                ? normalizeTimeValue(setting.scheduled_time)
+                : null,
+            scheduled_day: requiresScheduledDay(providerId)
+                ? setting.scheduled_day || "monday"
+                : null,
+        };
 
         const response = await adminApi.put(
             `/tenant-sync-settings/${providerId}`,

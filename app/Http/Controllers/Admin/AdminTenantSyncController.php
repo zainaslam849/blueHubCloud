@@ -27,7 +27,7 @@ class AdminTenantSyncController extends Controller
                     'enabled' => $setting->enabled,
                     'frequency' => $setting->frequency,
                     'interval_minutes' => $setting->interval_minutes,
-                    'scheduled_time' => $setting->scheduled_time,
+                    'scheduled_time' => $this->normalizeScheduledTime($setting->scheduled_time) ?? '02:00',
                     'scheduled_day' => $setting->scheduled_day,
                     'last_synced_at' => $setting->last_synced_at?->toIso8601String(),
                     'last_sync_count' => $setting->last_sync_count,
@@ -87,7 +87,7 @@ class AdminTenantSyncController extends Controller
                 'enabled' => $setting->enabled,
                 'frequency' => $setting->frequency,
                 'interval_minutes' => $setting->interval_minutes,
-                'scheduled_time' => $setting->scheduled_time,
+                'scheduled_time' => $this->normalizeScheduledTime($setting->scheduled_time) ?? '02:00',
                 'scheduled_day' => $setting->scheduled_day,
                 'last_synced_at' => $setting->last_synced_at?->toIso8601String(),
                 'last_sync_count' => $setting->last_sync_count,
@@ -103,12 +103,16 @@ class AdminTenantSyncController extends Controller
      */
     public function update(Request $request, int $providerId): JsonResponse
     {
+        $request->merge([
+            'scheduled_time' => $this->normalizeScheduledTime($request->input('scheduled_time')),
+        ]);
+
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
             'frequency' => ['required', 'in:every_minutes,hourly,daily,weekly'],
             'interval_minutes' => ['nullable', 'integer', 'min:1', 'max:59'],
-            'scheduled_time' => ['nullable', 'date_format:H:i', 'required_if:frequency,daily,weekly'],
-            'scheduled_day' => ['nullable', 'string', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday', 'required_if:frequency,weekly'],
+            'scheduled_time' => ['exclude_unless:frequency,daily,weekly', 'required', 'date_format:H:i'],
+            'scheduled_day' => ['exclude_unless:frequency,weekly', 'required', 'string', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday'],
         ]);
 
         // Verify provider exists
@@ -136,7 +140,7 @@ class AdminTenantSyncController extends Controller
                 'enabled' => $setting->enabled,
                 'frequency' => $setting->frequency,
                 'interval_minutes' => $setting->interval_minutes,
-                'scheduled_time' => $setting->scheduled_time,
+                'scheduled_time' => $this->normalizeScheduledTime($setting->scheduled_time) ?? '02:00',
                 'scheduled_day' => $setting->scheduled_day,
                 'last_synced_at' => $setting->last_synced_at?->toIso8601String(),
                 'last_sync_count' => $setting->last_sync_count,
@@ -144,6 +148,35 @@ class AdminTenantSyncController extends Controller
             ],
             'message' => 'Sync settings updated successfully',
         ]);
+    }
+
+    private function normalizeScheduledTime(mixed $time): ?string
+    {
+        if ($time === null) {
+            return null;
+        }
+
+        $value = trim((string) $time);
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{2}:\d{2}$/', $value) === 1) {
+            return $value;
+        }
+
+        if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $value) === 1) {
+            return substr($value, 0, 5);
+        }
+
+        foreach (['g:i A', 'g:i a', 'h:i A', 'h:i a'] as $format) {
+            $parsed = \DateTime::createFromFormat($format, $value);
+            if ($parsed !== false) {
+                return $parsed->format('H:i');
+            }
+        }
+
+        return $value;
     }
 
     /**
