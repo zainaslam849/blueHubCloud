@@ -48,9 +48,21 @@ class SyncPbxTenants extends Command
 
         foreach ($syncSettings as $setting) {
             try {
-                if (!$setting->shouldSyncNow()) {
+                $shouldSync = $setting->shouldSyncNow();
+                Log::info(
+                    'Tenant sync check',
+                    [
+                        'provider_id' => $setting->pbx_provider_id,
+                        'provider_name' => $setting->pbxProvider->name,
+                        'frequency' => $setting->frequency,
+                        'should_sync' => $shouldSync,
+                        'last_synced_at' => $setting->last_synced_at,
+                    ]
+                );
+                
+                if (!$shouldSync) {
                     $this->info(
-                        "⏭️  Provider {$setting->pbxProvider->name}: Not yet time to sync"
+                        "⏭️  Provider {$setting->pbxProvider->name} ({$setting->frequency}): Not yet time to sync (last: {$setting->last_synced_at})"
                     );
                     continue;
                 }
@@ -198,13 +210,27 @@ class SyncPbxTenants extends Command
                         $tenantName
                     )->first();
 
+                    // If not found, check for soft-deleted company and restore
                     if (!$company) {
-                        $company = \App\Models\Company::create([
-                            'name' => $tenantName,
-                            'timezone' => 'UTC',
-                            'status' => 'inactive',
-                        ]);
-                        $createdCompanies++;
+                        $trashedCompany = \App\Models\Company::onlyTrashed()
+                            ->where('name', $tenantName)
+                            ->first();
+                        
+                        if ($trashedCompany) {
+                            $trashedCompany->restore();
+                            $company = $trashedCompany;
+                            Log::info('Restored soft-deleted company during sync', [
+                                'company_id' => $company->id,
+                                'name' => $tenantName,
+                            ]);
+                        } else {
+                            $company = \App\Models\Company::create([
+                                'name' => $tenantName,
+                                'timezone' => 'UTC',
+                                'status' => 'inactive',
+                            ]);
+                            $createdCompanies++;
+                        }
                     }
 
                     $providerAccountQuery = \App\Models\CompanyPbxAccount::where(

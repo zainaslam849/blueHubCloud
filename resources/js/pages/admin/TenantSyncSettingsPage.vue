@@ -388,7 +388,10 @@ const saveSettings = async (providerId: number) => {
             frequency,
             interval_minutes:
                 frequency === "every_minutes"
-                    ? Math.min(Math.max(Number(setting.interval_minutes || 5), 1), 59)
+                    ? Math.min(
+                          Math.max(Number(setting.interval_minutes || 5), 1),
+                          59,
+                      )
                     : null,
             scheduled_time: requiresScheduledTime(providerId)
                 ? normalizeTimeValue(setting.scheduled_time)
