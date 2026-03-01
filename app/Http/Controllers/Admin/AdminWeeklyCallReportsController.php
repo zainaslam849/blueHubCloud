@@ -158,6 +158,37 @@ class AdminWeeklyCallReportsController extends Controller
 
         $metrics = $report->metrics ?? [];
 
+        $callEndpoints = Call::query()
+            ->where('weekly_call_report_id', $report->id)
+            ->where(function ($query) {
+                $query->whereNotNull('from')
+                    ->orWhereNotNull('to');
+            })
+            ->orderByDesc('started_at')
+            ->limit(100)
+            ->get([
+                'id',
+                'from',
+                'to',
+                'status',
+                'started_at',
+                'duration_seconds',
+                'pbx_unique_id',
+            ])
+            ->map(function ($call) {
+                return [
+                    'call_id' => (int) $call->id,
+                    'from' => $call->from,
+                    'to' => $call->to,
+                    'status' => $call->status,
+                    'started_at' => $call->started_at?->toIso8601String(),
+                    'duration_seconds' => (int) ($call->duration_seconds ?? 0),
+                    'pbx_unique_id' => $call->pbx_unique_id,
+                ];
+            })
+            ->values()
+            ->all();
+
         $categoryBreakdowns = [
             'counts' => $metrics['category_counts'] ?? [],
             'details' => $metrics['category_breakdowns'] ?? [],
@@ -243,6 +274,9 @@ class AdminWeeklyCallReportsController extends Controller
 
                 // Category breakdowns
                 'category_breakdowns' => $categoryBreakdowns,
+
+                // Real endpoint rows from report calls (no synthetic/sample data)
+                'call_endpoints' => $callEndpoints,
 
                 // Insights
                 'insights' => $metrics['insights'] ?? [
@@ -564,7 +598,10 @@ class AdminWeeklyCallReportsController extends Controller
                 ->leftJoin('call_categories', 'call_categories.id', '=', 'calls.category_id')
                 ->leftJoin('sub_categories', 'sub_categories.id', '=', 'calls.sub_category_id')
                 ->where('calls.weekly_call_report_id', $report->id)
-                ->where('calls.answered_by_extension', $row->extension)
+                ->where(function ($query) use ($row) {
+                    $query->where('calls.answered_by_extension', $row->extension)
+                        ->orWhere('calls.to', $row->extension);
+                })
                 ->orderByDesc('calls.started_at')
                 ->limit(25)
                 ->get([

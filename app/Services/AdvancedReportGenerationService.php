@@ -105,9 +105,9 @@ class AdvancedReportGenerationService
 
         foreach ($calls as $call) {
             // Identify the extension that handled this call
-            $extension = $call->answered_by_extension ?? $call->to ?? null;
-            
-            if (!$extension || !preg_match('/^\d{2,5}$/', $extension)) {
+            $extension = $this->resolveExtensionIdentifier($call);
+
+            if (!$extension) {
                 continue; // Skip if not a valid extension number
             }
 
@@ -129,6 +129,9 @@ class AdvancedReportGenerationService
                 $extensionData[$extension]['calls_answered']++;
             } elseif ($call->direction === 'outbound') {
                 $extensionData[$extension]['calls_made']++;
+            } elseif ($call->status === 'answered') {
+                // Ingested CDR rows may have direction=unknown; still count handled calls.
+                $extensionData[$extension]['calls_answered']++;
             }
 
             $extensionData[$extension]['total_seconds'] += $call->duration_seconds ?? 0;
@@ -291,9 +294,10 @@ class AdvancedReportGenerationService
             }
 
             // Track extensions in this ring group
-            if ($call->answered_by_extension) {
-                $ringGroupData[$ringGroup]['extensions'][$call->answered_by_extension] = 
-                    ($ringGroupData[$ringGroup]['extensions'][$call->answered_by_extension] ?? 0) + 1;
+            $resolvedExtension = $this->resolveExtensionIdentifier($call);
+            if ($resolvedExtension) {
+                $ringGroupData[$ringGroup]['extensions'][$resolvedExtension] =
+                    ($ringGroupData[$ringGroup]['extensions'][$resolvedExtension] ?? 0) + 1;
             }
         }
 
@@ -389,7 +393,7 @@ class AdvancedReportGenerationService
 
             foreach ($calls as $call) {
                 // Extensions
-                $ext = $call->answered_by_extension ?? $call->to;
+                $ext = $this->resolveExtensionIdentifier($call);
                 if ($ext) {
                     $extensionBreakdown[$ext] = ($extensionBreakdown[$ext] ?? 0) + 1;
                 }
@@ -593,5 +597,33 @@ class AdvancedReportGenerationService
         }
 
         return $suggestions;
+    }
+
+    private function resolveExtensionIdentifier(Call $call): ?string
+    {
+        $candidates = [
+            $call->answered_by_extension,
+            $call->to,
+            $call->from,
+            $call->caller_extension,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate)) {
+                continue;
+            }
+
+            $value = trim($candidate);
+            if ($value === '') {
+                continue;
+            }
+
+            // Keep conservative: numeric endpoints only, length 2-15.
+            if (preg_match('/^\d{2,15}$/', $value)) {
+                return $value;
+            }
+        }
+
+        return null;
     }
 }

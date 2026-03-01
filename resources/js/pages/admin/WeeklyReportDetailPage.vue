@@ -163,6 +163,11 @@
                 :metrics="report?.metrics"
             />
 
+            <CallEndpoints
+                :loading="loading"
+                :endpoints="report?.call_endpoints"
+            />
+
             <!-- Section 4: Category Breakdowns -->
             <CategoryBreakdowns
                 :loading="loading"
@@ -192,6 +197,7 @@ import { BaseButton } from "../../components/admin/base";
 import ReportHeader from "../../components/admin/reports/ReportHeader.vue";
 import ExecutiveSummary from "../../components/admin/reports/ExecutiveSummary.vue";
 import QuantitativeAnalysis from "../../components/admin/reports/QuantitativeAnalysis.vue";
+import CallEndpoints from "../../components/admin/reports/CallEndpoints.vue";
 import CategoryBreakdowns from "../../components/admin/reports/CategoryBreakdowns.vue";
 import InsightsRecommendations from "../../components/admin/reports/InsightsRecommendations.vue";
 import AutomationPriorityViews from "../../components/admin/reports/AutomationPriorityViews.vue";
