@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\AdminTestPipelineJob;
+use App\Models\CompanyPbxAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,6 +25,17 @@ class AdminPipelineController extends Controller
         $rangeDays = (int) ($validated['range_days'] ?? 30);
         $summarizeLimit = (int) ($validated['summarize_limit'] ?? 500);
         $categorizeLimit = (int) ($validated['categorize_limit'] ?? 500);
+
+        $hasActivePbxAccount = CompanyPbxAccount::query()
+            ->where('company_id', $companyId)
+            ->where('status', 'active')
+            ->exists();
+
+        if (! $hasActivePbxAccount) {
+            return response()->json([
+                'message' => 'Selected company has no active PBX account. Please configure and activate a PBX account first.',
+            ], 422);
+        }
 
         AdminTestPipelineJob::dispatch(
             $companyId,
