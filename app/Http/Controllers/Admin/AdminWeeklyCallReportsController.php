@@ -16,16 +16,10 @@ class AdminWeeklyCallReportsController extends Controller
     public function index(Request $request, WeeklyCallReportQueryService $service): JsonResponse
     {
         $validated = $request->validate([
-            'company_id' => ['nullable', 'integer', 'min:1'],
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
         ]);
 
-        $company = $this->resolveAuthenticatedCompany();
-
-        if (isset($validated['company_id']) && (int) $validated['company_id'] !== $company->id) {
-            abort(403, 'Company mismatch.');
-        }
-
-        $companyId = $company->id;
+        $companyId = (int) $validated['company_id'];
 
         $reports = $service->getByCompanyId($companyId)->values();
 
@@ -90,11 +84,6 @@ class AdminWeeklyCallReportsController extends Controller
     {
         $report = WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
             ->findOrFail($id);
-
-        $company = $this->resolveAuthenticatedCompany();
-        if ($report->company_id !== $company->id) {
-            return response()->json(['message' => 'This action is unauthorized.'], 403);
-        }
 
         // Attempt to get authenticated user from admin guard first, fallback to web guard
         $adminGuardUser = Auth::guard('admin')->user();
