@@ -96,14 +96,41 @@
                             class="admin-input"
                             @change="markAsChanged(provider.pbx_provider_id)"
                         >
+                            <option value="every_minutes">
+                                Every X Minutes
+                            </option>
                             <option value="hourly">Hourly</option>
                             <option value="daily">Daily</option>
                             <option value="weekly">Weekly</option>
                         </select>
                     </div>
 
+                    <!-- Minute Interval -->
+                    <div
+                        v-if="usesMinuteInterval(provider.pbx_provider_id)"
+                        class="admin-field"
+                    >
+                        <label class="admin-field__label">
+                            Every (minutes)
+                        </label>
+                        <input
+                            v-model.number="
+                                getSetting(provider.pbx_provider_id)
+                                    .interval_minutes
+                            "
+                            type="number"
+                            min="1"
+                            max="59"
+                            class="admin-input"
+                            @change="markAsChanged(provider.pbx_provider_id)"
+                        />
+                    </div>
+
                     <!-- Scheduled Time -->
-                    <div class="admin-field">
+                    <div
+                        v-if="requiresScheduledTime(provider.pbx_provider_id)"
+                        class="admin-field"
+                    >
                         <label class="admin-field__label">
                             Scheduled Time (UTC)
                         </label>
@@ -120,10 +147,7 @@
 
                     <!-- Weekly Day Selection -->
                     <div
-                        v-if="
-                            getSetting(provider.pbx_provider_id).frequency ===
-                            'weekly'
-                        "
+                        v-if="requiresScheduledDay(provider.pbx_provider_id)"
                         class="admin-field"
                     >
                         <label class="admin-field__label"> Day of Week </label>
@@ -235,7 +259,8 @@ import adminApi from "../../router/admin/api";
 
 interface SyncSettings {
     enabled: boolean;
-    frequency: "hourly" | "daily" | "weekly";
+    frequency: "every_minutes" | "hourly" | "daily" | "weekly";
+    interval_minutes: number;
     scheduled_time: string;
     scheduled_day?: string;
 }
@@ -243,6 +268,11 @@ interface SyncSettings {
 interface Provider {
     pbx_provider_id: number;
     pbx_provider_name: string;
+    enabled?: boolean;
+    frequency?: "every_minutes" | "hourly" | "daily" | "weekly";
+    interval_minutes?: number;
+    scheduled_time?: string;
+    scheduled_day?: string;
     last_synced_at: string | null;
     last_sync_count: number;
     last_sync_log: string | null;
@@ -267,6 +297,7 @@ const getSetting = (providerId: number): SyncSettings => {
         settings[providerId] = {
             enabled: false,
             frequency: "daily",
+            interval_minutes: 5,
             scheduled_time: "02:00",
             scheduled_day: "monday",
         };
@@ -282,6 +313,19 @@ const hasChanges = (providerId: number): boolean => {
     return changedProviders.value.has(providerId);
 };
 
+const usesMinuteInterval = (providerId: number): boolean => {
+    return getSetting(providerId).frequency === "every_minutes";
+};
+
+const requiresScheduledTime = (providerId: number): boolean => {
+    const frequency = getSetting(providerId).frequency;
+    return frequency === "daily" || frequency === "weekly";
+};
+
+const requiresScheduledDay = (providerId: number): boolean => {
+    return getSetting(providerId).frequency === "weekly";
+};
+
 const loadSettings = async () => {
     try {
         loading.value = true;
@@ -294,11 +338,12 @@ const loadSettings = async () => {
             settings[provider.pbx_provider_id] = {
                 enabled: provider.enabled || false,
                 frequency: provider.frequency || "daily",
+                interval_minutes: Number(provider.interval_minutes || 5),
                 scheduled_time: provider.scheduled_time || "02:00",
                 scheduled_day: provider.scheduled_day || "monday",
             };
         });
-        
+
         // Clear changed tracking after load
         changedProviders.value.clear();
     } catch (err) {

@@ -26,6 +26,7 @@ class AdminTenantSyncController extends Controller
                     'pbx_provider_name' => $provider->name,
                     'enabled' => $setting->enabled,
                     'frequency' => $setting->frequency,
+                    'interval_minutes' => $setting->interval_minutes,
                     'scheduled_time' => $setting->scheduled_time,
                     'scheduled_day' => $setting->scheduled_day,
                     'last_synced_at' => $setting->last_synced_at?->toIso8601String(),
@@ -40,6 +41,7 @@ class AdminTenantSyncController extends Controller
                     'pbx_provider_name' => $provider->name,
                     'enabled' => false,
                     'frequency' => 'daily',
+                    'interval_minutes' => 5,
                     'scheduled_time' => '02:00',
                     'scheduled_day' => 'monday',
                     'last_synced_at' => null,
@@ -70,6 +72,7 @@ class AdminTenantSyncController extends Controller
                 'pbx_provider_name' => $pbxProvider->name,
                 'enabled' => false,
                 'frequency' => 'daily',
+                'interval_minutes' => 5,
                 'scheduled_time' => '02:00',
                 'scheduled_day' => 'monday',
                 'last_synced_at' => null,
@@ -83,6 +86,7 @@ class AdminTenantSyncController extends Controller
                 'pbx_provider_name' => $setting->pbxProvider?->name,
                 'enabled' => $setting->enabled,
                 'frequency' => $setting->frequency,
+                'interval_minutes' => $setting->interval_minutes,
                 'scheduled_time' => $setting->scheduled_time,
                 'scheduled_day' => $setting->scheduled_day,
                 'last_synced_at' => $setting->last_synced_at?->toIso8601String(),
@@ -101,9 +105,10 @@ class AdminTenantSyncController extends Controller
     {
         $validated = $request->validate([
             'enabled' => ['required', 'boolean'],
-            'frequency' => ['required', 'in:hourly,daily,weekly'],
-            'scheduled_time' => ['required', 'date_format:H:i'],
-            'scheduled_day' => ['sometimes', 'string', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday'],
+            'frequency' => ['required', 'in:every_minutes,hourly,daily,weekly'],
+            'interval_minutes' => ['nullable', 'integer', 'min:1', 'max:59'],
+            'scheduled_time' => ['nullable', 'date_format:H:i', 'required_if:frequency,daily,weekly'],
+            'scheduled_day' => ['nullable', 'string', 'in:monday,tuesday,wednesday,thursday,friday,saturday,sunday', 'required_if:frequency,weekly'],
         ]);
 
         // Verify provider exists
@@ -115,7 +120,10 @@ class AdminTenantSyncController extends Controller
             [
                 'enabled' => $validated['enabled'],
                 'frequency' => $validated['frequency'],
-                'scheduled_time' => $validated['scheduled_time'],
+                'interval_minutes' => ($validated['frequency'] === 'every_minutes')
+                    ? ($validated['interval_minutes'] ?? 5)
+                    : 5,
+                'scheduled_time' => $validated['scheduled_time'] ?? '02:00',
                 'scheduled_day' => $validated['scheduled_day'] ?? 'monday',
             ]
         );
@@ -127,6 +135,7 @@ class AdminTenantSyncController extends Controller
                 'pbx_provider_name' => $pbxProvider->name,
                 'enabled' => $setting->enabled,
                 'frequency' => $setting->frequency,
+                'interval_minutes' => $setting->interval_minutes,
                 'scheduled_time' => $setting->scheduled_time,
                 'scheduled_day' => $setting->scheduled_day,
                 'last_synced_at' => $setting->last_synced_at?->toIso8601String(),

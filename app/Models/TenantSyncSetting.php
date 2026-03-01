@@ -11,6 +11,7 @@ class TenantSyncSetting extends Model
         'pbx_provider_id',
         'enabled',
         'frequency',
+        'interval_minutes',
         'scheduled_time',
         'scheduled_day',
         'last_synced_at',
@@ -42,11 +43,66 @@ class TenantSyncSetting extends Model
 
         $now = now();
         $lastSync = $this->last_synced_at;
+        $scheduledTime = $this->scheduled_time ?? '02:00';
+        $scheduledDay = strtolower((string) ($this->scheduled_day ?? 'monday'));
+        $intervalMinutes = max(1, (int) ($this->interval_minutes ?? 5));
+
+        $isDueByInterval = static function (int $minutes) use ($lastSync): bool {
+            if (!$lastSync) {
+                return true;
+            }
+
+            return $lastSync->copy()->addMinutes($minutes)->isPast();
+        };
+
+        $isDueDaily = static function () use ($now, $lastSync, $scheduledTime): bool {
+            $scheduledToday = $now->copy()->setTimeFromTimeString($scheduledTime);
+
+            if ($now->lt($scheduledToday)) {
+                return false;
+            }
+
+            if (!$lastSync) {
+                return true;
+            }
+
+            return $lastSync->lt($scheduledToday);
+        };
+
+        $isDueWeekly = static function () use ($now, $lastSync, $scheduledTime, $scheduledDay): bool {
+            $dayMap = [
+                'monday' => 0,
+                'tuesday' => 1,
+                'wednesday' => 2,
+                'thursday' => 3,
+                'friday' => 4,
+                'saturday' => 5,
+                'sunday' => 6,
+            ];
+
+            $dayOffset = $dayMap[$scheduledDay] ?? 0;
+
+            $scheduledThisWeek = $now->copy()
+                ->startOfWeek()
+                ->addDays($dayOffset)
+                ->setTimeFromTimeString($scheduledTime);
+
+            if ($now->lt($scheduledThisWeek)) {
+                return false;
+            }
+
+            if (!$lastSync) {
+                return true;
+            }
+
+            return $lastSync->lt($scheduledThisWeek);
+        };
 
         return match ($this->frequency) {
-            'hourly' => !$lastSync || $lastSync->addHour()->isPast(),
-            'daily' => !$lastSync || $lastSync->addDay()->isPast(),
-            'weekly' => !$lastSync || $lastSync->addWeek()->isPast(),
+            'every_minutes' => $isDueByInterval($intervalMinutes),
+            'hourly' => $isDueByInterval(60),
+            'daily' => $isDueDaily(),
+            'weekly' => $isDueWeekly(),
             default => false,
         };
     }

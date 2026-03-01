@@ -8,10 +8,10 @@
 php artisan schedule:list
 ```
 
-Look for the `pbx:sync-tenants` command running hourly. You should see output like:
+Look for the `pbx:sync-tenants` command running every minute. You should see output like:
 
 ```
-0 * * * * php artisan pbx:sync-tenants
+* * * * * php artisan pbx:sync-tenants
 ```
 
 ### 2. Test Manual Sync First
@@ -21,8 +21,9 @@ Before relying on automation, test manually:
 1. Go to `/admin/settings/tenant-sync`
 2. Configure a provider:
     - Enable the toggle
-    - Set frequency (start with "hourly" for faster testing)
-    - Set scheduled time
+    - Set frequency (start with "Every X Minutes" for faster testing)
+    - If frequency is "Every X Minutes", set interval like 1 or 5
+    - If frequency is daily/weekly, set scheduled time (and day for weekly)
     - Click "Update Settings"
 3. Click "Sync Now" button
 4. Wait for results to appear in "LAST SYNCED" and "TENANTS FOUND"
@@ -138,7 +139,13 @@ Verify `shouldSyncNow()` respects frequency settings:
 **Hourly Test:**
 
 1. Set frequency to "hourly", enable sync
-2. Wait for next hour boundary
+2. Wait ~60 minutes from last sync
+3. Check if `last_synced_at` updated
+
+**Every X Minutes Test:**
+
+1. Set frequency to "Every X Minutes", interval = 1
+2. Wait 1-2 minutes
 3. Check if `last_synced_at` updated
 
 **Daily Test:**

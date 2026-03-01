@@ -13,6 +13,11 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote')->hourly();
 
+Schedule::command('pbx:sync-tenants')
+    ->everyMinute()
+    ->name('pbx-tenant-sync')
+    ->withoutOverlapping();
+
 Schedule::call(function (): void {
     $runId = (string) \Illuminate\Support\Str::uuid();
     $startedAt = microtime(true);

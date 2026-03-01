@@ -27,9 +27,9 @@ class Kernel extends ConsoleKernel
             ->everyFiveMinutes()
             ->withoutOverlapping();
 
-        // Auto-sync PBXware tenants hourly (picks up enabled/scheduled settings)
+        // Auto-sync PBXware tenants every minute (model decides when each provider is due)
         $schedule->command('pbx:sync-tenants')
-            ->hourly()
+            ->everyMinute()
             ->withoutOverlapping()
             ->name('pbx-tenant-sync');
 
