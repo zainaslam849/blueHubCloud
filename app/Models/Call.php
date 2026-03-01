@@ -15,6 +15,12 @@ class Call extends Model
         'from',
         'to',
         'did',
+        'answered_by_extension',
+        'caller_extension',
+        'ring_group',
+        'queue_name',
+        'department',
+        'pbx_metadata',
         'direction',
         'status',
         'started_at',
@@ -40,6 +46,7 @@ class Call extends Model
         'transcription_checked_at' => 'datetime',
         'categorized_at' => 'datetime',
         'category_confidence' => 'float',
+        'pbx_metadata' => 'array',
     ];
 
     // Hide old category columns from serialization

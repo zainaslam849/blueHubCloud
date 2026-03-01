@@ -30,13 +30,43 @@ class CallCategorizationPromptService
         }
 
         return <<<'PROMPT'
-You are a phone call classification engine.
+You are an intelligent phone call classification engine for a multi-tenant business system serving 200+ companies across diverse industries (telecommunications, real estate, hospitality, web design, healthcare, retail, professional services, manufacturing, legal, etc.).
 
-Your task is to assign the call to ONE category chosen from a predefined list.
-These categories are managed by the system administrator and MUST be followed strictly.
+Your task is to accurately categorize each call based on its content and context.
 
-You MUST NOT invent new primary categories.
-If intent is unclear, choose the closest matching category or "General".
+CATEGORIZATION STRATEGY:
+1. MATCH EXISTING CATEGORIES FIRST: Review the provided category list carefully. If the call fits an existing category, use it. This prevents duplicate categories.
+
+2. CREATE NEW CATEGORIES WHEN NEEDED: If the call topic genuinely doesn't fit ANY existing category, you may suggest a NEW category that accurately represents the call's purpose. New categories should be:
+   - Clearly distinct from existing ones
+   - Industry-appropriate for this company
+   - Broad enough to apply to multiple calls
+   - Named clearly (e.g., "Technical Support", "Billing Inquiry", "Sales Lead")
+
+3. SPECIAL CASES:
+   - GREETING-ONLY/NO RESPONSE: If transcript shows only "Hello [company], how can I help you?" with NO customer response or dialogue → category: "No Response" or "Missed Call" (whichever exists, or create "No Response")
+   - ABANDONED CALLS: Caller hung up immediately with no conversation → "Missed Call" or "Abandoned"
+   - AFTER HOURS: Calls outside business hours → "After Hours" (if category exists)
+   - VOICEMAIL: Only voicemail left → "Voicemail" (if category exists)
+
+4. CONFIDENCE SCORING:
+   - High confidence (0.8-1.0): Clear topic, obvious category
+   - Medium confidence (0.6-0.79): Reasonable match but ambiguous
+   - Low confidence (<0.6): Very unclear → use "Other" or "General"
+
+5. INDUSTRY AWARENESS: Consider the company's industry context:
+   - Telecom companies: Technical support, billing, service inquiries, sales
+   - Real estate: Property inquiries, viewings, leasing, maintenance
+   - Hospitality: Reservations, guest services, complaints
+   - Retail: Orders, returns, product questions
+   - Professional services: Appointments, consultations, billing
+
+RULES:
+- Choose ONE primary category only
+- Sub-category is optional (can be null)
+- Be consistent: similar calls should get the same category
+- Prioritize existing categories to maintain organization
+- Only create new categories when truly necessary
 
 Return valid JSON only.
 PROMPT;
@@ -70,7 +100,7 @@ PROMPT;
         $durationStr = self::formatDuration($duration);
 
         return <<<PROMPT
-AVAILABLE CATEGORIES:
+AVAILABLE CATEGORIES FOR THIS COMPANY:
 {$categoriesSection}
 
 CALL CONTEXT:
@@ -84,18 +114,32 @@ TRANSCRIPT:
 {$transcriptText}
 """
 
-RULES:
-1. If status is "missed" → choose the category that represents missed calls.
-2. If after hours → choose the category that best fits after-hours handling.
-3. Choose ONLY from the available categories above.
-4. If no sub-category fits, return null.
-5. If confidence < {$threshold} → return category "Other" and sub_category "Unclear".
+ANALYSIS INSTRUCTIONS:
+1. READ THE TRANSCRIPT CAREFULLY: Understand what was discussed or if there was any real conversation.
 
-OUTPUT FORMAT (JSON ONLY):
+2. CHECK FOR SPECIAL CASES FIRST:
+   - Greeting-only with no response? (e.g., only "Hello, how can I help you?") → Use "No Response" or "Missed Call"
+   - Abandoned/hung up immediately? → Use "Missed Call" or "Abandoned"
+   - Only voicemail left? → Use "Voicemail"
+   - Status is "missed"? → Use category for missed calls
+
+3. FOR ACTUAL CONVERSATIONS:
+   - Match to existing categories above whenever possible
+   - If no existing category fits well, create a NEW appropriate category name
+   - Choose relevant sub-category if available, otherwise null
+
+4. CONFIDENCE SCORING:
+   - 0.8-1.0: Very clear topic and category match
+   - 0.6-0.79: Reasonable match but some ambiguity
+   - Below {$threshold}: Very unclear → use "Other" or "General"
+
+5. CONSISTENCY: Similar calls should receive the same category name.
+
+OUTPUT FORMAT (JSON ONLY, NO EXPLANATION):
 {
-  "category": "<exact category name>",
-  "sub_category": "<exact sub-category name or null>",
-  "confidence": 0.0-1.0
+  "category": "<exact category name from list above, or new category name>",
+  "sub_category": "<exact sub-category name from list above, or null>",
+  "confidence": 0.85
 }
 PROMPT;
     }
@@ -222,7 +266,7 @@ PROMPT;
             $subCategoryName = 'Unclear';
         }
 
-        // Verify category exists and is active
+        // Verify category exists and is active, or create it if AI suggested a new one
         $category = CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
@@ -231,10 +275,21 @@ PROMPT;
             ->first();
 
         if (!$category) {
-            return [
-                'valid' => false,
-                'error' => "Category '{$categoryName}' not found or disabled",
-            ];
+            // AI suggested a new category - create it automatically
+            \Illuminate\Support\Facades\Log::info("Creating new AI-suggested category", [
+                'company_id' => $companyId,
+                'category_name' => $categoryName,
+                'ai_confidence' => $confidence,
+            ]);
+
+            $category = CallCategory::create([
+                'company_id' => $companyId,
+                'name' => $categoryName,
+                'description' => 'Auto-created by AI based on call analysis',
+                'source' => 'ai',
+                'is_enabled' => true,
+                'status' => 'active',
+            ]);
         }
 
         // Verify sub-category if provided
@@ -246,10 +301,22 @@ PROMPT;
                 ->first();
 
             if (!$subCategory) {
-                return [
-                    'valid' => false,
-                    'error' => "Sub-category '{$subCategoryName}' not found or disabled",
-                ];
+                // AI suggested a new sub-category - create it automatically
+                \Illuminate\Support\Facades\Log::info("Creating new AI-suggested sub-category", [
+                    'company_id' => $companyId,
+                    'category_id' => $category->id,
+                    'category_name' => $category->name,
+                    'sub_category_name' => $subCategoryName,
+                    'ai_confidence' => $confidence,
+                ]);
+
+                $subCategory = \App\Models\SubCategory::create([
+                    'call_category_id' => $category->id,
+                    'name' => $subCategoryName,
+                    'description' => 'Auto-created by AI based on call analysis',
+                    'is_enabled' => true,
+                    'status' => 'active',
+                ]);
             }
 
             return [
