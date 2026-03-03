@@ -85,6 +85,8 @@ class IngestPbxCallsJob implements ShouldQueue
             $callsSkipped = 0;
             $transcriptionsStored = 0;
             $cdrRowsReturned = 0;
+            $cdrRowsSkippedInvalid = 0;
+            $cdrRowsMissingEndpoints = 0;
 
             $params = $this->buildCdrDownloadParams($range['from'], $range['to'], $serverId);
 
@@ -100,6 +102,17 @@ class IngestPbxCallsJob implements ShouldQueue
             $result = method_exists($client, 'fetchCdrRecords')
                 ? $client->fetchCdrRecords($params)
                 : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
+
+            Log::info('PBX_TRACE cdr.endpoint.response_shape', [
+                'company_id' => $this->companyId,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'server_id' => $serverId,
+                'php_type' => gettype($result),
+                'is_array' => is_array($result),
+                'top_level_keys' => is_array($result) ? array_slice(array_keys($result), 0, 20) : [],
+                'has_csv' => is_array($result) && array_key_exists('csv', $result),
+                'has_header' => is_array($result) && array_key_exists('header', $result),
+            ]);
 
             $this->persistRawPayload(
                 endpoint: 'cdr.download',
@@ -122,10 +135,14 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'server_id' => $serverId,
                 'rows' => $rowCount,
+                'header_count' => count($headers),
+                'first_header_sample' => array_slice($headers, 0, 12),
+                'first_row_sample' => $rowCount > 0 && is_array($csvRows[0]) ? array_slice($csvRows[0], 0, 12) : [],
             ]);
 
-            foreach ($csvRows as $row) {
+            foreach ($csvRows as $rowIndex => $row) {
                 if (! is_array($row)) {
+                    $cdrRowsSkippedInvalid++;
                     continue;
                 }
 
@@ -160,6 +177,17 @@ class IngestPbxCallsJob implements ShouldQueue
 
                 $hasEpoch = $epoch !== null && $epoch !== '' && is_numeric($epoch);
                 if ($callUid === '' || $status === '' || ! $hasEpoch) {
+                    $cdrRowsSkippedInvalid++;
+                    if ($rowIndex < 5) {
+                        Log::warning('PBX_TRACE cdr.row.skipped_invalid', [
+                            'row_index' => $rowIndex,
+                            'server_id' => $serverId,
+                            'call_uid' => $callUid,
+                            'status' => $status,
+                            'epoch' => $epoch,
+                            'raw_row_sample' => array_slice($row, 0, 12),
+                        ]);
+                    }
                     continue;
                 }
 
@@ -193,6 +221,10 @@ class IngestPbxCallsJob implements ShouldQueue
                 $ringGroup = null;
                 if (is_string($locationType) && trim($locationType) !== '') {
                     $ringGroup = trim($locationType);
+                }
+
+                if ($fromValue === null && $toValue === null && $answeredByExtension === null && $ringGroup === null) {
+                    $cdrRowsMissingEndpoints++;
                 }
 
                 $pbxMetadata = null;
@@ -260,6 +292,26 @@ class IngestPbxCallsJob implements ShouldQueue
                     $callsSkipped++;
                 }
 
+                if ($rowIndex < 5) {
+                    Log::info('PBX_TRACE cdr.row.mapped', [
+                        'row_index' => $rowIndex,
+                        'server_id' => $serverId,
+                        'pbx_unique_id' => $callUid,
+                        'mapped' => [
+                            'from' => $fromValue,
+                            'to' => $toValue,
+                            'answered_by_extension' => $answeredByExtension,
+                            'caller_extension' => $callerExtension,
+                            'ring_group' => $ringGroup,
+                            'department' => $locationType,
+                            'status' => $finalStatus,
+                            'duration_seconds' => $billsec,
+                            'started_at' => $startedAt,
+                        ],
+                        'raw_row_sample' => array_slice($row, 0, 12),
+                    ]);
+                }
+
                 // If we already have transcription stored on the call, skip.
                 if ((bool) ($call->has_transcription ?? false) && is_string($call->transcript_text ?? null) && trim((string) $call->transcript_text) !== '') {
                     continue;
@@ -278,6 +330,14 @@ class IngestPbxCallsJob implements ShouldQueue
                         payload: $transcriptionResult,
                         status: 'received'
                     );
+
+                    Log::info('PBX_TRACE transcription.endpoint.response_shape', [
+                        'server_id' => $serverId,
+                        'pbx_unique_id' => $callUid,
+                        'php_type' => gettype($transcriptionResult),
+                        'is_array' => is_array($transcriptionResult),
+                        'keys' => is_array($transcriptionResult) ? array_slice(array_keys($transcriptionResult), 0, 20) : [],
+                    ]);
                 } catch (PbxwareClientException $e) {
                     Log::info('PBXware transcription not available (non-fatal)', [
                         'company_id' => $this->companyId,
@@ -348,6 +408,8 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'server_id' => $serverId,
                 'cdr_rows_returned' => $cdrRowsReturned,
+                'cdr_rows_skipped_invalid' => $cdrRowsSkippedInvalid,
+                'cdr_rows_missing_endpoints' => $cdrRowsMissingEndpoints,
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
                 'transcriptions_stored' => $transcriptionsStored,
@@ -528,7 +590,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 ? $payload
                 : json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-            PbxRawPayload::create([
+            $saved = PbxRawPayload::create([
                 'provider' => 'pbxware',
                 'endpoint' => $endpoint,
                 'server_id' => $serverId,
@@ -537,6 +599,15 @@ class IngestPbxCallsJob implements ShouldQueue
                 'api_version' => 'v7',
                 'fetched_at' => now(),
                 'processing_status' => $status,
+            ]);
+
+            Log::info('PBX_TRACE raw_payload.persisted', [
+                'id' => $saved->id,
+                'endpoint' => $endpoint,
+                'server_id' => $serverId,
+                'external_id' => $externalId,
+                'payload_bytes' => strlen((string) ($encodedPayload ?: '{}')),
+                'status' => $status,
             ]);
         } catch (\Throwable $e) {
             Log::warning('Failed to persist raw PBX payload', [

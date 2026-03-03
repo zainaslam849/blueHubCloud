@@ -496,6 +496,16 @@ class PbxwareClient
             $json = $response->json();
             $json = is_array($json) ? $json : [];
             Log::info('PbxwareClient: action response type', ['action' => $action, 'response_type' => 'json']);
+
+            Log::info('PBX_TRACE endpoint.json_shape', [
+                'action' => $action,
+                'keys' => array_slice(array_keys($json), 0, 20),
+                'csv_count' => (isset($json['csv']) && is_array($json['csv'])) ? count($json['csv']) : 0,
+                'header_count' => (isset($json['header']) && is_array($json['header'])) ? count($json['header']) : 0,
+                'first_header_sample' => (isset($json['header']) && is_array($json['header'])) ? array_slice($json['header'], 0, 12) : [],
+                'first_csv_row_sample' => (isset($json['csv'][0]) && is_array($json['csv'][0])) ? array_slice($json['csv'][0], 0, 12) : [],
+            ]);
+
             return $json;
         }
 
