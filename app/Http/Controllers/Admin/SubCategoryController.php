@@ -90,16 +90,6 @@ class SubCategoryController extends Controller
             abort(403, 'Category does not belong to this company.');
         }
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('sub_categories', 'name')
-                    ->where('category_id', $category->id)
-                    ->ignore($subCategoryId),
-            ],
-            'description' => 'nullable|string|max:1000',
-            'is_enabled' => 'boolean',
-        ]);
 
         // Manual edits override AI-generated values
         $validated['source'] = 'admin';
