@@ -29,6 +29,9 @@ $tables = [
     'sub_categories',
     'category_override_logs',
     'weekly_call_reports',
+    'extension_ring_group_mappings',
+    'call_transcriptions',
+    'pbx_raw_payloads',
     'calls',
     'transcriptions',
 ];

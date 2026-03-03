@@ -23,8 +23,8 @@ use Illuminate\Support\Facades\Log;
  */
 class AdvancedReportGenerationService
 {
-    private const AUTOMATION_HIGH_VOLUME_THRESHOLD = 20; // calls per week
-    private const AUTOMATION_HIGH_MINUTES_THRESHOLD = 60; // minutes per week
+    private const AUTOMATION_HIGH_VOLUME_THRESHOLD = 3; // calls per week
+    private const AUTOMATION_HIGH_MINUTES_THRESHOLD = 8; // minutes per week
     private const REPETITIVE_THRESHOLD = 0.7; // 70% of calls in top 5 categories
 
     /**
@@ -237,13 +237,15 @@ class AdvancedReportGenerationService
                 $periodStart->startOfDay(),
                 $periodEnd->endOfDay()
             ])
-            ->whereNotNull('ring_group')
             ->get();
 
         $ringGroupData = [];
 
         foreach ($calls as $call) {
-            $ringGroup = $call->ring_group;
+            $ringGroup = $this->resolveRingGroupIdentifier($call);
+            if (! $ringGroup) {
+                continue;
+            }
             
             if (!isset($ringGroupData[$ringGroup])) {
                 $ringGroupData[$ringGroup] = [
@@ -399,8 +401,9 @@ class AdvancedReportGenerationService
                 }
 
                 // Ring groups
-                if ($call->ring_group) {
-                    $ringGroupBreakdown[$call->ring_group] = ($ringGroupBreakdown[$call->ring_group] ?? 0) + 1;
+                $resolvedRingGroup = $this->resolveRingGroupIdentifier($call);
+                if ($resolvedRingGroup) {
+                    $ringGroupBreakdown[$resolvedRingGroup] = ($ringGroupBreakdown[$resolvedRingGroup] ?? 0) + 1;
                 }
 
                 // Sub-categories
@@ -494,16 +497,19 @@ class AdvancedReportGenerationService
         $opportunities = [];
         
         foreach ($categories as $catId => $data) {
-            if ($data['count'] >= self::AUTOMATION_HIGH_VOLUME_THRESHOLD || 
-                $data['minutes'] >= self::AUTOMATION_HIGH_MINUTES_THRESHOLD) {
-                $opportunities[] = [
-                    'category_id' => $catId,
-                    'category_name' => $data['name'],
-                    'call_count' => $data['count'],
-                    'minutes' => $data['minutes'],
-                    'priority' => $this->determineAutomationPriority($data['count'], $data['minutes']),
-                ];
+            $callCount = (int) ($data['count'] ?? 0);
+            $minutes = (int) ($data['minutes'] ?? 0);
+            if ($callCount <= 0) {
+                continue;
             }
+
+            $opportunities[] = [
+                'category_id' => $catId,
+                'category_name' => $data['name'],
+                'call_count' => $callCount,
+                'minutes' => $minutes,
+                'priority' => $this->determineAutomationPriority($callCount, $minutes),
+            ];
         }
 
         // Sort by priority
@@ -520,9 +526,14 @@ class AdvancedReportGenerationService
         $score = 0;
         
         foreach ($categories as $data) {
-            if ($data['count'] >= self::AUTOMATION_HIGH_VOLUME_THRESHOLD) {
-                $score += $data['minutes'] * 2; // Multiply by 2 for high-volume categories
+            $count = (int) ($data['count'] ?? 0);
+            $minutes = (int) ($data['minutes'] ?? 0);
+            if ($count <= 0) {
+                continue;
             }
+
+            // Weighted score based on frequency + time impact.
+            $score += ($count * 2) + $minutes;
         }
 
         return $score;
@@ -548,16 +559,16 @@ class AdvancedReportGenerationService
 
     private function isAutomationCandidate(int $callCount, int $minutes, ?float $avgConfidence): bool
     {
-        return $callCount >= self::AUTOMATION_HIGH_VOLUME_THRESHOLD &&
-               $minutes >= self::AUTOMATION_HIGH_MINUTES_THRESHOLD &&
-               ($avgConfidence === null || $avgConfidence >= 0.7);
+        return ($callCount >= self::AUTOMATION_HIGH_VOLUME_THRESHOLD ||
+                $minutes >= self::AUTOMATION_HIGH_MINUTES_THRESHOLD) &&
+               ($avgConfidence === null || $avgConfidence >= 0.6);
     }
 
     private function determineAutomationPriority(int $callCount, int $minutes): string
     {
-        if ($callCount >= 50 || $minutes >= 180) {
+        if ($callCount >= 8 || $minutes >= 20) {
             return 'high';
-        } elseif ($callCount >= 30 || $minutes >= 90) {
+        } elseif ($callCount >= 4 || $minutes >= 10) {
             return 'medium';
         }
         return 'low';
@@ -606,6 +617,10 @@ class AdvancedReportGenerationService
             $call->to,
             $call->from,
             $call->caller_extension,
+            data_get($call->pbx_metadata, 'To'),
+            data_get($call->pbx_metadata, 'From'),
+            data_get($call->pbx_metadata, 'raw_row.1'),
+            data_get($call->pbx_metadata, 'raw_row.0'),
         ];
 
         foreach ($candidates as $candidate) {
@@ -620,6 +635,30 @@ class AdvancedReportGenerationService
 
             // Keep conservative: numeric endpoints only, length 2-15.
             if (preg_match('/^\d{2,15}$/', $value)) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveRingGroupIdentifier(Call $call): ?string
+    {
+        $candidates = [
+            $call->ring_group,
+            $call->queue_name,
+            $call->department,
+            data_get($call->pbx_metadata, 'Location Type'),
+            data_get($call->pbx_metadata, 'location_type'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate)) {
+                continue;
+            }
+
+            $value = trim($candidate);
+            if ($value !== '') {
                 return $value;
             }
         }

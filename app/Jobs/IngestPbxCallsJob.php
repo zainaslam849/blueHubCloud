@@ -120,20 +120,15 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
-                // Bluehub PBXWare API contract (fixed column indexes):
-                // - csv[0] = From
-                // - csv[1] = To
-                // - csv[2] = Date/Time (epoch seconds)
-                // - csv[3] = Total Duration
-                // - csv[6] = Status
-                // - csv[7] = Unique ID
-                // - csv[10] = Location Type
-                $fromValue = array_key_exists(0, $row) ? trim((string) ($row[0] ?? '')) : null;
-                $toValue = array_key_exists(1, $row) ? trim((string) ($row[1] ?? '')) : null;
-                $epoch = $row[2] ?? null;
-                $status = $row[6] ?? null;
-                $callUid = $row[7] ?? null;
-                $locationType = array_key_exists(10, $row) ? trim((string) ($row[10] ?? '')) : null;
+                // Bluehub PBXWare API contract supports numeric csv indexes and named keys.
+                // Numeric indexes:
+                // - [0] From, [1] To, [2] Date/Time epoch, [3] Duration, [6] Status, [7] Unique ID, [10] Location Type
+                $fromValue = $this->extractFieldValue($row, [0, 'From', 'from', 'src', 'caller']);
+                $toValue = $this->extractFieldValue($row, [1, 'To', 'to', 'dst', 'destination']);
+                $epoch = $this->extractFieldValue($row, [2, 'Date/Time', 'datetime', 'timestamp', 'started_at']);
+                $status = $this->extractFieldValue($row, [6, 'Status', 'status', 'disposition']);
+                $callUid = $this->extractFieldValue($row, [7, 'Unique ID', 'uniqueid', 'unique_id']);
+                $locationType = $this->extractFieldValue($row, [10, 'Location Type', 'location_type', 'department', 'queue']);
 
                 if ($fromValue === '') {
                     $fromValue = null;
@@ -146,8 +141,9 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
 
                 $durationSeconds = null;
-                if (array_key_exists(3, $row) && is_numeric($row[3])) {
-                    $durationSeconds = (int) $row[3];
+                $durationRaw = $this->extractFieldValue($row, [3, 'Total Duration', 'Duration', 'duration', 'billsec']);
+                if ($durationRaw !== null && $durationRaw !== '' && is_numeric($durationRaw)) {
+                    $durationSeconds = (int) $durationRaw;
                 }
 
                 $callUid = is_string($callUid) ? trim($callUid) : trim((string) $callUid);
@@ -173,11 +169,21 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Ensure duration is an integer billsec
                 $billsec = is_numeric($durationSeconds) ? (int) $durationSeconds : 0;
 
-                // Best-effort caller extension extraction from CDR From field.
+                // Best-effort extension extraction from CDR From/To fields.
                 // Keep this conservative to avoid false positives from full phone numbers.
                 $callerExtension = null;
+                $answeredByExtension = null;
                 if (is_string($fromValue) && preg_match('/^\d{2,6}$/', $fromValue)) {
                     $callerExtension = $fromValue;
+                }
+                if (is_string($toValue) && preg_match('/^\d{2,6}$/', $toValue)) {
+                    $answeredByExtension = $toValue;
+                }
+
+                // Ring group fallback: use PBX location type when explicit ring group is absent.
+                $ringGroup = null;
+                if (is_string($locationType) && trim($locationType) !== '') {
+                    $ringGroup = trim($locationType);
                 }
 
                 $pbxMetadata = null;
@@ -214,7 +220,9 @@ class IngestPbxCallsJob implements ShouldQueue
                         'direction' => 'unknown',
                         'from' => $fromValue,
                         'to' => $toValue,
+                        'answered_by_extension' => $answeredByExtension,
                         'caller_extension' => $callerExtension,
+                        'ring_group' => $ringGroup,
                         'department' => $locationType,
                         'pbx_metadata' => $pbxMetadata,
                         'started_at' => $startedAt,
@@ -444,6 +452,19 @@ class IngestPbxCallsJob implements ShouldQueue
                 return $s;
             }
         }
+        return null;
+    }
+
+    private function extractFieldValue(array $row, array $keys): mixed
+    {
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $row)) {
+                continue;
+            }
+
+            return $row[$key];
+        }
+
         return null;
     }
 }

@@ -44,8 +44,8 @@ return new class extends Migration
             // Timestamps
             $table->timestamps();
 
-            // Composite indexes
-            $table->index(['company_id', 'server_id', 'extension']);
+            // Composite indexes with explicit short names
+            $table->index(['company_id', 'server_id', 'extension'], 'idx_ext_group_mapping');
             $table->unique(['company_id', 'server_id', 'extension'], 'ext_ring_mapping_unique');
         });
     }

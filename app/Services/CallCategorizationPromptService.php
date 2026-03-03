@@ -311,7 +311,7 @@ PROMPT;
                 ]);
 
                 $subCategory = \App\Models\SubCategory::create([
-                    'call_category_id' => $category->id,
+                    'category_id' => $category->id,
                     'name' => $subCategoryName,
                     'description' => 'Auto-created by AI based on call analysis',
                     'is_enabled' => true,

@@ -56,7 +56,8 @@ class SyncPbxTenantsCommand extends Command
                 return 0;
             }
 
-            $this->info("Found {$tenants['count'] ?? count($tenants)} tenants on PBXware");
+            $tenantCount = $tenants['count'] ?? count($tenants);
+            $this->info("Found {$tenantCount} tenants on PBXware");
 
             // Get company ID for linking
             $companyId = $this->option('company-id') ?? config('app.default_company_id') ?? 1;

@@ -51,7 +51,7 @@ return new class extends Migration
             // Composite indexes for efficient querying
             $table->index(['provider', 'endpoint', 'fetched_at']);
             $table->index(['provider', 'server_id', 'fetched_at']);
-            $table->unique(['provider', 'endpoint', 'external_id', 'api_version'], 'pbx_payloads_unique');
+            $table->index(['provider', 'external_id']);
         });
     }
 
