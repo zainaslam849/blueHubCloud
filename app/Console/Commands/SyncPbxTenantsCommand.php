@@ -35,18 +35,15 @@ class SyncPbxTenantsCommand extends Command
 
     protected $description = 'Sync all PBXware tenants from API to database automatically';
 
-    private PbxwareAdapter $adapter;
-
-    public function __construct()
-    {
-        parent::__construct();
-        $this->adapter = new PbxwareAdapter();
-    }
+    private ?PbxwareAdapter $adapter = null;
 
     public function handle(): int
     {
         try {
             $this->info('🔷 Syncing PBXware Tenants...');
+            
+            // Lazy load adapter only when needed (in handle, not constructor)
+            $this->adapter = new PbxwareAdapter();
 
             // Fetch all tenants from PBXware API
             $tenants = $this->adapter->listTenants();

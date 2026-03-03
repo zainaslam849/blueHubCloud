@@ -4,7 +4,9 @@ namespace App\Services\Providers;
 
 use App\Contracts\ProviderAdapterInterface;
 use App\Models\PbxRawPayload;
+use App\Services\AwsSecretsService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -32,16 +34,89 @@ class PbxwareAdapter implements ProviderAdapterInterface
 
     private string $apiKey;
     private ?string $baseUrl;
+    private string $secretName = 'pbxware/api-credentials';
+    private int $secretTtlSeconds = 600; // 10 minutes
+    private ?AwsSecretsService $secretsService = null;
 
-    public function __construct()
+    public function __construct(?AwsSecretsService $secretsService = null)
     {
-        // Load API key from environment or Secrets Manager
-        $this->apiKey = config('services.pbxware.api_key') 
-            ?? env('PBXWARE_API_KEY')
+        $this->secretsService = $secretsService ?? new AwsSecretsService();
+
+        // Credential precedence:
+        // 1) AWS Secrets Manager (production preferred)
+        // 2) ENV fallback (PBXWARE_API_KEY, PBXWARE_BASE_URL)
+        $credentials = $this->resolveCredentials();
+        
+        $this->apiKey = $credentials['api_key'] 
             ?? throw new RuntimeException('PBXWARE_API_KEY not configured');
 
-        // Allow base URL override for testing
-        $this->baseUrl = config('services.pbxware.base_url') ?? self::BASE_URL;
+        $this->baseUrl = $credentials['base_url'] ?? self::BASE_URL;
+    }
+
+    /**
+     * Resolve credentials from AWS Secrets Manager with ENV fallback
+     */
+    private function resolveCredentials(): array
+    {
+        // Try Secrets Manager first
+        $secrets = $this->getCachedCredentials();
+        if (!empty($secrets)) {
+            Log::info('PbxwareAdapter: credentials loaded from AWS Secrets Manager');
+            return $secrets;
+        }
+
+        // Fall back to environment variables
+        $env = $this->getEnvCredentials();
+        if (!empty($env)) {
+            Log::info('PbxwareAdapter: credentials loaded from environment variables');
+            return $env;
+        }
+
+        Log::warning('PbxwareAdapter: no credentials found in Secrets Manager or ENV');
+        return [];
+    }
+
+    /**
+     * Get credentials from environment variables
+     */
+    private function getEnvCredentials(): array
+    {
+        $out = [];
+
+        $apiKey = env('PBXWARE_API_KEY');
+        $baseUrl = env('PBXWARE_BASE_URL');
+
+        if ($apiKey !== null && trim((string) $apiKey) !== '') {
+            $out['api_key'] = (string) $apiKey;
+        }
+        if ($baseUrl !== null && trim((string) $baseUrl) !== '') {
+            $out['base_url'] = (string) $baseUrl;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Get cached credentials from Secrets Manager
+     */
+    private function getCachedCredentials(): array
+    {
+        $cacheKey = 'pbxware_adapter_credentials';
+        
+        try {
+            $decoded = $this->secretsService->get($this->secretName);
+            if (is_array($decoded) && !empty($decoded)) {
+                Cache::put($cacheKey, $decoded, $this->secretTtlSeconds);
+                return $decoded;
+            }
+        } catch (\Throwable $e) {
+            Log::debug('PbxwareAdapter: failed to fetch from Secrets Manager', [
+                'secret' => $this->secretName,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return [];
     }
 
     /**
