@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Call;
 use App\Models\CompanyPbxAccount;
+use App\Models\PbxRawPayload;
 use App\Services\Pbx\PbxClientResolver;
 use App\Jobs\SummarizeSingleCallJob;
 use Illuminate\Support\Facades\Config;
@@ -99,6 +100,14 @@ class IngestPbxCallsJob implements ShouldQueue
             $result = method_exists($client, 'fetchCdrRecords')
                 ? $client->fetchCdrRecords($params)
                 : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
+
+            $this->persistRawPayload(
+                endpoint: 'cdr.download',
+                serverId: $serverId,
+                externalId: null,
+                payload: $result,
+                status: 'received'
+            );
 
             $headers = (is_array($result) && isset($result['header']) && is_array($result['header']))
                 ? $result['header']
@@ -261,6 +270,14 @@ class IngestPbxCallsJob implements ShouldQueue
                     $transcriptionResult = method_exists($client, 'fetchTranscription')
                         ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
                         : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
+
+                    $this->persistRawPayload(
+                        endpoint: 'transcription.get',
+                        serverId: $serverId,
+                        externalId: $callUid,
+                        payload: $transcriptionResult,
+                        status: 'received'
+                    );
                 } catch (PbxwareClientException $e) {
                     Log::info('PBXware transcription not available (non-fatal)', [
                         'company_id' => $this->companyId,
@@ -457,6 +474,7 @@ class IngestPbxCallsJob implements ShouldQueue
 
     private function extractFieldValue(array $row, array $keys): mixed
     {
+        // Direct key match first (supports numeric indexes and exact names).
         foreach ($keys as $key) {
             if (! array_key_exists($key, $row)) {
                 continue;
@@ -465,6 +483,68 @@ class IngestPbxCallsJob implements ShouldQueue
             return $row[$key];
         }
 
+        // Defensive case-insensitive match for named keys.
+        $normalized = [];
+        foreach ($row as $k => $v) {
+            if (! is_string($k)) {
+                continue;
+            }
+
+            $normalized[$this->normalizeFieldKey($k)] = $v;
+        }
+
+        foreach ($keys as $key) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            $needle = $this->normalizeFieldKey($key);
+            if (array_key_exists($needle, $normalized)) {
+                return $normalized[$needle];
+            }
+        }
+
         return null;
+    }
+
+    private function normalizeFieldKey(string $key): string
+    {
+        return strtolower((string) preg_replace('/[^a-z0-9]+/i', '', trim($key)));
+    }
+
+    private function persistRawPayload(
+        string $endpoint,
+        ?string $serverId,
+        ?string $externalId,
+        mixed $payload,
+        string $status = 'received'
+    ): void {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('pbx_raw_payloads')) {
+            return;
+        }
+
+        try {
+            $encodedPayload = is_string($payload)
+                ? $payload
+                : json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            PbxRawPayload::create([
+                'provider' => 'pbxware',
+                'endpoint' => $endpoint,
+                'server_id' => $serverId,
+                'external_id' => $externalId,
+                'payload_json' => $encodedPayload ?: '{}',
+                'api_version' => 'v7',
+                'fetched_at' => now(),
+                'processing_status' => $status,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to persist raw PBX payload', [
+                'endpoint' => $endpoint,
+                'server_id' => $serverId,
+                'external_id' => $externalId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
