@@ -76,3 +76,4 @@ Homestead.json
 *.tar.bz2
 *.dump
 *.bak
+*.md
