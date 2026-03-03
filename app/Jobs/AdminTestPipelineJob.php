@@ -30,32 +30,41 @@ class AdminTestPipelineJob implements ShouldQueue
 
     public function handle(): void
     {
-        Log::info('Admin test pipeline started', [
+        Log::info('AdminTestPipelineJob::handle() - STARTING', [
             'company_id' => $this->companyId,
             'range_days' => $this->rangeDays,
+            'queue' => $this->pipelineQueue,
         ]);
 
         $to = CarbonImmutable::now('UTC')->toDateString();
         $from = CarbonImmutable::now('UTC')->subDays($this->rangeDays)->toDateString();
 
+        Log::info('AdminTestPipelineJob::handle() - Date range', ['from' => $from, 'to' => $to]);
+
         // STEP 1: Ingest calls (synchronous - must complete first)
-        Log::info('Pipeline Step 1: Ingesting calls...', ['company_id' => $this->companyId]);
+        Log::info('AdminTestPipelineJob - Pipeline Step 1: Ingesting calls...', ['company_id' => $this->companyId]);
         $accounts = CompanyPbxAccount::query()
             ->where('company_id', $this->companyId)
             ->where('status', 'active')
             ->get(['id']);
 
+        Log::info('AdminTestPipelineJob - Step 1: Found accounts to ingest', [
+            'company_id' => $this->companyId,
+            'account_count' => $accounts->count(),
+        ]);
+
         foreach ($accounts as $account) {
+            Log::info('AdminTestPipelineJob - Dispatching ingest for account', ['account_id' => $account->id]);
             IngestPbxCallsJob::dispatchSync(
                 $this->companyId,
                 $account->id,
                 ['from' => $from, 'to' => $to]
             );
         }
-        Log::info('Pipeline Step 1 complete: Ingest finished', ['company_id' => $this->companyId]);
+        Log::info('AdminTestPipelineJob - Pipeline Step 1 complete: Ingest finished', ['company_id' => $this->companyId]);
 
         // STEP 2: Queue summarization (async - will process immediately)
-        Log::info('Pipeline Step 2: Preparing summarization jobs...', ['company_id' => $this->companyId]);
+        Log::info('AdminTestPipelineJob - Pipeline Step 2: Preparing summarization jobs...', ['company_id' => $this->companyId]);
         $callsToSummarize = Call::query()
             ->where('company_id', $this->companyId)
             ->whereNotNull('transcript_text')
@@ -64,6 +73,11 @@ class AdminTestPipelineJob implements ShouldQueue
             ->orderByDesc('started_at')
             ->limit($this->summarizeLimit)
             ->get(['id']);
+
+        Log::info('AdminTestPipelineJob - Calls to summarize', [
+            'company_id' => $this->companyId,
+            'count' => $callsToSummarize->count(),
+        ]);
 
         $postSummaryChain = [
             new GenerateAiCategoriesForCompanyJob($this->companyId, $this->rangeDays),
@@ -77,7 +91,7 @@ class AdminTestPipelineJob implements ShouldQueue
             new GenerateWeeklyPbxReportsJob($from, $to),
         ];
 
-        Log::info('Pipeline Step 2: Queuing summarization jobs...', [
+        Log::info('AdminTestPipelineJob - Pipeline Step 2: Queuing summarization jobs...', [
             'company_id' => $this->companyId,
             'count' => $callsToSummarize->count(),
         ]);
@@ -88,7 +102,7 @@ class AdminTestPipelineJob implements ShouldQueue
                 ->onQueue($this->pipelineQueue);
         }
 
-        Log::info('Pipeline Step 2: Queued summarization jobs, now queuing post-summary jobs...', [
+        Log::info('AdminTestPipelineJob - Pipeline Step 2: Queued summarization jobs, now queuing post-summary jobs...', [
             'company_id' => $this->companyId,
             'summary_count' => $callsToSummarize->count(),
         ]);
@@ -98,6 +112,8 @@ class AdminTestPipelineJob implements ShouldQueue
         Bus::chain($postSummaryChain)
             ->onQueue($this->pipelineQueue)
             ->dispatch();
+
+        Log::info('AdminTestPipelineJob::handle() - COMPLETE', ['company_id' => $this->companyId]);
 
         Log::info('Admin test pipeline queued successfully', [
             'company_id' => $this->companyId,
