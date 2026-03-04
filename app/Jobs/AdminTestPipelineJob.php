@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
+use function dispatch;
 
 class AdminTestPipelineJob implements ShouldQueue
 {
@@ -119,7 +120,7 @@ class AdminTestPipelineJob implements ShouldQueue
             // If no summarization jobs, dispatch post-summary jobs directly (don't wait)
             Log::info('AdminTestPipelineJob - No summarization jobs; dispatching post-summary jobs directly', ['company_id' => $this->companyId]);
             foreach ($postSummaryChain as $job) {
-                $job->onQueue($this->pipelineQueue)->dispatch();
+                dispatch($job->onQueue($this->pipelineQueue));
             }
         }
 

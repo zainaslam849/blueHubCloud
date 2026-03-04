@@ -169,7 +169,11 @@
                     </tbody>
                 </table>
                 <div v-else class="admin-muted">
-                    No ring group analytics yet
+                    <p style="margin: 0 0 8px 0;">Ring group analytics unavailable</p>
+                    <p style="margin: 0; font-size: 0.9em; line-height: 1.4;">
+                        This requires queue/department routing data from your PBX server. 
+                        Please verify that your PBX is configured to capture and return queue assignments for calls.
+                    </p>
                 </div>
             </div>
 
