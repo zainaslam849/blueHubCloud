@@ -87,9 +87,12 @@ class AdminTestPipelineJob implements ShouldQueue
                 $this->categorizeLimit,
                 25,
                 false,
-                $this->pipelineQueue
+                $this->pipelineQueue,
+                $from,
+                $to
             ),
-            new GenerateWeeklyPbxReportsJob($from, $to),
+            // Note: GenerateWeeklyPbxReportsJob is now dispatched by QueueCallsForCategorizationJob
+            // with a delay to ensure it runs AFTER categorization completes
         ];
 
         Log::info('AdminTestPipelineJob - Pipeline Step 2: Queuing summarization jobs...', [

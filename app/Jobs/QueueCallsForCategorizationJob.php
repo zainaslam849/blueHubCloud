@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\GenerateWeeklyPbxReportsJob;
 use App\Models\Call;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,7 +23,9 @@ class QueueCallsForCategorizationJob implements ShouldQueue
         public int $limit = 500,
         public int $batch = 25,
         public bool $force = false,
-        public string $targetQueue = 'categorization'
+        public string $targetQueue = 'categorization',
+        public ?string $fromDate = null,
+        public ?string $toDate = null,
     ) {}
 
     public function handle(): void
@@ -61,5 +64,22 @@ class QueueCallsForCategorizationJob implements ShouldQueue
             'count' => $calls->count(),
             'force' => $this->force,
         ]);
+
+        // Dispatch report generation AFTER categorization completes
+        // Calculate delay: number of chunks * 2 seconds per chunk + buffer for processing
+        $delaySeconds = ($chunks->count() * 2) + 30; // 30s buffer for categorization processing
+        
+        if ($this->fromDate && $this->toDate) {
+            Log::info('QueueCallsForCategorizationJob: scheduling report generation', [
+                'company_id' => $this->companyId,
+                'delay_seconds' => $delaySeconds,
+                'from_date' => $this->fromDate,
+                'to_date' => $this->toDate,
+            ]);
+            
+            GenerateWeeklyPbxReportsJob::dispatch($this->fromDate, $this->toDate)
+                ->onQueue($this->targetQueue)
+                ->delay(now()->addSeconds($delaySeconds));
+        }
     }
 }
