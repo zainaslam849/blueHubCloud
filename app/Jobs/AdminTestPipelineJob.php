@@ -109,9 +109,19 @@ class AdminTestPipelineJob implements ShouldQueue
 
         // STEP 3-5: Chain category generation → categorization → reports
         // These will run after summaries are done (or immediately if no summaries)
-        Bus::chain($postSummaryChain)
-            ->onQueue($this->pipelineQueue)
-            ->dispatch();
+        if ($callsToSummarize->count() > 0) {
+            // Chain them after summarization jobs if there are any
+            Bus::chain($postSummaryChain)
+                ->onQueue($this->pipelineQueue)
+                ->dispatch();
+            Log::info('AdminTestPipelineJob - Post-summary jobs chained after summarization', ['company_id' => $this->companyId]);
+        } else {
+            // If no summarization jobs, dispatch post-summary jobs directly (don't wait)
+            Log::info('AdminTestPipelineJob - No summarization jobs; dispatching post-summary jobs directly', ['company_id' => $this->companyId]);
+            foreach ($postSummaryChain as $job) {
+                $job->onQueue($this->pipelineQueue)->dispatch();
+            }
+        }
 
         Log::info('AdminTestPipelineJob::handle() - COMPLETE', ['company_id' => $this->companyId]);
 
