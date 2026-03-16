@@ -87,6 +87,9 @@ class IngestPbxCallsJob implements ShouldQueue
             $cdrRowsReturned = 0;
             $cdrRowsSkippedInvalid = 0;
             $cdrRowsMissingEndpoints = 0;
+            $transcriptionAttempts = 0;
+            $transcriptionSkippedNoRecording = 0;
+            $transcriptionNotFound = 0;
 
             $params = $this->buildCdrDownloadParams($range['from'], $range['to'], $serverId);
 
@@ -154,7 +157,10 @@ class IngestPbxCallsJob implements ShouldQueue
                 $epoch = $this->extractFieldValue($row, [2, 'Date/Time', 'datetime', 'timestamp', 'started_at']);
                 $status = $this->extractFieldValue($row, [6, 'Status', 'status', 'disposition']);
                 $callUid = $this->extractFieldValue($row, [7, 'Unique ID', 'uniqueid', 'unique_id']);
+                $recordingPath = $this->extractFieldValue($row, [8, 'Recording Path', 'recording_path']);
+                $recordingAvailableRaw = $this->extractFieldValue($row, [9, 'Recording Available', 'recording_available']);
                 $locationType = $this->extractFieldValue($row, [10, 'Location Type', 'location_type', 'department', 'queue']);
+                $recordingAvailable = $this->toBooleanLike($recordingAvailableRaw);
 
                 if ($fromValue === '') {
                     $fromValue = null;
@@ -239,8 +245,14 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Include raw row for diagnostics and future column mapping enhancements.
                 if (is_array($pbxMetadata)) {
                     $pbxMetadata['raw_row'] = $row;
+                    $pbxMetadata['recording_available_normalized'] = $recordingAvailable;
+                    $pbxMetadata['recording_path_normalized'] = is_string($recordingPath) ? trim($recordingPath) : $recordingPath;
                 } else {
-                    $pbxMetadata = ['raw_row' => $row];
+                    $pbxMetadata = [
+                        'raw_row' => $row,
+                        'recording_available_normalized' => $recordingAvailable,
+                        'recording_path_normalized' => is_string($recordingPath) ? trim($recordingPath) : $recordingPath,
+                    ];
                 }
 
                 // Compute ended_at when possible (started epoch + billsec)
@@ -304,6 +316,8 @@ class IngestPbxCallsJob implements ShouldQueue
                             'caller_extension' => $callerExtension,
                             'ring_group' => $ringGroup,
                             'department' => $locationType,
+                            'recording_available' => $recordingAvailable,
+                            'recording_path' => $recordingPath,
                             'status' => $finalStatus,
                             'duration_seconds' => $billsec,
                             'started_at' => $startedAt,
@@ -317,8 +331,27 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
+                // SOP alignment: only query transcription.get when CDR indicates recording exists.
+                if ($recordingAvailable !== true) {
+                    $transcriptionSkippedNoRecording++;
+                    if ($rowIndex < 5) {
+                        Log::info('PBX_TRACE transcription.skipped.no_recording', [
+                            'server_id' => $serverId,
+                            'pbx_unique_id' => $callUid,
+                            'recording_available_raw' => $recordingAvailableRaw,
+                            'recording_available_normalized' => $recordingAvailable,
+                            'recording_path' => $recordingPath,
+                        ]);
+                    }
+                    $call->has_transcription = false;
+                    $call->transcription_checked_at = now();
+                    $call->save();
+                    continue;
+                }
+
                 // Important: "No transcription found" is not an error. Do not throw/retry.
                 try {
+                    $transcriptionAttempts++;
                     $transcriptionResult = method_exists($client, 'fetchTranscription')
                         ? $client->fetchTranscription(['server' => $serverId, 'uniqueid' => $callUid])
                         : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.transcription.get', ['server' => $serverId, 'uniqueid' => $callUid]) : []);
@@ -391,12 +424,27 @@ class IngestPbxCallsJob implements ShouldQueue
                             }
                         } else {
                             // Explicitly mark as no transcription when the API returns a sentinel string.
+                            $transcriptionNotFound++;
+                            Log::info('PBX_TRACE transcription.not_found', [
+                                'server_id' => $serverId,
+                                'pbx_unique_id' => $callUid,
+                                'recording_available_raw' => $recordingAvailableRaw,
+                                'recording_path' => $recordingPath,
+                            ]);
                             $call->has_transcription = false;
                             $call->transcription_checked_at = now();
                             $call->save();
                         }
                     } else {
                         // No transcription provided (non-fatal).
+                        $transcriptionNotFound++;
+                        Log::info('PBX_TRACE transcription.not_found', [
+                            'server_id' => $serverId,
+                            'pbx_unique_id' => $callUid,
+                            'recording_available_raw' => $recordingAvailableRaw,
+                            'recording_path' => $recordingPath,
+                            'reason' => 'empty_response',
+                        ]);
                         $call->has_transcription = false;
                         $call->transcription_checked_at = now();
                         $call->save();
@@ -413,6 +461,9 @@ class IngestPbxCallsJob implements ShouldQueue
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
                 'transcriptions_stored' => $transcriptionsStored,
+                'transcription_attempts' => $transcriptionAttempts,
+                'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
+                'transcription_not_found' => $transcriptionNotFound,
             ]);
 
         } catch (PbxwareClientException $e) {
@@ -572,6 +623,32 @@ class IngestPbxCallsJob implements ShouldQueue
     private function normalizeFieldKey(string $key): string
     {
         return strtolower((string) preg_replace('/[^a-z0-9]+/i', '', trim($key)));
+    }
+
+    private function toBooleanLike(mixed $value): ?bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (in_array($normalized, ['1', 'true', 'yes', 'y', 'on'], true)) {
+            return true;
+        }
+
+        if (in_array($normalized, ['0', 'false', 'no', 'n', 'off'], true)) {
+            return false;
+        }
+
+        return null;
     }
 
     private function persistRawPayload(
