@@ -193,6 +193,7 @@
                             <th>Extension</th>
                             <th class="admin-table__num">Answered</th>
                             <th class="admin-table__num">Minutes</th>
+                            <th>Top 3 Categories</th>
                             <th class="admin-table__num">Repetitive %</th>
                             <th class="admin-table__num">Impact Score</th>
                         </tr>
@@ -205,6 +206,9 @@
                             </td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.total_minutes }}
+                            </td>
+                            <td>
+                                {{ topCategoriesLabel(row.top_categories) }}
                             </td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.repetitive_percentage }}
@@ -261,6 +265,80 @@
                                     {{ action }}
                                 </li>
                             </ul>
+
+                            <div class="admin-muted" style="margin-top: 8px">
+                                Recent timeline:
+                            </div>
+                            <table
+                                v-if="(card.timeline || []).length"
+                                class="admin-table admin-table--mini"
+                            >
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th class="admin-table__num">Sec</th>
+                                        <th>Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="item in (
+                                            card.timeline || []
+                                        ).slice(0, 8)"
+                                        :key="`${card.extension}-t-${item.call_id}`"
+                                    >
+                                        <td class="admin-mono">
+                                            {{
+                                                formatShortDateTime(
+                                                    item.started_at,
+                                                )
+                                            }}
+                                        </td>
+                                        <td class="admin-table__num admin-mono">
+                                            {{ item.duration_seconds }}
+                                        </td>
+                                        <td>
+                                            {{ item.category_name || "—" }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-else class="admin-muted">
+                                No timeline entries
+                            </div>
+
+                            <div class="admin-muted" style="margin-top: 8px">
+                                Top 5 examples:
+                            </div>
+                            <div v-if="(card.examples || []).length">
+                                <div
+                                    v-for="example in card.examples"
+                                    :key="`${card.extension}-e-${example.call_id}`"
+                                    style="margin-bottom: 8px"
+                                >
+                                    <div
+                                        class="admin-mono"
+                                        style="font-size: 0.85em"
+                                    >
+                                        {{
+                                            formatShortDateTime(
+                                                example.started_at,
+                                            )
+                                        }}
+                                        <a
+                                            :href="
+                                                example.recording_or_transcript_link
+                                            "
+                                            style="margin-left: 6px"
+                                            >Open</a
+                                        >
+                                    </div>
+                                    <div>{{ example.snippet }}</div>
+                                </div>
+                            </div>
+                            <div v-else class="admin-muted">
+                                No transcript examples
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -284,6 +362,7 @@
                             <th>Top Extension</th>
                             <th>Top Ring Group</th>
                             <th>Trend</th>
+                            <th>Suggested Automations</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -300,10 +379,25 @@
                             <td>{{ row.top_extension || "—" }}</td>
                             <td>{{ row.top_ring_group || "—" }}</td>
                             <td>
+                                <div>
+                                    {{
+                                        trendLabel(
+                                            row.trend_direction,
+                                            row.trend_percentage_change,
+                                        )
+                                    }}
+                                </div>
+                                <div
+                                    class="admin-mono"
+                                    style="font-size: 0.85em"
+                                >
+                                    {{ trendSparkline(row.daily_trend) }}
+                                </div>
+                            </td>
+                            <td>
                                 {{
-                                    trendLabel(
-                                        row.trend_direction,
-                                        row.trend_percentage_change,
+                                    suggestedAutomationsLabel(
+                                        row.suggested_automations,
                                     )
                                 }}
                             </td>
@@ -351,5 +445,47 @@ function trendLabel(direction, pct) {
     if (direction > 0) return `Up ${pct ?? 0}%`;
     if (direction < 0) return `Down ${Math.abs(pct ?? 0)}%`;
     return "Stable";
+}
+
+function topCategoriesLabel(categories) {
+    if (!Array.isArray(categories) || categories.length === 0) return "—";
+    return categories
+        .slice(0, 3)
+        .map((c) => c?.category_name || `#${c?.category_id ?? "?"}`)
+        .join(", ");
+}
+
+function suggestedAutomationsLabel(items) {
+    if (!Array.isArray(items) || items.length === 0) return "—";
+    return items.slice(0, 3).join(", ");
+}
+
+function trendSparkline(dailyTrend) {
+    if (!dailyTrend || typeof dailyTrend !== "object") return "—";
+    const values = Object.values(dailyTrend)
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v));
+    if (values.length === 0) return "—";
+    const bars = "▁▂▃▄▅▆▇█";
+    const max = Math.max(...values, 1);
+    return values
+        .slice(-10)
+        .map(
+            (v) =>
+                bars[
+                    Math.min(
+                        bars.length - 1,
+                        Math.floor((v / max) * (bars.length - 1)),
+                    )
+                ],
+        )
+        .join("");
+}
+
+function formatShortDateTime(iso) {
+    if (!iso) return "—";
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return "—";
+    return date.toLocaleString();
 }
 </script>

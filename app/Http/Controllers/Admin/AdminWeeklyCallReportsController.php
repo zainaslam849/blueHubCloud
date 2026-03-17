@@ -217,6 +217,27 @@ class AdminWeeklyCallReportsController extends Controller
             }
         }
 
+        $categorizedCalls = 0;
+        if (is_array($categoryBreakdowns['counts'] ?? null)) {
+            if (array_is_list($categoryBreakdowns['counts'])) {
+                foreach ($categoryBreakdowns['counts'] as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+                    $categorizedCalls += (int) ($item['call_count'] ?? $item['count'] ?? 0);
+                }
+            } else {
+                foreach ($categoryBreakdowns['counts'] as $count) {
+                    $categorizedCalls += (int) $count;
+                }
+            }
+        }
+
+        $categoryBreakdowns['totals'] = [
+            'categorized_calls' => $categorizedCalls,
+            'report_total_calls' => (int) ($report->total_calls ?? 0),
+        ];
+
         // Build advanced views with error handling for missing tables
         try {
             $advancedViews = $this->buildAdvancedViews($report, $categoryBreakdowns);

@@ -22,6 +22,14 @@
             <!-- Category Summary Table -->
             <div class="admin-reportSection">
                 <h4 class="admin-reportSection__title">Category Summary</h4>
+                <p class="admin-muted" style="margin: 0 0 8px 0">
+                    Percentages are based on categorized calls ({{
+                        categorizedCalls
+                    }})
+                    <template v-if="reportTotalCalls !== null">
+                        out of total calls ({{ reportTotalCalls }}).
+                    </template>
+                </p>
                 <table class="admin-table admin-table--compact">
                     <thead>
                         <tr>
@@ -33,14 +41,18 @@
                     <tbody>
                         <tr v-for="cat in sortedCategories" :key="cat.name">
                             <td>{{ cat.name }}</td>
-                            <td class="admin-table__num admin-mono">{{ formatNumber(cat.count) }}</td>
+                            <td class="admin-table__num admin-mono">
+                                {{ formatNumber(cat.count) }}
+                            </td>
                             <td class="admin-table__num">
                                 <span class="admin-percentBar">
                                     <span
                                         class="admin-percentBar__fill"
                                         :style="{ width: cat.percent + '%' }"
                                     />
-                                    <span class="admin-percentBar__label">{{ cat.percent }}%</span>
+                                    <span class="admin-percentBar__label"
+                                        >{{ cat.percent }}%</span
+                                    >
                                 </span>
                             </td>
                         </tr>
@@ -58,15 +70,26 @@
                         class="admin-subCategoryCard"
                     >
                         <div class="admin-subCategoryCard__header">
-                            <span class="admin-subCategoryCard__name">{{ cat.name }}</span>
-                            <span class="admin-subCategoryCard__count">{{ cat.count }} calls</span>
+                            <span class="admin-subCategoryCard__name">{{
+                                cat.name
+                            }}</span>
+                            <span class="admin-subCategoryCard__count"
+                                >{{ cat.count }} calls</span
+                            >
                         </div>
                         <table class="admin-table admin-table--mini">
                             <tbody>
-                                <tr v-for="sub in cat.subCategories" :key="sub.name">
+                                <tr
+                                    v-for="sub in cat.subCategories"
+                                    :key="sub.name"
+                                >
                                     <td>{{ sub.name }}</td>
-                                    <td class="admin-table__num admin-mono">{{ sub.count }}</td>
-                                    <td class="admin-table__num">{{ sub.percent }}%</td>
+                                    <td class="admin-table__num admin-mono">
+                                        {{ sub.count }}
+                                    </td>
+                                    <td class="admin-table__num">
+                                        {{ sub.percent }}%
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -85,9 +108,14 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="(did, idx) in breakdowns?.top_dids" :key="idx">
+                        <tr
+                            v-for="(did, idx) in breakdowns?.top_dids"
+                            :key="idx"
+                        >
                             <td class="admin-mono">{{ did.did }}</td>
-                            <td class="admin-table__num admin-mono">{{ formatNumber(did.calls) }}</td>
+                            <td class="admin-table__num admin-mono">
+                                {{ formatNumber(did.calls) }}
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -103,21 +131,29 @@
                         class="admin-hourlyCell"
                         :class="{ 'admin-hourlyCell--peak': hour.isPeak }"
                     >
-                        <span class="admin-hourlyCell__hour">{{ hour.label }}</span>
-                        <span class="admin-hourlyCell__count">{{ hour.count }}</span>
+                        <span class="admin-hourlyCell__hour">{{
+                            hour.label
+                        }}</span>
+                        <span class="admin-hourlyCell__count">{{
+                            hour.count
+                        }}</span>
                     </div>
                 </div>
             </div>
 
             <!-- Sample Calls -->
             <div v-if="hasSampleCalls" class="admin-reportSection">
-                <h4 class="admin-reportSection__title">Sample Calls by Category</h4>
+                <h4 class="admin-reportSection__title">
+                    Sample Calls by Category
+                </h4>
                 <div
                     v-for="cat in categoriesWithSamples"
                     :key="cat.name"
                     class="admin-sampleCallsSection"
                 >
-                    <h5 class="admin-sampleCallsSection__title">{{ cat.name }}</h5>
+                    <h5 class="admin-sampleCallsSection__title">
+                        {{ cat.name }}
+                    </h5>
                     <div class="admin-sampleCallsList">
                         <div
                             v-for="(sample, idx) in cat.samples"
@@ -125,9 +161,19 @@
                             class="admin-sampleCall"
                         >
                             <div class="admin-sampleCall__meta">
-                                <span class="admin-mono">{{ formatDate(sample.date) }}</span>
-                                <span v-if="sample.did" class="admin-sampleCall__did">DID: {{ sample.did }}</span>
-                                <span v-if="sample.src" class="admin-sampleCall__src">From: {{ sample.src }}</span>
+                                <span class="admin-mono">{{
+                                    formatDate(sample.date)
+                                }}</span>
+                                <span
+                                    v-if="sample.did"
+                                    class="admin-sampleCall__did"
+                                    >DID: {{ sample.did }}</span
+                                >
+                                <span
+                                    v-if="sample.src"
+                                    class="admin-sampleCall__src"
+                                    >From: {{ sample.src }}</span
+                                >
                             </div>
                             <div class="admin-sampleCall__transcript">
                                 {{ sample.transcript }}
@@ -157,8 +203,9 @@ const hasCategories = computed(() => {
 const hasSubCategories = computed(() => {
     const details = props.breakdowns?.details;
     if (!details) return false;
-    return Object.values(details).some(cat =>
-        cat.sub_categories && Object.keys(cat.sub_categories).length > 0
+    return Object.values(details).some(
+        (cat) =>
+            cat.sub_categories && Object.keys(cat.sub_categories).length > 0,
     );
 });
 
@@ -174,14 +221,29 @@ const hasHourlyData = computed(() => {
 const hasSampleCalls = computed(() => {
     const details = props.breakdowns?.details;
     if (!details) return false;
-    return Object.values(details).some(cat =>
-        cat.sample_calls && cat.sample_calls.length > 0
+    return Object.values(details).some(
+        (cat) => cat.sample_calls && cat.sample_calls.length > 0,
     );
 });
 
 const totalCalls = computed(() => {
     const counts = props.breakdowns?.counts || {};
     return Object.values(counts).reduce((sum, c) => sum + c, 0);
+});
+
+const categorizedCalls = computed(() => {
+    return (
+        Number(
+            props.breakdowns?.totals?.categorized_calls ?? totalCalls.value,
+        ) || 0
+    );
+});
+
+const reportTotalCalls = computed(() => {
+    const value = props.breakdowns?.totals?.report_total_calls;
+    if (value === null || value === undefined) return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
 });
 
 const sortedCategories = computed(() => {
@@ -201,14 +263,24 @@ const categoriesWithSubs = computed(() => {
     const details = props.breakdowns?.details || {};
 
     return Object.entries(details)
-        .filter(([, cat]) => cat.sub_categories && Object.keys(cat.sub_categories).length > 0)
+        .filter(
+            ([, cat]) =>
+                cat.sub_categories &&
+                Object.keys(cat.sub_categories).length > 0,
+        )
         .map(([name, cat]) => {
-            const subTotal = Object.values(cat.sub_categories).reduce((s, c) => s + c, 0);
+            const subTotal = Object.values(cat.sub_categories).reduce(
+                (s, c) => s + c,
+                0,
+            );
             const subCategories = Object.entries(cat.sub_categories)
                 .map(([subName, subCount]) => ({
                     name: subName,
                     count: subCount,
-                    percent: subTotal > 0 ? Math.round((subCount / subTotal) * 1000) / 10 : 0,
+                    percent:
+                        subTotal > 0
+                            ? Math.round((subCount / subTotal) * 1000) / 10
+                            : 0,
                 }))
                 .sort((a, b) => b.count - a.count);
 
