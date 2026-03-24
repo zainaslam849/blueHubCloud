@@ -195,18 +195,31 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
+                $rowByHeader = [];
+                if (! empty($headers) && count($headers) === count($row)) {
+                    try {
+                        $rowByHeader = array_combine($headers, $row) ?: [];
+                    } catch (\Throwable $e) {
+                        $rowByHeader = [];
+                    }
+                }
+
+                $sourceRow = ! empty($rowByHeader) ? $rowByHeader : $row;
+
                 // Bluehub PBXWare API contract supports numeric csv indexes and named keys.
                 // Numeric indexes:
                 // - [0] From, [1] To, [2] Date/Time epoch, [3] Duration, [6] Status, [7] Unique ID, [10] Location Type
-                $fromValue = $this->extractFieldValue($row, [0, 'From', 'from', 'src', 'caller']);
-                $toValue = $this->extractFieldValue($row, [1, 'To', 'to', 'dst', 'destination']);
-                $epoch = $this->extractFieldValue($row, [2, 'Date/Time', 'datetime', 'timestamp', 'started_at']);
-                $status = $this->extractFieldValue($row, [6, 'Status', 'status', 'disposition']);
-                $callUid = $this->extractFieldValue($row, [7, 'Unique ID', 'uniqueid', 'unique_id']);
-                $recordingPath = $this->extractFieldValue($row, [8, 'Recording Path', 'recording_path']);
-                $recordingAvailableRaw = $this->extractFieldValue($row, [9, 'Recording Available', 'recording_available']);
-                $locationType = $this->extractFieldValue($row, [10, 'Location Type', 'location_type', 'department', 'queue']);
+                $fromValue = $this->extractFieldValue($sourceRow, [0, 'From', 'from', 'src', 'caller']);
+                $toValue = $this->extractFieldValue($sourceRow, [1, 'To', 'to', 'dst', 'destination']);
+                $epoch = $this->extractFieldValue($sourceRow, [2, 'Date/Time', 'datetime', 'timestamp', 'started_at']);
+                $status = $this->extractFieldValue($sourceRow, [6, 'Status', 'status', 'disposition']);
+                $callUid = $this->extractFieldValue($sourceRow, [7, 'Unique ID', 'uniqueid', 'unique_id']);
+                $recordingPath = $this->extractFieldValue($sourceRow, [8, 'Recording Path', 'recording_path']);
+                $recordingAvailableRaw = $this->extractFieldValue($sourceRow, [9, 'Recording Available', 'recording_available']);
+                $locationType = $this->extractFieldValue($sourceRow, [10, 'Location Type', 'location_type', 'department', 'queue']);
                 $recordingAvailable = $this->toBooleanLike($recordingAvailableRaw);
+                $recordingPathNormalized = is_string($recordingPath) ? trim($recordingPath) : '';
+                $recordingAvailableEffective = $recordingAvailable === true || $recordingPathNormalized !== '';
 
                 if ($fromValue === '') {
                     $fromValue = null;
@@ -219,7 +232,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
 
                 $durationSeconds = null;
-                $durationRaw = $this->extractFieldValue($row, [3, 'Total Duration', 'Duration', 'duration', 'billsec']);
+                $durationRaw = $this->extractFieldValue($sourceRow, [3, 'Total Duration', 'Duration', 'duration', 'billsec']);
                 if ($durationRaw !== null && $durationRaw !== '' && is_numeric($durationRaw)) {
                     $durationSeconds = (int) $durationRaw;
                 }
@@ -292,12 +305,14 @@ class IngestPbxCallsJob implements ShouldQueue
                 if (is_array($pbxMetadata)) {
                     $pbxMetadata['raw_row'] = $row;
                     $pbxMetadata['recording_available_normalized'] = $recordingAvailable;
-                    $pbxMetadata['recording_path_normalized'] = is_string($recordingPath) ? trim($recordingPath) : $recordingPath;
+                    $pbxMetadata['recording_available_effective'] = $recordingAvailableEffective;
+                    $pbxMetadata['recording_path_normalized'] = $recordingPathNormalized !== '' ? $recordingPathNormalized : null;
                 } else {
                     $pbxMetadata = [
                         'raw_row' => $row,
                         'recording_available_normalized' => $recordingAvailable,
-                        'recording_path_normalized' => is_string($recordingPath) ? trim($recordingPath) : $recordingPath,
+                        'recording_available_effective' => $recordingAvailableEffective,
+                        'recording_path_normalized' => $recordingPathNormalized !== '' ? $recordingPathNormalized : null,
                     ];
                 }
 
@@ -363,7 +378,8 @@ class IngestPbxCallsJob implements ShouldQueue
                             'ring_group' => $ringGroup,
                             'department' => $locationType,
                             'recording_available' => $recordingAvailable,
-                            'recording_path' => $recordingPath,
+                            'recording_available_effective' => $recordingAvailableEffective,
+                            'recording_path' => $recordingPathNormalized,
                             'status' => $finalStatus,
                             'duration_seconds' => $billsec,
                             'started_at' => $startedAt,
@@ -377,7 +393,7 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
-                if ($recordingAvailable === true) {
+                if ($recordingAvailableEffective) {
                     $call->has_transcription = true;
                     if (empty($call->transcript_text)) {
                         $call->transcription_checked_at = null;
@@ -386,7 +402,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
 
                 // SOP alignment: only query transcription.get when CDR indicates recording exists.
-                if ($recordingAvailable !== true) {
+                if (! $recordingAvailableEffective) {
                     $transcriptionSkippedNoRecording++;
                     if ($rowIndex < 5) {
                         Log::info('PBX_TRACE transcription.skipped.no_recording', [
@@ -394,7 +410,8 @@ class IngestPbxCallsJob implements ShouldQueue
                             'pbx_unique_id' => $callUid,
                             'recording_available_raw' => $recordingAvailableRaw,
                             'recording_available_normalized' => $recordingAvailable,
-                            'recording_path' => $recordingPath,
+                            'recording_available_effective' => $recordingAvailableEffective,
+                            'recording_path' => $recordingPathNormalized,
                         ]);
                     }
                     $call->has_transcription = false;

@@ -31,6 +31,7 @@ class PbxwareAdapter implements ProviderAdapterInterface
     private const API_VERSION = 'v7';
     private const BASE_URL = 'https://ip.pbxbluehub.com';
     private const TIMEOUT = 30; // seconds
+    private const TRANSCRIPTION_TIMEOUT = 120; // seconds, large transcript payloads can take longer
 
     private string $apiKey;
     private ?string $baseUrl;
@@ -249,7 +250,7 @@ class PbxwareAdapter implements ProviderAdapterInterface
     public function fetchTranscription(string $serverId, string $externalCallId): array
     {
         try {
-            $response = Http::timeout(self::TIMEOUT)
+            $response = Http::timeout(self::TRANSCRIPTION_TIMEOUT)
                 ->get($this->baseUrl, [
                     'action' => 'pbxware.transcription.get',
                     'uniqueid' => $externalCallId,

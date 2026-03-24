@@ -40,6 +40,7 @@ class FetchTranscriptionsJob implements ShouldQueue
 
     // Number of calls to process per job execution
     private const BATCH_SIZE = 50;
+    private const RETRY_COOLDOWN_MINUTES = 30;
 
     // Maximum attempts before giving up
     public int $tries = 5;
@@ -71,7 +72,11 @@ class FetchTranscriptionsJob implements ShouldQueue
             // Find calls with recordings but no transcription (limit to batch size)
             $callsQuery = Call::query()
                 ->where('has_transcription', true)
-                ->whereNull('transcript_text');
+                ->whereNull('transcript_text')
+                ->where(function ($q) {
+                    $q->whereNull('transcription_checked_at')
+                        ->orWhere('transcription_checked_at', '<=', now()->subMinutes(self::RETRY_COOLDOWN_MINUTES));
+                });
 
             if ($this->companyId !== null) {
                 $callsQuery->where('company_id', $this->companyId);
@@ -181,14 +186,14 @@ class FetchTranscriptionsJob implements ShouldQueue
             // If no transcription found, mark it and skip
             if (empty($transcriptionData)) {
                 $call->update([
-                    'has_transcription' => false,
                     'transcription_checked_at' => now(),
                 ]);
-                Log::warning('FetchTranscriptionsJob: terminal outcome api_empty_response', [
+                Log::warning('FetchTranscriptionsJob: terminal outcome api_empty_response_retry_later', [
                     'call_id' => $call->id,
                     'server_id' => $call->server_id,
                     'pbx_unique_id' => $call->pbx_unique_id,
                     'pipeline_run_id' => $this->pipelineRunId,
+                    'retry_after_minutes' => self::RETRY_COOLDOWN_MINUTES,
                 ]);
                 return;
             }
@@ -211,9 +216,11 @@ class FetchTranscriptionsJob implements ShouldQueue
             ]);
 
             if ($transcriptText === '') {
+                $explicitNotFound = $this->isExplicitNoTranscription($transcriptionData);
+
                 $call->update([
                     'transcription_checked_at' => now(),
-                    'has_transcription' => false,
+                    'has_transcription' => $explicitNotFound ? false : true,
                 ]);
 
                 Log::warning('FetchTranscriptionsJob: terminal outcome unusable_text_extraction', [
@@ -223,6 +230,8 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'payload_keys' => array_keys($transcriptionData),
                     'pipeline_run_id' => $this->pipelineRunId,
                     'preview' => $this->extractPreview($transcriptionData),
+                    'explicit_not_found' => $explicitNotFound,
+                    'retry_after_minutes' => $explicitNotFound ? null : self::RETRY_COOLDOWN_MINUTES,
                 ]);
 
                 return;
@@ -309,5 +318,37 @@ class FetchTranscriptionsJob implements ShouldQueue
         }
 
         return null;
+    }
+
+    private function isExplicitNoTranscription(array $payload): bool
+    {
+        $candidates = [
+            $payload['message'] ?? null,
+            $payload['error'] ?? null,
+            $payload['status'] ?? null,
+            data_get($payload, 'result.message'),
+            data_get($payload, 'result.error'),
+            data_get($payload, 'data.message'),
+            data_get($payload, 'data.error'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate)) {
+                continue;
+            }
+
+            $value = strtolower(trim($candidate));
+            if ($value === '') {
+                continue;
+            }
+
+            if (str_contains($value, 'no transcription')
+                || str_contains($value, 'transcription not found')
+                || str_contains($value, 'not found')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
