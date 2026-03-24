@@ -16,10 +16,7 @@ class AdminJobsController extends Controller
     {
         $queueConnection = config('queue.default');
 
-        $jobsQuery = DB::table('jobs');
-        $failedQuery = DB::table('failed_jobs');
-
-        $queueCounts = $jobsQuery
+        $queueCounts = DB::table('jobs')
             ->select([
                 'queue',
                 DB::raw('COUNT(*) as queued'),
@@ -30,12 +27,12 @@ class AdminJobsController extends Controller
             ->get();
 
         $totals = [
-            'queued' => (int) $jobsQuery->count(),
-            'reserved' => (int) $jobsQuery->whereNotNull('reserved_at')->count(),
-            'failed' => (int) $failedQuery->count(),
+            'queued' => (int) DB::table('jobs')->count(),
+            'reserved' => (int) DB::table('jobs')->whereNotNull('reserved_at')->count(),
+            'failed' => (int) DB::table('failed_jobs')->count(),
         ];
 
-        $recentJobs = $jobsQuery
+        $recentJobs = DB::table('jobs')
             ->orderByDesc('id')
             ->limit(25)
             ->get(['id', 'queue', 'payload', 'attempts', 'reserved_at', 'available_at', 'created_at']);
@@ -54,7 +51,7 @@ class AdminJobsController extends Controller
             ];
         })->values();
 
-        $failedJobs = $failedQuery
+        $failedJobs = DB::table('failed_jobs')
             ->orderByDesc('id')
             ->limit(25)
             ->get(['id', 'queue', 'failed_at', 'exception']);
