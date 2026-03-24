@@ -157,6 +157,51 @@
             </BaseTable>
         </section>
 
+        <section
+            v-if="hasPipelineDiagnostics"
+            class="admin-card admin-card--glass"
+        >
+            <h2 class="admin-card__headline">Pipeline diagnostics</h2>
+            <div class="pipeline-diagnostics-grid">
+                <div class="pipeline-diagnostic-item">
+                    <p class="pipeline-diagnostic-label">Active run</p>
+                    <p class="pipeline-diagnostic-value">
+                        #{{ overview.pipeline_diagnostics.run_id }}
+                    </p>
+                </div>
+                <div class="pipeline-diagnostic-item">
+                    <p class="pipeline-diagnostic-label">
+                        Pending transcriptions
+                    </p>
+                    <p class="pipeline-diagnostic-value">
+                        {{
+                            overview.pipeline_diagnostics.pending_transcriptions
+                        }}
+                    </p>
+                </div>
+                <div class="pipeline-diagnostic-item">
+                    <p class="pipeline-diagnostic-label">Split retries</p>
+                    <p class="pipeline-diagnostic-value">
+                        {{ overview.pipeline_diagnostics.split_retries }}
+                    </p>
+                </div>
+                <div class="pipeline-diagnostic-item">
+                    <p class="pipeline-diagnostic-label">Discovery integrity</p>
+                    <p
+                        class="pipeline-diagnostic-value"
+                        :class="
+                            overview.pipeline_diagnostics
+                                .strict_lossless_discovery
+                                ? 'is-healthy'
+                                : 'is-risk'
+                        "
+                    >
+                        {{ discoveryIntegrityLabel }}
+                    </p>
+                </div>
+            </div>
+        </section>
+
         <section class="admin-card admin-card--glass">
             <h2 class="admin-card__headline">Queued jobs</h2>
             <BaseTable
@@ -225,6 +270,7 @@ const overview = ref({
     failed_jobs: [],
     pipeline_totals: {},
     pipeline_runs: [],
+    pipeline_diagnostics: null,
     worker_health: {
         level: "ok",
         has_backlog: false,
@@ -304,7 +350,7 @@ const horizonStatusClass = computed(() => {
 const showStartWorkersButton = computed(() => {
     return Boolean(
         overview.value?.horizon_status?.enabled &&
-            overview.value?.horizon_status?.running !== true,
+        overview.value?.horizon_status?.running !== true,
     );
 });
 
@@ -330,6 +376,21 @@ const showWorkerStartHint = computed(() => {
         hint?.start_command &&
         hint?.status_command,
     );
+});
+
+const hasPipelineDiagnostics = computed(() => {
+    return Boolean(overview.value?.pipeline_diagnostics?.run_id);
+});
+
+const discoveryIntegrityLabel = computed(() => {
+    const diagnostics = overview.value?.pipeline_diagnostics;
+    if (!diagnostics) {
+        return "Unknown";
+    }
+
+    return diagnostics.strict_lossless_discovery
+        ? "Strict-lossless"
+        : "Unverified";
 });
 
 onMounted(() => {
@@ -434,7 +495,8 @@ async function startWorkers() {
             overview.value = {
                 ...overview.value,
                 worker_health: workerHealth || overview.value.worker_health,
-                worker_start_hint: workerHint || overview.value.worker_start_hint,
+                worker_start_hint:
+                    workerHint || overview.value.worker_start_hint,
                 horizon_status: {
                     ...(overview.value?.horizon_status || {}),
                     running:
@@ -556,5 +618,38 @@ async function startWorkers() {
     margin-top: 4px;
     font-size: 12px;
     color: #7c2d12;
+}
+
+.pipeline-diagnostics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.pipeline-diagnostic-item {
+    border: 1px solid var(--admin-border, #e5e7eb);
+    border-radius: 10px;
+    padding: 10px;
+    background: var(--admin-surface-2, #f9fafb);
+}
+
+.pipeline-diagnostic-label {
+    margin: 0;
+    font-size: 12px;
+    color: var(--admin-text-muted, #6b7280);
+}
+
+.pipeline-diagnostic-value {
+    margin: 4px 0 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.pipeline-diagnostic-value.is-healthy {
+    color: #047857;
+}
+
+.pipeline-diagnostic-value.is-risk {
+    color: #b45309;
 }
 </style>

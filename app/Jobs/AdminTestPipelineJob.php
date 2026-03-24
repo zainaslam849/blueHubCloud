@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\Call;
 use App\Models\CompanyPbxAccount;
 use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
@@ -11,10 +10,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Throwable;
-use function dispatch;
 
 class AdminTestPipelineJob implements ShouldQueue
 {
@@ -88,23 +85,54 @@ class AdminTestPipelineJob implements ShouldQueue
                 'pipeline_run_id' => $this->pipelineRun?->id,
             ]);
         } else {
+            $discoveryMetrics = [
+                'ingest_accounts' => $accounts->count(),
+                'calls_created' => 0,
+                'calls_skipped_existing' => 0,
+                'split_window_retries' => 0,
+                'strict_lossless_discovery' => true,
+                'transcription_attempts' => 0,
+                'transcriptions_stored' => 0,
+                'transcription_skipped_no_recording' => 0,
+                'transcription_not_found' => 0,
+            ];
+
             foreach ($accounts as $account) {
                 Log::info('AdminTestPipelineJob - Dispatching ingest for account', ['account_id' => $account->id]);
-                IngestPbxCallsJob::dispatchSync(
+                $ingestResult = IngestPbxCallsJob::dispatchSync(
                     $this->companyId,
                     $account->id,
                     ['from' => $from, 'to' => $to]
                 );
+
+                if (is_array($ingestResult)) {
+                    $discoveryMetrics['calls_created'] += (int) ($ingestResult['calls_created'] ?? 0);
+                    $discoveryMetrics['calls_skipped_existing'] += (int) ($ingestResult['calls_skipped_existing'] ?? 0);
+                    $discoveryMetrics['split_window_retries'] += (int) ($ingestResult['split_window_retries'] ?? 0);
+                    $discoveryMetrics['strict_lossless_discovery'] =
+                        $discoveryMetrics['strict_lossless_discovery']
+                        && (bool) ($ingestResult['strict_lossless_discovery'] ?? true);
+                    $discoveryMetrics['transcription_attempts'] += (int) ($ingestResult['transcription_attempts'] ?? 0);
+                    $discoveryMetrics['transcriptions_stored'] += (int) ($ingestResult['transcriptions_stored'] ?? 0);
+                    $discoveryMetrics['transcription_skipped_no_recording'] += (int) ($ingestResult['transcription_skipped_no_recording'] ?? 0);
+                    $discoveryMetrics['transcription_not_found'] += (int) ($ingestResult['transcription_not_found'] ?? 0);
+                }
             }
 
-            $this->completeStage(self::STAGE_CALL_DISCOVERY, [
-                'ingest_accounts' => $accounts->count(),
-            ]);
+            $this->completeStage(self::STAGE_CALL_DISCOVERY, $discoveryMetrics);
         }
 
         if (! $this->shouldSkipStage(self::STAGE_TRANSCRIPTION_FETCH)) {
             $this->startStage(self::STAGE_TRANSCRIPTION_FETCH);
-            FetchTranscriptionsJob::dispatch()->onQueue($this->pipelineQueue);
+            FetchTranscriptionsJob::dispatch(
+                $this->companyId,
+                $from,
+                $to,
+                $this->pipelineRun?->id,
+                $this->pipelineQueue,
+                $this->summarizeLimit,
+                $this->categorizeLimit,
+            )->onQueue($this->pipelineQueue);
             $this->completeStage(self::STAGE_TRANSCRIPTION_FETCH, [
                 'mode' => 'queued',
             ], 'queued');
@@ -112,110 +140,17 @@ class AdminTestPipelineJob implements ShouldQueue
 
         Log::info('AdminTestPipelineJob - Pipeline Step 1 complete: Ingest finished', ['company_id' => $this->companyId]);
 
-        // STEP 2: Queue summarization (async - will process immediately)
-        $skipSummary = $this->shouldSkipStage(self::STAGE_AI_SUMMARY);
-        if (! $skipSummary) {
-            $this->startStage(self::STAGE_AI_SUMMARY);
-        }
-        Log::info('AdminTestPipelineJob - Pipeline Step 2: Preparing summarization jobs...', ['company_id' => $this->companyId]);
-        $callsToSummarize = Call::query()
-            ->where('company_id', $this->companyId)
-            ->whereNotNull('transcript_text')
-            ->where('transcript_text', '!=', '')
-            ->whereNull('ai_summary')
-            ->orderByDesc('started_at')
-            ->limit($this->summarizeLimit)
-            ->get(['id']);
-
-        Log::info('AdminTestPipelineJob - Calls to summarize', [
-            'company_id' => $this->companyId,
-            'count' => $callsToSummarize->count(),
-        ]);
-
-        $postSummaryChain = [
-            new GenerateAiCategoriesForCompanyJob($this->companyId, $rangeDays),
-            new QueueCallsForCategorizationJob(
-                $this->companyId,
-                $this->categorizeLimit,
-                25,
-                false,
-                $this->pipelineQueue,
-                $from,
-                $to,
-                $this->pipelineRun?->id
-            ),
-            // Note: GenerateWeeklyPbxReportsJob is now dispatched by QueueCallsForCategorizationJob
-            // with a delay to ensure it runs AFTER categorization completes
-        ];
-
-        Log::info('AdminTestPipelineJob - Pipeline Step 2: Queuing summarization jobs...', [
-            'company_id' => $this->companyId,
-            'count' => $callsToSummarize->count(),
-        ]);
-
-        // Dispatch summarization jobs without batching (SummarizeSingleCallJob doesn't use Batchable trait)
-        if ($skipSummary) {
-            Log::info('AdminTestPipelineJob - Skipping ai_summary stage during resume', [
-                'company_id' => $this->companyId,
-                'pipeline_run_id' => $this->pipelineRun?->id,
-            ]);
-        } else {
-            foreach ($callsToSummarize as $call) {
-                SummarizeSingleCallJob::dispatch($call->id)
-                    ->onQueue($this->pipelineQueue);
-            }
-
-            $this->completeStage(self::STAGE_AI_SUMMARY, [
-                'queued_summaries' => $callsToSummarize->count(),
-            ], 'queued');
-
-            $this->completeStage(self::STAGE_CATEGORY_GENERATION, [
-                'queued' => true,
-            ], 'queued');
-
-            $this->completeStage(self::STAGE_CALL_CATEGORIZATION, [
-                'queued_limit' => $this->categorizeLimit,
-            ], 'queued');
-
-            $this->completeStage(self::STAGE_REPORT_GENERATION, [
-                'queued' => true,
-            ], 'queued');
-        }
-
-        Log::info('AdminTestPipelineJob - Pipeline Step 2: Queued summarization jobs, now queuing post-summary jobs...', [
-            'company_id' => $this->companyId,
-            'summary_count' => $callsToSummarize->count(),
-        ]);
-
-        // STEP 3-5: Chain category generation → categorization → reports
-        // These will run after summaries are done (or immediately if no summaries)
-        if ($callsToSummarize->count() > 0) {
-            // Chain them after summarization jobs if there are any
-            Bus::chain($postSummaryChain)
-                ->onQueue($this->pipelineQueue)
-                ->dispatch();
-            Log::info('AdminTestPipelineJob - Post-summary jobs chained after summarization', ['company_id' => $this->companyId]);
-        } else {
-            // If no summarization jobs, dispatch post-summary jobs directly (don't wait)
-            Log::info('AdminTestPipelineJob - No summarization jobs; dispatching post-summary jobs directly', ['company_id' => $this->companyId]);
-            foreach ($postSummaryChain as $job) {
-                dispatch($job->onQueue($this->pipelineQueue));
-            }
-        }
-
-        if ($this->pipelineRun) {
-            $this->pipelineRun->markQueued(self::STAGE_REPORT_GENERATION);
-            $this->pipelineRun->forceFill([
-                'metrics' => array_merge(
-                    is_array($this->pipelineRun->metrics) ? $this->pipelineRun->metrics : [],
-                    [
-                        'summary_jobs_queued' => $callsToSummarize->count(),
-                        'ingest_accounts' => $accounts->count(),
-                        'queued_at' => now()->toIso8601String(),
-                    ]
-                ),
-            ])->save();
-        }
+        // Step barrier: continue only after transcription stage reaches terminal state.
+        ContinuePipelineAfterTranscriptionsJob::dispatch(
+            $this->companyId,
+            $from,
+            $to,
+            $this->summarizeLimit,
+            $this->categorizeLimit,
+            $this->pipelineQueue,
+            $this->pipelineRun?->id,
+            $rangeDays,
+        )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(10));
 
         Log::info('AdminTestPipelineJob::handle() - COMPLETE', ['company_id' => $this->companyId]);
 

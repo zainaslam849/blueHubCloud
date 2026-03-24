@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\AdminTestPipelineJob;
+use App\Models\Call;
 use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -68,6 +69,7 @@ class AdminJobsController extends Controller
         })->values();
 
         $pipelineRows = collect();
+        $activePipelineDiagnostics = null;
         $pipelineTotals = [
             'running' => 0,
             'queued' => 0,
@@ -111,9 +113,12 @@ class AdminJobsController extends Controller
                     'updated_at' => $run->updated_at?->toIso8601String(),
                     'last_error' => $this->trimException((string) ($run->last_error ?? '')),
                     'can_resume' => in_array($run->status, ['failed', 'queued'], true),
+                    'metrics' => is_array($run->metrics) ? $run->metrics : [],
                     'stages' => $stages,
                 ];
             })->values();
+
+            $activePipelineDiagnostics = $this->buildActivePipelineDiagnostics($pipelineRuns);
 
             $pipelineTotals = [
                 'running' => PipelineRun::query()->where('status', 'running')->count(),
@@ -140,6 +145,7 @@ class AdminJobsController extends Controller
                 'failed_jobs' => $failed,
                 'pipeline_totals' => $pipelineTotals,
                 'pipeline_runs' => $pipelineRows,
+                'pipeline_diagnostics' => $activePipelineDiagnostics,
                 'worker_health' => $workerHealth,
                 'worker_start_hint' => $workerStartHint,
                 'horizon_status' => [
@@ -392,6 +398,43 @@ class AdminJobsController extends Controller
             'suspected_stalled' => $suspectedStalled,
             'horizon_running' => $horizonRunning,
             'message' => $message,
+        ];
+    }
+
+    private function buildActivePipelineDiagnostics($pipelineRuns): ?array
+    {
+        $activeRun = $pipelineRuns
+            ->first(fn (PipelineRun $run) => in_array($run->status, ['running', 'queued', 'failed'], true));
+
+        if (! $activeRun) {
+            return null;
+        }
+
+        $rangeFrom = $activeRun->range_from?->startOfDay();
+        $rangeTo = $activeRun->range_to?->endOfDay();
+        $callDiscoveryStage = $activeRun->stages->firstWhere('stage_key', 'call_discovery');
+        $stageMetrics = is_array($callDiscoveryStage?->metrics) ? $callDiscoveryStage->metrics : [];
+
+        $pendingTranscriptions = 0;
+        if ($rangeFrom && $rangeTo) {
+            $pendingTranscriptions = (int) Call::query()
+                ->where('company_id', $activeRun->company_id)
+                ->where('has_transcription', true)
+                ->whereNull('transcript_text')
+                ->whereBetween('started_at', [$rangeFrom, $rangeTo])
+                ->count();
+        }
+
+        return [
+            'run_id' => $activeRun->id,
+            'company_id' => $activeRun->company_id,
+            'range_from' => $activeRun->range_from?->toDateString(),
+            'range_to' => $activeRun->range_to?->toDateString(),
+            'pending_transcriptions' => $pendingTranscriptions,
+            'split_retries' => (int) ($stageMetrics['split_window_retries'] ?? 0),
+            'strict_lossless_discovery' => (bool) ($stageMetrics['strict_lossless_discovery'] ?? false),
+            'calls_created' => (int) ($stageMetrics['calls_created'] ?? 0),
+            'calls_skipped_existing' => (int) ($stageMetrics['calls_skipped_existing'] ?? 0),
         ];
     }
 

@@ -35,18 +35,18 @@ class IngestPbxCallsJob implements ShouldQueue
         $this->onQueue('ingest-pbx');
     }
 
-    public function handle()
+    public function handle(): array
     {
         $pbxAccount = CompanyPbxAccount::find($this->companyPbxAccountId);
         if (! $pbxAccount) {
             Log::warning('Company PBX account not found', ['company_pbx_account_id' => $this->companyPbxAccountId]);
-            return;
+            return [];
         }
 
         $company = $pbxAccount->company;
         if (! $company) {
             Log::warning('Company not found for PBX account', ['company_pbx_account_id' => $this->companyPbxAccountId]);
-            return;
+            return [];
         }
 
         if ($company->status !== 'active' || $pbxAccount->status !== 'active') {
@@ -56,7 +56,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'pbx_account_status' => $pbxAccount->status,
             ]);
-            return;
+            return [];
         }
 
         $serverId = is_string($pbxAccount->server_id ?? null) ? trim((string) $pbxAccount->server_id) : '';
@@ -80,6 +80,7 @@ class IngestPbxCallsJob implements ShouldQueue
             // PBXware does not expose call media downloads. This system relies on PBX-provided transcriptions only.
 
             $range = $this->determineRequestedRange();
+            $fetchTranscriptionsInline = filter_var($this->params['fetch_transcriptions_inline'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
             $callsCreated = 0;
             $callsSkipped = 0;
@@ -90,10 +91,16 @@ class IngestPbxCallsJob implements ShouldQueue
             $transcriptionAttempts = 0;
             $transcriptionSkippedNoRecording = 0;
             $transcriptionNotFound = 0;
+            $splitWindowRetries = 0;
 
             $windows = $this->buildCdrDateWindows($range['from'], $range['to']);
+            $pendingWindows = $windows;
+            $windowSequence = 0;
 
-            foreach ($windows as $windowIndex => $window) {
+            while (! empty($pendingWindows)) {
+                $window = array_shift($pendingWindows);
+                $windowIndex = $windowSequence++;
+
                 $params = $this->buildCdrDownloadParams($window['from'], $window['to'], $serverId);
 
                 Log::info('PBXware CDR date range used', [
@@ -104,7 +111,7 @@ class IngestPbxCallsJob implements ShouldQueue
                     'end' => $params['end'],
                     'status' => $params['status'],
                     'window_index' => $windowIndex,
-                    'window_count' => count($windows),
+                    'window_count' => count($pendingWindows) + 1,
                 ]);
 
                 $result = method_exists($client, 'fetchCdrRecords')
@@ -152,6 +159,21 @@ class IngestPbxCallsJob implements ShouldQueue
                 ]);
 
                 if (is_array($result) && ! empty($result['next_page'])) {
+                    $splitWindows = $this->splitCdrWindow($window['from'], $window['to']);
+
+                    if (empty($splitWindows)) {
+                        throw new PbxwareClientException(sprintf(
+                            'PBX pagination unresolved for single-day window %s to %s (server %s). Failing to avoid partial ingestion.',
+                            $params['start'],
+                            $params['end'],
+                            $serverId
+                        ));
+                    }
+
+                    // Reprocess smaller windows first; skip current partial window rows to avoid accepting truncated data.
+                    array_unshift($pendingWindows, ...array_reverse($splitWindows));
+                    $splitWindowRetries++;
+
                     Log::warning('PBX_TRACE cdr.window.paginated', [
                         'company_id' => $this->companyId,
                         'company_pbx_account_id' => $this->companyPbxAccountId,
@@ -160,8 +182,11 @@ class IngestPbxCallsJob implements ShouldQueue
                         'start' => $params['start'],
                         'end' => $params['end'],
                         'rows' => $rowCount,
-                        'message' => 'PBX indicated additional pages. Reduce window size if transcript-bearing rows are still missing.',
+                        'action' => 'window_split_retry',
+                        'message' => 'PBX indicated additional pages. Splitting window and retrying to avoid partial ingestion.',
                     ]);
+
+                    continue;
                 }
 
                 foreach ($csvRows as $rowIndex => $row) {
@@ -352,6 +377,14 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
+                if ($recordingAvailable === true) {
+                    $call->has_transcription = true;
+                    if (empty($call->transcript_text)) {
+                        $call->transcription_checked_at = null;
+                    }
+                    $call->save();
+                }
+
                 // SOP alignment: only query transcription.get when CDR indicates recording exists.
                 if ($recordingAvailable !== true) {
                     $transcriptionSkippedNoRecording++;
@@ -367,6 +400,10 @@ class IngestPbxCallsJob implements ShouldQueue
                     $call->has_transcription = false;
                     $call->transcription_checked_at = now();
                     $call->save();
+                    continue;
+                }
+
+                if (! $fetchTranscriptionsInline) {
                     continue;
                 }
 
@@ -477,6 +514,9 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'server_id' => $serverId,
+                'inline_transcription_fetch' => $fetchTranscriptionsInline,
+                'split_window_retries' => $splitWindowRetries,
+                'strict_lossless_discovery' => true,
                 'cdr_rows_returned' => $cdrRowsReturned,
                 'cdr_rows_skipped_invalid' => $cdrRowsSkippedInvalid,
                 'cdr_rows_missing_endpoints' => $cdrRowsMissingEndpoints,
@@ -488,6 +528,17 @@ class IngestPbxCallsJob implements ShouldQueue
                 'transcription_not_found' => $transcriptionNotFound,
             ]);
 
+            return [
+                'calls_created' => $callsCreated,
+                'calls_skipped_existing' => $callsSkipped,
+                'split_window_retries' => $splitWindowRetries,
+                'strict_lossless_discovery' => true,
+                'transcription_attempts' => $transcriptionAttempts,
+                'transcriptions_stored' => $transcriptionsStored,
+                'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
+                'transcription_not_found' => $transcriptionNotFound,
+            ];
+
         } catch (PbxwareClientException $e) {
             Log::error('PBX client error during calls ingestion', ['company_id' => $this->companyId, 'error' => $e->getMessage()]);
             throw $e;
@@ -495,6 +546,8 @@ class IngestPbxCallsJob implements ShouldQueue
             Log::error('Unexpected error during calls ingestion', ['company_id' => $this->companyId, 'error' => $e->getMessage()]);
             throw $e;
         }
+
+        return [];
     }
 
     protected function parseDate($value)
@@ -560,6 +613,34 @@ class IngestPbxCallsJob implements ShouldQueue
         }
 
         return $windows;
+    }
+
+    private function splitCdrWindow(\Carbon\Carbon $from, \Carbon\Carbon $to): array
+    {
+        $fromDate = $from->copy()->startOfDay();
+        $toDate = $to->copy()->endOfDay();
+
+        if ($fromDate->toDateString() === $toDate->toDateString()) {
+            return [];
+        }
+
+        $days = max(1, $fromDate->diffInDays($toDate));
+        $halfDays = max(1, intdiv($days, 2));
+
+        $leftEnd = $fromDate->copy()->addDays($halfDays)->endOfDay();
+        if ($leftEnd->gte($toDate)) {
+            $leftEnd = $fromDate->copy()->endOfDay();
+        }
+
+        $rightStart = $leftEnd->copy()->addSecond()->startOfDay();
+        if ($rightStart->gt($toDate)) {
+            return [];
+        }
+
+        return [
+            ['from' => $fromDate, 'to' => $leftEnd],
+            ['from' => $rightStart, 'to' => $toDate],
+        ];
     }
 
     private function determineRequestedRange(): array

@@ -4,9 +4,9 @@ namespace App\Jobs;
 
 use App\Models\Call;
 use App\Models\CallTranscription;
-use App\Services\Insights\CallInsightAnalyzer;
 use App\Services\Normalization\PbxPayloadNormalizer;
 use App\Services\Providers\PbxwareAdapter;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -49,12 +49,15 @@ class FetchTranscriptionsJob implements ShouldQueue
     // Exponential backoff: 1 min, 5 min, 15 min, 1 hour
     public array $backoff = [60, 300, 900, 3600];
 
-    private PbxwareAdapter $adapter;
-
-    public function __construct()
-    {
-        $this->adapter = new PbxwareAdapter();
-    }
+    public function __construct(
+        public ?int $companyId = null,
+        public ?string $fromDate = null,
+        public ?string $toDate = null,
+        public ?int $pipelineRunId = null,
+        public string $pipelineQueue = 'default',
+        public int $summarizeLimit = 500,
+        public int $categorizeLimit = 500,
+    ) {}
 
     /**
      * Execute the job: fetch transcriptions for calls that have them available.
@@ -62,26 +65,56 @@ class FetchTranscriptionsJob implements ShouldQueue
     public function handle(): void
     {
         try {
+            $adapter = app(PbxwareAdapter::class);
+
             // Find calls with recordings but no transcription (limit to batch size)
-            $calls = Call::where('has_transcription', true)
-                ->whereNull('transcript_text')
+            $callsQuery = Call::query()
+                ->where('has_transcription', true)
+                ->whereNull('transcript_text');
+
+            if ($this->companyId !== null) {
+                $callsQuery->where('company_id', $this->companyId);
+            }
+
+            if ($this->fromDate !== null && $this->toDate !== null) {
+                $callsQuery->whereBetween('started_at', [
+                    Carbon::parse($this->fromDate)->startOfDay(),
+                    Carbon::parse($this->toDate)->endOfDay(),
+                ]);
+            }
+
+            $calls = $callsQuery
+                ->orderBy('id')
                 ->limit(self::BATCH_SIZE)
                 ->get();
 
             if ($calls->isEmpty()) {
-                Log::info('FetchTranscriptionsJob: No calls needing transcription');
+                Log::info('FetchTranscriptionsJob: No calls needing transcription', [
+                    'company_id' => $this->companyId,
+                    'from' => $this->fromDate,
+                    'to' => $this->toDate,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                ]);
                 return;
             }
 
             Log::info("FetchTranscriptionsJob: Processing {$calls->count()} calls");
 
             foreach ($calls as $call) {
-                $this->processCall($call);
+                $this->processCall($call, $adapter);
             }
 
             // If we processed a full batch, re-queue to continue
             if ($calls->count() === self::BATCH_SIZE) {
-                static::dispatch()->delay(now()->addSeconds(5));
+                static::dispatch(
+                    $this->companyId,
+                    $this->fromDate,
+                    $this->toDate,
+                    $this->pipelineRunId,
+                    $this->pipelineQueue,
+                    $this->summarizeLimit,
+                    $this->categorizeLimit,
+                )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(5));
                 Log::info('FetchTranscriptionsJob: Re-queued for next batch');
             }
         } catch (\Exception $e) {
@@ -100,11 +133,11 @@ class FetchTranscriptionsJob implements ShouldQueue
      * @param Call $call
      * @return void
      */
-    private function processCall(Call $call): void
+    private function processCall(Call $call, PbxwareAdapter $adapter): void
     {
         try {
             // Fetch transcription from PBXware API
-            $transcriptionData = $this->adapter->fetchTranscription(
+            $transcriptionData = $adapter->fetchTranscription(
                 serverId: $call->server_id,
                 externalCallId: $call->pbx_unique_id
             );
