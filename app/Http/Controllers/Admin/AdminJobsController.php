@@ -7,6 +7,7 @@ use App\Jobs\AdminTestPipelineJob;
 use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
@@ -271,6 +272,9 @@ class AdminJobsController extends Controller
         if ($suspectedStalled && $queueConnection === 'redis' && $horizonRunning === false) {
             $level = 'warning';
             $message = 'Queued work exists but Horizon appears offline. Start Horizon workers to process queued pipelines.';
+        } elseif ($suspectedStalled && $queueConnection === 'redis' && $horizonRunning === true) {
+            $level = 'warning';
+            $message = 'Horizon is running, but queued work is not being reserved yet. This may indicate stale pipeline state or queue mismatch.';
         } elseif ($suspectedStalled) {
             $level = 'warning';
             $message = 'Queued work exists but no jobs are reserved. Verify queue workers are running.';
@@ -287,10 +291,22 @@ class AdminJobsController extends Controller
 
     private function isHorizonLikelyRunning(): ?bool
     {
+        // Primary signal: Horizon's own status command.
+        // This matches operator checks (`php artisan horizon:status`) and avoids false negatives.
+        try {
+            Artisan::call('horizon:status');
+            $output = trim((string) Artisan::output());
+            if ($output !== '') {
+                return str_contains(strtolower($output), 'running');
+            }
+        } catch (\Throwable $e) {
+            // Fall through to Redis-based detection.
+        }
+
         try {
             $prefix = (string) config('horizon.prefix', 'horizon:');
             $mastersKey = rtrim($prefix, ':') . ':masters';
-            $redisConnection = (string) config('queue.connections.redis.connection', 'default');
+            $redisConnection = (string) config('horizon.use', 'default');
 
             return (bool) Redis::connection($redisConnection)->exists($mastersKey);
         } catch (\Throwable $e) {
