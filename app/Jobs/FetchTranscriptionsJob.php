@@ -13,6 +13,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * PHASE 4: TRANSCRIPTION INGESTION PIPELINE
@@ -88,6 +89,15 @@ class FetchTranscriptionsJob implements ShouldQueue
                 ->limit(self::BATCH_SIZE)
                 ->get();
 
+            Log::info('FetchTranscriptionsJob: candidate query executed', [
+                'company_id' => $this->companyId,
+                'from' => $this->fromDate,
+                'to' => $this->toDate,
+                'pipeline_run_id' => $this->pipelineRunId,
+                'candidate_count' => $calls->count(),
+                'candidate_call_ids' => $calls->pluck('id')->take(10)->values()->all(),
+            ]);
+
             if ($calls->isEmpty()) {
                 Log::info('FetchTranscriptionsJob: No calls needing transcription', [
                     'company_id' => $this->companyId,
@@ -136,18 +146,50 @@ class FetchTranscriptionsJob implements ShouldQueue
     private function processCall(Call $call, PbxwareAdapter $adapter): void
     {
         try {
+            Log::info('FetchTranscriptionsJob: api request start', [
+                'call_id' => $call->id,
+                'company_id' => $call->company_id,
+                'server_id' => $call->server_id,
+                'pbx_unique_id' => $call->pbx_unique_id,
+                'pipeline_run_id' => $this->pipelineRunId,
+            ]);
+
             // Fetch transcription from PBXware API
             $transcriptionData = $adapter->fetchTranscription(
                 serverId: $call->server_id,
                 externalCallId: $call->pbx_unique_id
             );
 
+            Log::info('FetchTranscriptionsJob: api response received', [
+                'call_id' => $call->id,
+                'server_id' => $call->server_id,
+                'pbx_unique_id' => $call->pbx_unique_id,
+                'payload_type' => gettype($transcriptionData),
+                'top_level_keys' => is_array($transcriptionData) ? array_keys($transcriptionData) : [],
+                'text_lengths' => [
+                    'text' => is_string($transcriptionData['text'] ?? null) ? mb_strlen(trim($transcriptionData['text'])) : 0,
+                    'transcript' => is_string($transcriptionData['transcript'] ?? null) ? mb_strlen(trim($transcriptionData['transcript'])) : 0,
+                    'Transcript' => is_string($transcriptionData['Transcript'] ?? null) ? mb_strlen(trim($transcriptionData['Transcript'])) : 0,
+                    'message' => is_string($transcriptionData['message'] ?? null) ? mb_strlen(trim($transcriptionData['message'])) : 0,
+                    'result_text' => is_string(data_get($transcriptionData, 'result.text')) ? mb_strlen(trim((string) data_get($transcriptionData, 'result.text'))) : 0,
+                    'result_transcript' => is_string(data_get($transcriptionData, 'result.transcript')) ? mb_strlen(trim((string) data_get($transcriptionData, 'result.transcript'))) : 0,
+                ],
+                'vtt_word_count' => is_array(data_get($transcriptionData, 'vtt.words')) ? count(data_get($transcriptionData, 'vtt.words')) : 0,
+                'preview' => $this->extractPreview($transcriptionData),
+            ]);
+
             // If no transcription found, mark it and skip
             if (empty($transcriptionData)) {
                 $call->update([
                     'has_transcription' => false,
+                    'transcription_checked_at' => now(),
                 ]);
-                Log::info("FetchTranscriptionsJob: No transcription found for call {$call->id}");
+                Log::warning('FetchTranscriptionsJob: terminal outcome api_empty_response', [
+                    'call_id' => $call->id,
+                    'server_id' => $call->server_id,
+                    'pbx_unique_id' => $call->pbx_unique_id,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                ]);
                 return;
             }
 
@@ -161,17 +203,26 @@ class FetchTranscriptionsJob implements ShouldQueue
                 ? trim($normalized['transcript_text'])
                 : '';
 
+            Log::info('FetchTranscriptionsJob: normalized payload', [
+                'call_id' => $call->id,
+                'transcript_length' => mb_strlen($transcriptText),
+                'confidence' => $normalized['transcript_confidence'] ?? 0,
+                'pipeline_run_id' => $this->pipelineRunId,
+            ]);
+
             if ($transcriptText === '') {
                 $call->update([
                     'transcription_checked_at' => now(),
                     'has_transcription' => false,
                 ]);
 
-                Log::warning("FetchTranscriptionsJob: Transcription payload had no usable text for call {$call->id}", [
+                Log::warning('FetchTranscriptionsJob: terminal outcome unusable_text_extraction', [
                     'call_id' => $call->id,
                     'server_id' => $call->server_id,
                     'pbx_unique_id' => $call->pbx_unique_id,
                     'payload_keys' => array_keys($transcriptionData),
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'preview' => $this->extractPreview($transcriptionData),
                 ]);
 
                 return;
@@ -185,6 +236,13 @@ class FetchTranscriptionsJob implements ShouldQueue
                 $normalized
             );
 
+            Log::info('FetchTranscriptionsJob: transcription row persisted', [
+                'call_id' => $call->id,
+                'transcription_id' => $transcription->id,
+                'transcript_length' => mb_strlen($transcriptText),
+                'pipeline_run_id' => $this->pipelineRunId,
+            ]);
+
             // Update call record with transcript
             $call->update([
                 'transcript_text' => $transcriptText,
@@ -192,19 +250,64 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'transcription_checked_at' => now(),
             ]);
 
-            Log::info("FetchTranscriptionsJob: Stored transcription for call {$call->id}", [
+            $call->refresh();
+
+            if (! is_string($call->transcript_text) || trim($call->transcript_text) === '') {
+                Log::error('FetchTranscriptionsJob: terminal outcome persistence_mismatch', [
+                    'call_id' => $call->id,
+                    'transcription_id' => $transcription->id,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                ]);
+            }
+
+            Log::info('FetchTranscriptionsJob: terminal outcome transcription_saved', [
                 'call_id' => $call->id,
                 'characters' => mb_strlen($transcriptText),
+                'pipeline_run_id' => $this->pipelineRunId,
             ]);
 
             // Dispatch insight analysis job to extract intent/department/deflection
             InsightAnalysisJob::dispatch($call, $transcription);
         } catch (\Exception $e) {
-            Log::error("FetchTranscriptionsJob: Failed to process call {$call->id}", [
+            Log::error('FetchTranscriptionsJob: terminal outcome exception_failed', [
+                'call_id' => $call->id,
+                'company_id' => $call->company_id,
+                'server_id' => $call->server_id,
+                'pbx_unique_id' => $call->pbx_unique_id,
+                'pipeline_run_id' => $this->pipelineRunId,
                 'error' => $e->getMessage(),
             ]);
 
             // Don't rethrow - continue processing other calls in batch
         }
+    }
+
+    private function extractPreview(array $payload): ?string
+    {
+        $candidates = [
+            $payload['text'] ?? null,
+            $payload['Transcript'] ?? null,
+            $payload['transcript'] ?? null,
+            $payload['message'] ?? null,
+            data_get($payload, 'result.text'),
+            data_get($payload, 'result.transcript'),
+            data_get($payload, 'data.text'),
+            data_get($payload, 'data.transcript'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate)) {
+                continue;
+            }
+
+            $value = trim($candidate);
+            if ($value === '') {
+                continue;
+            }
+
+            return Str::limit(preg_replace('/\s+/', ' ', $value) ?? $value, 160, '...');
+        }
+
+        return null;
     }
 }

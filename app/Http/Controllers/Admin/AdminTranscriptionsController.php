@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Call;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AdminTranscriptionsController extends Controller
 {
@@ -17,6 +19,10 @@ class AdminTranscriptionsController extends Controller
 
             'sort' => ['nullable', 'string', 'max:40'],
             'direction' => ['nullable', 'in:asc,desc'],
+            'search' => ['nullable', 'string', 'max:200'],
+            'company_id' => ['nullable', 'integer', 'min:1'],
+            'start_date' => ['nullable', 'date_format:Y-m-d'],
+            'end_date' => ['nullable', 'date_format:Y-m-d'],
         ]);
 
         $perPage = (int) ($validated['per_page'] ?? 25);
@@ -35,13 +41,64 @@ class AdminTranscriptionsController extends Controller
             $sort = 'created_at';
         }
 
+        $search = trim((string) ($validated['search'] ?? ''));
+        $companyId = isset($validated['company_id']) ? (int) $validated['company_id'] : null;
+        $startDate = $validated['start_date'] ?? null;
+        $endDate = $validated['end_date'] ?? null;
+
+        Log::info('AdminTranscriptionsController@index: request received', [
+            'params' => [
+                'page' => $validated['page'] ?? 1,
+                'per_page' => $perPage,
+                'sort' => $sort,
+                'direction' => $direction,
+                'search' => $search !== '' ? $search : null,
+                'company_id' => $companyId,
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+            ],
+        ]);
+
         $query = Call::query()
             ->select([
                 'calls.*',
                 'companies.name as company_name',
             ])
             ->leftJoin('companies', 'companies.id', '=', 'calls.company_id')
-            ->where('calls.has_transcription', true);
+            ->where('calls.has_transcription', true)
+            ->whereNotNull('calls.transcript_text')
+            ->where('calls.transcript_text', '!=', '');
+
+        $debugCounts = [
+            'base_count' => (clone $query)->count(),
+        ];
+
+        if ($companyId) {
+            $query->where('calls.company_id', $companyId);
+            $debugCounts['company_filtered_count'] = (clone $query)->count();
+        }
+
+        if ($startDate) {
+            $query->where('calls.started_at', '>=', CarbonImmutable::parse($startDate, 'UTC')->startOfDay());
+            $debugCounts['start_date_filtered_count'] = (clone $query)->count();
+        }
+
+        if ($endDate) {
+            $query->where('calls.started_at', '<=', CarbonImmutable::parse($endDate, 'UTC')->endOfDay());
+            $debugCounts['end_date_filtered_count'] = (clone $query)->count();
+        }
+
+        if ($search !== '') {
+            $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $search) . '%';
+            $query->where(function ($q) use ($like) {
+                $q->where('calls.pbx_unique_id', 'like', $like)
+                    ->orWhere('calls.transcript_text', 'like', $like)
+                    ->orWhere('calls.from', 'like', $like)
+                    ->orWhere('calls.to', 'like', $like)
+                    ->orWhere('companies.name', 'like', $like);
+            });
+            $debugCounts['search_filtered_count'] = (clone $query)->count();
+        }
 
         if ($sort === 'pbx_unique_id') {
             $query->orderBy('calls.pbx_unique_id', $direction);
@@ -65,6 +122,13 @@ class AdminTranscriptionsController extends Controller
                 'createdAt' => optional($call->created_at)->toISOString(),
             ];
         })->values();
+
+        Log::info('AdminTranscriptionsController@index: response summary', [
+            'counts' => $debugCounts,
+            'returned_rows' => $items->count(),
+            'total' => $paginator->total(),
+            'first_row' => $items->first(),
+        ]);
 
         return response()->json([
             'data' => $items,

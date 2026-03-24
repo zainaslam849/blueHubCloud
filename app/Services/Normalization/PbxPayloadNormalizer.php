@@ -130,8 +130,20 @@ class PbxPayloadNormalizer
         array $transcriptionData,
         Call $call
     ): array {
-        $transcriptText = self::extractTranscriptText($transcriptionData);
-        $confidence = self::extractTranscriptConfidence($transcriptionData);
+        [$transcriptText, $textSource] = self::extractTranscriptText($transcriptionData);
+        [$confidence, $confidenceSource] = self::extractTranscriptConfidence($transcriptionData);
+
+        Log::info('PbxPayloadNormalizer: transcription extraction analyzed', [
+            'call_id' => $call->id,
+            'text_source' => $textSource,
+            'text_length' => is_string($transcriptText) ? mb_strlen($transcriptText) : 0,
+            'confidence_source' => $confidenceSource,
+            'confidence' => $confidence,
+            'top_level_keys' => array_keys($transcriptionData),
+            'vtt_word_count' => is_array(data_get($transcriptionData, 'vtt.words'))
+                ? count(data_get($transcriptionData, 'vtt.words'))
+                : 0,
+        ]);
 
         return [
             'call_id' => $call->id,
@@ -144,7 +156,7 @@ class PbxPayloadNormalizer
     /**
      * Extract transcript text from known PBXware response shapes.
      */
-    private static function extractTranscriptText(array $transcriptionData): ?string
+    private static function extractTranscriptText(array $transcriptionData): array
     {
         $candidateKeys = [
             'Transcript',
@@ -156,22 +168,22 @@ class PbxPayloadNormalizer
         foreach ($candidateKeys as $key) {
             $value = $transcriptionData[$key] ?? null;
             if (is_string($value) && trim($value) !== '') {
-                return trim($value);
+                return [trim($value), "top_level:{$key}"];
             }
         }
 
         $nestedCandidates = [
-            data_get($transcriptionData, 'result.transcript'),
-            data_get($transcriptionData, 'result.text'),
-            data_get($transcriptionData, 'data.transcript'),
-            data_get($transcriptionData, 'data.text'),
-            data_get($transcriptionData, 'payload.transcript'),
-            data_get($transcriptionData, 'payload.text'),
+            'result.transcript' => data_get($transcriptionData, 'result.transcript'),
+            'result.text' => data_get($transcriptionData, 'result.text'),
+            'data.transcript' => data_get($transcriptionData, 'data.transcript'),
+            'data.text' => data_get($transcriptionData, 'data.text'),
+            'payload.transcript' => data_get($transcriptionData, 'payload.transcript'),
+            'payload.text' => data_get($transcriptionData, 'payload.text'),
         ];
 
-        foreach ($nestedCandidates as $value) {
+        foreach ($nestedCandidates as $path => $value) {
             if (is_string($value) && trim($value) !== '') {
-                return trim($value);
+                return [trim($value), "nested:{$path}"];
             }
         }
 
@@ -186,32 +198,42 @@ class PbxPayloadNormalizer
             }
 
             if (! empty($tokens)) {
-                return implode(' ', $tokens);
+                return [implode(' ', $tokens), 'vtt.words'];
             }
         }
 
-        return null;
+        Log::warning('PbxPayloadNormalizer: transcription extraction failed', [
+            'top_level_keys' => array_keys($transcriptionData),
+            'has_result' => is_array(data_get($transcriptionData, 'result')),
+            'has_data' => is_array(data_get($transcriptionData, 'data')),
+            'has_payload' => is_array(data_get($transcriptionData, 'payload')),
+            'vtt_word_count' => is_array(data_get($transcriptionData, 'vtt.words'))
+                ? count(data_get($transcriptionData, 'vtt.words'))
+                : 0,
+        ]);
+
+        return [null, 'none'];
     }
 
     /**
      * Extract transcription confidence from known PBXware response shapes.
      */
-    private static function extractTranscriptConfidence(array $transcriptionData): float
+    private static function extractTranscriptConfidence(array $transcriptionData): array
     {
         $candidates = [
-            $transcriptionData['Confidence'] ?? null,
-            $transcriptionData['confidence'] ?? null,
-            data_get($transcriptionData, 'result.confidence'),
-            data_get($transcriptionData, 'data.confidence'),
+            'top_level:Confidence' => $transcriptionData['Confidence'] ?? null,
+            'top_level:confidence' => $transcriptionData['confidence'] ?? null,
+            'nested:result.confidence' => data_get($transcriptionData, 'result.confidence'),
+            'nested:data.confidence' => data_get($transcriptionData, 'data.confidence'),
         ];
 
-        foreach ($candidates as $candidate) {
+        foreach ($candidates as $source => $candidate) {
             if (is_numeric($candidate)) {
-                return (float) $candidate;
+                return [(float) $candidate, $source];
             }
         }
 
-        return 0.0;
+        return [0.0, 'default:0'];
     }
 
     /**
