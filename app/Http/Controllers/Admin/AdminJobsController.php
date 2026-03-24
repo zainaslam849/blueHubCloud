@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\AdminTestPipelineJob;
+use App\Models\PipelineRun;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -64,6 +67,51 @@ class AdminJobsController extends Controller
             ];
         })->values();
 
+        $pipelineRuns = PipelineRun::query()
+            ->with(['company:id,name', 'stages'])
+            ->latest('id')
+            ->limit(25)
+            ->get();
+
+        $pipelineRows = $pipelineRuns->map(function (PipelineRun $run) {
+            $rangeFrom = $run->range_from?->toDateString();
+            $rangeTo = $run->range_to?->toDateString();
+
+            $stages = $run->stages
+                ->map(function ($stage) {
+                    return [
+                        'stage_key' => $stage->stage_key,
+                        'status' => $stage->status,
+                        'finished_at' => optional($stage->finished_at)?->toIso8601String(),
+                        'error_message' => $this->trimException((string) ($stage->error_message ?? '')),
+                    ];
+                })
+                ->values();
+
+            return [
+                'id' => $run->id,
+                'company_id' => $run->company_id,
+                'company_name' => $run->company?->name ?? 'Unknown company',
+                'range_from' => $rangeFrom,
+                'range_to' => $rangeTo,
+                'status' => $run->status,
+                'current_stage' => $run->current_stage,
+                'resume_count' => (int) ($run->resume_count ?? 0),
+                'started_at' => optional($run->started_at)?->toIso8601String(),
+                'finished_at' => optional($run->finished_at)?->toIso8601String(),
+                'last_error' => $this->trimException((string) ($run->last_error ?? '')),
+                'can_resume' => in_array($run->status, ['failed', 'queued'], true),
+                'stages' => $stages,
+            ];
+        })->values();
+
+        $pipelineTotals = [
+            'running' => PipelineRun::query()->where('status', 'running')->count(),
+            'queued' => PipelineRun::query()->where('status', 'queued')->count(),
+            'failed' => PipelineRun::query()->where('status', 'failed')->count(),
+            'completed' => PipelineRun::query()->where('status', 'completed')->count(),
+        ];
+
         return response()->json([
             'data' => [
                 'queue_connection' => $queueConnection,
@@ -71,6 +119,65 @@ class AdminJobsController extends Controller
                 'queues' => $queueCounts,
                 'jobs' => $jobs,
                 'failed_jobs' => $failed,
+                'pipeline_totals' => $pipelineTotals,
+                'pipeline_runs' => $pipelineRows,
+            ],
+        ]);
+    }
+
+    public function resumePipeline(int $pipelineRunId): JsonResponse
+    {
+        $run = PipelineRun::query()->findOrFail($pipelineRunId);
+
+        if (! in_array($run->status, ['failed', 'queued'], true)) {
+            return response()->json([
+                'message' => 'This pipeline cannot be resumed in its current state.',
+            ], 422);
+        }
+
+        $activeKey = $this->buildActiveKey(
+            (int) $run->company_id,
+            $run->range_from?->toDateString() ?? '',
+            $run->range_to?->toDateString() ?? ''
+        );
+
+        $hasActivePeer = PipelineRun::query()
+            ->where('active_key', $activeKey)
+            ->where('id', '!=', $run->id)
+            ->whereNotIn('status', ['failed', 'completed', 'cancelled'])
+            ->exists();
+
+        if ($hasActivePeer) {
+            return response()->json([
+                'message' => 'Another active pipeline already exists for this company/date range.',
+            ], 409);
+        }
+
+        $metrics = is_array($run->metrics) ? $run->metrics : [];
+
+        $run->forceFill([
+            'status' => 'queued',
+            'last_error' => null,
+            'active_key' => $activeKey,
+            'finished_at' => null,
+            'resume_count' => (int) $run->resume_count + 1,
+        ])->save();
+
+        AdminTestPipelineJob::dispatch(
+            (int) $run->company_id,
+            $run->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
+            $run->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
+            (int) ($metrics['summarize_limit'] ?? 500),
+            (int) ($metrics['categorize_limit'] ?? 500),
+            'default',
+            $run->id,
+            true
+        )->onQueue('default');
+
+        return response()->json([
+            'message' => 'Pipeline resume queued.',
+            'data' => [
+                'pipeline_run_id' => $run->id,
             ],
         ]);
     }
@@ -102,5 +209,10 @@ class AdminJobsController extends Controller
         }
 
         return mb_strlen($value) > 240 ? mb_substr($value, 0, 240).'…' : $value;
+    }
+
+    private function buildActiveKey(int $companyId, string $from, string $to): string
+    {
+        return $companyId . ':' . $from . ':' . $to;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\PipelineRun;
 use App\Models\WeeklyCallReport;
 use App\Repositories\AiSettingsRepository;
 use App\Services\AdvancedReportGenerationService;
@@ -16,6 +17,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class GenerateWeeklyPbxReportsJob implements ShouldQueue
 {
@@ -76,6 +78,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
     public function __construct(
         public ?string $fromDate = null,
         public ?string $toDate = null,
+        public ?int $pipelineRunId = null,
         private ?ReportInsightsAiService $aiService = null,
     ) {
     }
@@ -452,6 +455,43 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 }
             }
         }
+
+        if ($this->pipelineRunId) {
+            $run = PipelineRun::query()->find($this->pipelineRunId);
+            if ($run) {
+                $run->upsertStage('report_generation', [
+                    'status' => 'completed',
+                    'metrics' => [
+                        'from' => $from?->toDateString(),
+                        'to' => $to?->toDateString(),
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $run->markCompleted('report_generation');
+                $run->forceFill([
+                    'active_key' => null,
+                ])->save();
+            }
+        }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        if (! $this->pipelineRunId) {
+            return;
+        }
+
+        $run = PipelineRun::query()->find($this->pipelineRunId);
+        if (! $run) {
+            return;
+        }
+
+        $run->upsertStage('report_generation', [
+            'status' => 'failed',
+            'error_message' => $exception->getMessage(),
+            'finished_at' => now(),
+        ]);
+        $run->markFailed('report_generation', $exception->getMessage());
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Jobs\AdminTestPipelineJob;
 use App\Models\Company;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 
 class RunFullPipelineCommand extends Command
@@ -24,6 +25,8 @@ class RunFullPipelineCommand extends Command
         $summarizeLimit = max(1, (int) $this->option('summarize-limit'));
         $categorizeLimit = max(1, (int) $this->option('categorize-limit'));
         $queue = (string) ($this->option('queue') ?? 'default');
+        $to = CarbonImmutable::now('UTC')->toDateString();
+        $from = CarbonImmutable::now('UTC')->subDays($rangeDays)->toDateString();
 
         if ($companyId) {
             $company = Company::find((int) $companyId);
@@ -35,7 +38,8 @@ class RunFullPipelineCommand extends Command
 
             AdminTestPipelineJob::dispatch(
                 $company->id,
-                $rangeDays,
+                $from,
+                $to,
                 $summarizeLimit,
                 $categorizeLimit,
                 $queue
@@ -55,7 +59,8 @@ class RunFullPipelineCommand extends Command
         foreach ($companies as $company) {
             AdminTestPipelineJob::dispatch(
                 $company->id,
-                $rangeDays,
+                $from,
+                $to,
                 $summarizeLimit,
                 $categorizeLimit,
                 $queue

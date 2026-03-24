@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Jobs\GenerateWeeklyPbxReportsJob;
 use App\Models\Call;
+use App\Models\PipelineRun;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -26,6 +27,7 @@ class QueueCallsForCategorizationJob implements ShouldQueue
         public string $targetQueue = 'categorization',
         public ?string $fromDate = null,
         public ?string $toDate = null,
+        public ?int $pipelineRunId = null,
     ) {}
 
     public function handle(): void
@@ -63,7 +65,22 @@ class QueueCallsForCategorizationJob implements ShouldQueue
             'company_id' => $this->companyId,
             'count' => $calls->count(),
             'force' => $this->force,
+            'pipeline_run_id' => $this->pipelineRunId,
         ]);
+
+        if ($this->pipelineRunId) {
+            $run = PipelineRun::query()->find($this->pipelineRunId);
+            if ($run) {
+                $run->upsertStage('call_categorization', [
+                    'status' => 'queued',
+                    'metrics' => [
+                        'queued_calls' => $calls->count(),
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $run->markQueued('call_categorization');
+            }
+        }
 
         // Dispatch report generation AFTER categorization completes
         // Calculate delay: number of chunks * 2 seconds per chunk + buffer for processing
@@ -77,9 +94,23 @@ class QueueCallsForCategorizationJob implements ShouldQueue
                 'to_date' => $this->toDate,
             ]);
             
-            GenerateWeeklyPbxReportsJob::dispatch($this->fromDate, $this->toDate)
+            GenerateWeeklyPbxReportsJob::dispatch($this->fromDate, $this->toDate, $this->pipelineRunId)
                 ->onQueue($this->targetQueue)
                 ->delay(now()->addSeconds($delaySeconds));
+
+            if ($this->pipelineRunId) {
+                $run = PipelineRun::query()->find($this->pipelineRunId);
+                if ($run) {
+                    $run->upsertStage('report_generation', [
+                        'status' => 'queued',
+                        'metrics' => [
+                            'delay_seconds' => $delaySeconds,
+                        ],
+                        'finished_at' => now(),
+                    ]);
+                    $run->markQueued('report_generation');
+                }
+            }
         }
     }
 }

@@ -71,6 +71,44 @@
         </section>
 
         <section class="admin-card admin-card--glass">
+            <h2 class="admin-card__headline">Pipeline runs</h2>
+            <BaseTable
+                :columns="pipelineColumns"
+                :rows="overview.pipeline_runs"
+                :loading="loading"
+                empty-title="No pipeline runs"
+                empty-description="No pipelines have been started yet."
+            >
+                <template #cell-range="{ row }">
+                    <span class="admin-callsMono">{{ row.range_from }} to {{ row.range_to }}</span>
+                </template>
+                <template #cell-status="{ value }">
+                    <span class="pipeline-status" :class="`is-${value || 'unknown'}`">{{ value || 'unknown' }}</span>
+                </template>
+                <template #cell-started_at="{ value }">
+                    <span class="admin-callsMono">{{ formatDate(value) }}</span>
+                </template>
+                <template #cell-finished_at="{ value }">
+                    <span class="admin-callsMono">{{ formatDate(value) }}</span>
+                </template>
+                <template #cell-last_error="{ value }">
+                    <span class="pipeline-error">{{ value || '—' }}</span>
+                </template>
+                <template #cell-actions="{ row }">
+                    <BaseButton
+                        size="sm"
+                        variant="secondary"
+                        :disabled="!row.can_resume"
+                        :loading="isResuming(row.id)"
+                        @click="resumePipeline(row.id)"
+                    >
+                        Resume
+                    </BaseButton>
+                </template>
+            </BaseTable>
+        </section>
+
+        <section class="admin-card admin-card--glass">
             <h2 class="admin-card__headline">Queued jobs</h2>
             <BaseTable
                 :columns="jobColumns"
@@ -123,6 +161,7 @@ import PanelCard from "../../components/admin/PanelCard.vue";
 import adminApi from "../../router/admin/api";
 
 const loading = ref(true);
+const resumeLoadingById = ref({});
 const error = ref("");
 const overview = ref({
     queue_connection: "",
@@ -130,6 +169,8 @@ const overview = ref({
     queues: [],
     jobs: [],
     failed_jobs: [],
+    pipeline_totals: {},
+    pipeline_runs: [],
 });
 
 const queueColumns = [
@@ -153,6 +194,19 @@ const failedColumns = [
     { key: "queue", label: "Queue" },
     { key: "failed_at", label: "Failed at" },
     { key: "error", label: "Error" },
+];
+
+const pipelineColumns = [
+    { key: "id", label: "Run ID" },
+    { key: "company_name", label: "Company" },
+    { key: "range", label: "Range" },
+    { key: "status", label: "Status" },
+    { key: "current_stage", label: "Current stage" },
+    { key: "resume_count", label: "Resumes" },
+    { key: "started_at", label: "Started" },
+    { key: "finished_at", label: "Finished" },
+    { key: "last_error", label: "Error" },
+    { key: "actions", label: "Actions" },
 ];
 
 const queueMeta = computed(() => (loading.value ? "Loading…" : "Last update"));
@@ -182,4 +236,68 @@ function formatDate(value) {
         return String(value);
     }
 }
+
+function isResuming(id) {
+    return Boolean(resumeLoadingById.value[id]);
+}
+
+async function resumePipeline(pipelineRunId) {
+    if (!pipelineRunId) {
+        return;
+    }
+
+    resumeLoadingById.value = {
+        ...resumeLoadingById.value,
+        [pipelineRunId]: true,
+    };
+
+    try {
+        await adminApi.post(`/jobs/pipelines/${pipelineRunId}/resume`);
+        await load();
+    } catch (e) {
+        error.value = "Failed to resume selected pipeline.";
+    } finally {
+        resumeLoadingById.value = {
+            ...resumeLoadingById.value,
+            [pipelineRunId]: false,
+        };
+    }
+}
 </script>
+
+<style scoped>
+.pipeline-status {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: var(--admin-surface-2, #f3f4f6);
+}
+
+.pipeline-status.is-failed {
+    background: rgba(220, 38, 38, 0.15);
+    color: #dc2626;
+}
+
+.pipeline-status.is-running,
+.pipeline-status.is-queued {
+    background: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+}
+
+.pipeline-status.is-completed {
+    background: rgba(5, 150, 105, 0.15);
+    color: #059669;
+}
+
+.pipeline-error {
+    display: inline-block;
+    max-width: 360px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+</style>
