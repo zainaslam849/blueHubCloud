@@ -36,18 +36,44 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
         $from = CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay();
         $to = CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay();
 
+        Log::info('ContinuePipelineAfterTranscriptionsJob: stage_start', [
+            'company_id' => $this->companyId,
+            'from' => $this->fromDate,
+            'to' => $this->toDate,
+            'pipeline_run_id' => $this->pipelineRunId,
+            'queue' => $this->pipelineQueue,
+            'event' => 'stage_start',
+        ]);
+
         $pendingTranscriptions = Call::query()
             ->where('company_id', $this->companyId)
+            ->where('status', 'answered')
             ->where('has_transcription', true)
             ->whereNull('transcript_text')
             ->whereBetween('started_at', [$from, $to])
             ->count();
 
+        $oldestPending = Call::query()
+            ->where('company_id', $this->companyId)
+            ->where('status', 'answered')
+            ->where('has_transcription', true)
+            ->whereNull('transcript_text')
+            ->whereBetween('started_at', [$from, $to])
+            ->min('created_at');
+
+        $oldestPendingAgeSeconds = $oldestPending
+            ? now()->diffInSeconds(CarbonImmutable::parse($oldestPending), false)
+            : null;
+
         if ($pendingTranscriptions > 0) {
             Log::info('ContinuePipelineAfterTranscriptionsJob: waiting for transcription stage to finish', [
                 'company_id' => $this->companyId,
                 'pending_transcriptions' => $pendingTranscriptions,
+                'oldest_pending_age_seconds' => $oldestPendingAgeSeconds,
+                'next_retry_in_seconds' => 20,
+                'reason' => 'answered_calls_pending_verification',
                 'pipeline_run_id' => $this->pipelineRunId,
+                'event' => 'stage_blocked',
             ]);
 
             FetchTranscriptionsJob::dispatch(
@@ -73,6 +99,13 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
 
             return;
         }
+
+        Log::info('ContinuePipelineAfterTranscriptionsJob: barrier_cleared', [
+            'company_id' => $this->companyId,
+            'pipeline_run_id' => $this->pipelineRunId,
+            'reason' => 'all_answered_calls_terminal_or_saved',
+            'event' => 'stage_unblocked',
+        ]);
 
         $pipelineRun = null;
         if ($this->pipelineRunId) {
@@ -160,6 +193,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             'company_id' => $this->companyId,
             'queued_summaries' => $callsToSummarize->count(),
             'pipeline_run_id' => $this->pipelineRunId,
+            'event' => 'stage_complete',
         ]);
     }
 }

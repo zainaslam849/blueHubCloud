@@ -267,6 +267,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 } else {
                     $finalStatus = 'unknown';
                 }
+                $isVerificationCandidate = $finalStatus === 'answered';
 
                 // Ensure duration is an integer billsec
                 $billsec = is_numeric($durationSeconds) ? (int) $durationSeconds : 0;
@@ -390,37 +391,57 @@ class IngestPbxCallsJob implements ShouldQueue
 
                 // If we already have transcription stored on the call, skip.
                 if ((bool) ($call->has_transcription ?? false) && is_string($call->transcript_text ?? null) && trim((string) $call->transcript_text) !== '') {
+                    $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+                    $meta['transcription_verification_status'] = 'saved';
+                    $meta['transcription_last_decision'] = 'ingest_already_transcripted';
+                    $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                    $call->pbx_metadata = $meta;
+                    $call->save();
                     continue;
                 }
 
-                if ($recordingAvailableEffective) {
+                if ($isVerificationCandidate) {
+                    $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+                    $meta['transcription_verification_status'] = 'pending';
+                    $meta['transcription_last_decision'] = 'ingest_marked_candidate';
+                    $meta['transcription_last_decision_at'] = now()->toIso8601String();
+
                     $call->has_transcription = true;
                     if (empty($call->transcript_text)) {
                         $call->transcription_checked_at = null;
                     }
+                    $call->pbx_metadata = $meta;
+                    $call->save();
+                } elseif (empty($call->transcript_text)) {
+                    $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+                    $meta['transcription_verification_status'] = 'skipped_not_answered';
+                    $meta['transcription_last_decision'] = 'ingest_not_candidate';
+                    $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                    $call->has_transcription = false;
+                    $call->transcription_checked_at = now();
+                    $call->pbx_metadata = $meta;
                     $call->save();
                 }
 
-                // SOP alignment: only query transcription.get when CDR indicates recording exists.
+                // Recording metadata is advisory only. We still verify answered calls against PBX transcription endpoint.
                 if (! $recordingAvailableEffective) {
                     $transcriptionSkippedNoRecording++;
                     if ($rowIndex < 5) {
-                        Log::info('PBX_TRACE transcription.skipped.no_recording', [
+                        Log::info('PBX_TRACE transcription.recording_hint_missing', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
                             'server_id' => $serverId,
                             'pbx_unique_id' => $callUid,
+                            'is_verification_candidate' => $isVerificationCandidate,
                             'recording_available_raw' => $recordingAvailableRaw,
                             'recording_available_normalized' => $recordingAvailable,
                             'recording_available_effective' => $recordingAvailableEffective,
                             'recording_path' => $recordingPathNormalized,
                         ]);
                     }
-                    $call->has_transcription = false;
-                    $call->transcription_checked_at = now();
-                    $call->save();
-                    continue;
                 }
 
-                if (! $fetchTranscriptionsInline) {
+                if (! $fetchTranscriptionsInline || ! $isVerificationCandidate) {
                     continue;
                 }
 

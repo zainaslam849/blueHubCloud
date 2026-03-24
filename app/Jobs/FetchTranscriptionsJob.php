@@ -68,12 +68,22 @@ class FetchTranscriptionsJob implements ShouldQueue
     public function handle(): void
     {
         try {
+            Log::info('FetchTranscriptionsJob: stage_start', [
+                'company_id' => $this->companyId,
+                'from' => $this->fromDate,
+                'to' => $this->toDate,
+                'pipeline_run_id' => $this->pipelineRunId,
+                'queue' => $this->pipelineQueue,
+                'batch_size' => self::BATCH_SIZE,
+            ]);
+
             $adapter = app(PbxwareAdapter::class);
 
-            $promotedCount = $this->promoteRecordingCandidates();
+            $promotedCount = $this->promotePendingAnsweredCandidates();
 
-            // Find calls with recordings but no transcription (limit to batch size)
+            // Find answered calls still pending transcription verification.
             $callsQuery = Call::query()
+                ->where('status', 'answered')
                 ->where('has_transcription', true)
                 ->whereNull('transcript_text')
                 ->where(function ($q) {
@@ -105,6 +115,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'promoted_candidates' => $promotedCount,
                 'candidate_count' => $calls->count(),
                 'candidate_call_ids' => $calls->pluck('id')->take(10)->values()->all(),
+                'event' => 'candidate_query',
             ]);
 
             if ($calls->isEmpty()) {
@@ -123,8 +134,35 @@ class FetchTranscriptionsJob implements ShouldQueue
                 $this->processCall($call, $adapter);
             }
 
-            // If we processed a full batch, re-queue to continue
-            if ($calls->count() === self::BATCH_SIZE) {
+            $remainingQuery = Call::query()
+                ->where('status', 'answered')
+                ->where('has_transcription', true)
+                ->whereNull('transcript_text');
+
+            if ($this->companyId !== null) {
+                $remainingQuery->where('company_id', $this->companyId);
+            }
+
+            if ($this->fromDate !== null && $this->toDate !== null) {
+                $remainingQuery->whereBetween('started_at', [
+                    Carbon::parse($this->fromDate)->startOfDay(),
+                    Carbon::parse($this->toDate)->endOfDay(),
+                ]);
+            }
+
+            $remainingCount = $remainingQuery->count();
+            Log::info('FetchTranscriptionsJob: batch_complete', [
+                'company_id' => $this->companyId,
+                'from' => $this->fromDate,
+                'to' => $this->toDate,
+                'pipeline_run_id' => $this->pipelineRunId,
+                'processed_count' => $calls->count(),
+                'remaining_pending' => $remainingCount,
+                'event' => 'batch_complete',
+            ]);
+
+            // Re-queue only when pending candidates still exist.
+            if ($remainingCount > 0) {
                 static::dispatch(
                     $this->companyId,
                     $this->fromDate,
@@ -134,7 +172,13 @@ class FetchTranscriptionsJob implements ShouldQueue
                     $this->summarizeLimit,
                     $this->categorizeLimit,
                 )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(5));
-                Log::info('FetchTranscriptionsJob: Re-queued for next batch');
+                Log::info('FetchTranscriptionsJob: retry_scheduled', [
+                    'company_id' => $this->companyId,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'remaining_pending' => $remainingCount,
+                    'delay_seconds' => 5,
+                    'event' => 'retry_scheduled',
+                ]);
             }
         } catch (\Exception $e) {
             Log::error('FetchTranscriptionsJob: Batch processing failed', [
@@ -192,10 +236,12 @@ class FetchTranscriptionsJob implements ShouldQueue
                 $attempt = $this->incrementRetryAttempts($call);
                 $shouldTerminate = $attempt >= self::MAX_RETRY_ATTEMPTS;
 
-                $call->update([
-                    'has_transcription' => $shouldTerminate ? false : true,
-                    'transcription_checked_at' => now(),
-                ]);
+                if ($shouldTerminate) {
+                    $this->markVerificationTerminal($call, 'terminal_no_transcription', 'api_empty_response_max_retries');
+                } else {
+                    $this->markVerificationPending($call, 'api_empty_response_retry');
+                }
+
                 Log::warning('FetchTranscriptionsJob: terminal outcome api_empty_response_retry_later', [
                     'call_id' => $call->id,
                     'server_id' => $call->server_id,
@@ -231,10 +277,12 @@ class FetchTranscriptionsJob implements ShouldQueue
                 $attempt = $this->incrementRetryAttempts($call);
                 $shouldTerminate = $explicitNotFound || $attempt >= self::MAX_RETRY_ATTEMPTS;
 
-                $call->update([
-                    'transcription_checked_at' => now(),
-                    'has_transcription' => $shouldTerminate ? false : true,
-                ]);
+                if ($shouldTerminate) {
+                    $reason = $explicitNotFound ? 'explicit_no_transcription' : 'unusable_text_max_retries';
+                    $this->markVerificationTerminal($call, 'terminal_no_transcription', $reason);
+                } else {
+                    $this->markVerificationPending($call, 'unusable_text_retry');
+                }
 
                 Log::warning('FetchTranscriptionsJob: terminal outcome unusable_text_extraction', [
                     'call_id' => $call->id,
@@ -274,6 +322,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'has_transcription' => true,
                 'transcription_checked_at' => now(),
             ]);
+            $this->markVerificationSaved($call, 'transcription_saved');
             $this->setRetryAttempts($call, 0);
 
             $call->refresh();
@@ -295,6 +344,14 @@ class FetchTranscriptionsJob implements ShouldQueue
             // Dispatch insight analysis job to extract intent/department/deflection
             InsightAnalysisJob::dispatch($call, $transcription);
         } catch (\Exception $e) {
+            $attempt = $this->incrementRetryAttempts($call);
+            $shouldTerminate = $attempt >= self::MAX_RETRY_ATTEMPTS;
+            if ($shouldTerminate) {
+                $this->markVerificationTerminal($call, 'terminal_error', 'exception_max_retries');
+            } else {
+                $this->markVerificationPending($call, 'exception_retry');
+            }
+
             Log::error('FetchTranscriptionsJob: terminal outcome exception_failed', [
                 'call_id' => $call->id,
                 'company_id' => $call->company_id,
@@ -302,6 +359,9 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'pbx_unique_id' => $call->pbx_unique_id,
                 'pipeline_run_id' => $this->pipelineRunId,
                 'error' => $e->getMessage(),
+                'retry_attempt' => $attempt,
+                'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
+                'terminal_after_max_retries' => $shouldTerminate,
             ]);
 
             // Don't rethrow - continue processing other calls in batch
@@ -337,9 +397,10 @@ class FetchTranscriptionsJob implements ShouldQueue
         return null;
     }
 
-    private function promoteRecordingCandidates(): int
+    private function promotePendingAnsweredCandidates(): int
     {
         $query = Call::query()
+            ->where('status', 'answered')
             ->where('has_transcription', false)
             ->whereNull('transcript_text');
 
@@ -358,13 +419,9 @@ class FetchTranscriptionsJob implements ShouldQueue
 
         $query->orderBy('id')->chunkById(200, function ($calls) use (&$promoted) {
             foreach ($calls as $call) {
-                if (! $this->isRecordingLikelyAvailable($call)) {
-                    continue;
-                }
-
                 $call->has_transcription = true;
                 $call->transcription_checked_at = null;
-                $call->save();
+                $this->markVerificationPending($call, 'promoted_answered_candidate', false);
                 $promoted++;
             }
         });
@@ -372,20 +429,38 @@ class FetchTranscriptionsJob implements ShouldQueue
         return $promoted;
     }
 
-    private function isRecordingLikelyAvailable(Call $call): bool
+    private function markVerificationPending(Call $call, string $reason, bool $setCheckedAt = true): void
     {
         $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $meta['transcription_verification_status'] = 'pending';
+        $meta['transcription_last_decision'] = $reason;
+        $meta['transcription_last_decision_at'] = now()->toIso8601String();
+        $call->has_transcription = true;
+        $call->transcription_checked_at = $setCheckedAt ? now() : null;
+        $call->pbx_metadata = $meta;
+        $call->save();
+    }
 
-        $normalizedFlag = $meta['recording_available_normalized'] ?? null;
-        $effectiveFlag = $meta['recording_available_effective'] ?? null;
-        $rawFlag = $meta['recording_available'] ?? null;
-        $path = $meta['recording_path_normalized'] ?? ($meta['recording_path'] ?? null);
+    private function markVerificationTerminal(Call $call, string $status, string $reason): void
+    {
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $meta['transcription_verification_status'] = $status;
+        $meta['transcription_last_decision'] = $reason;
+        $meta['transcription_last_decision_at'] = now()->toIso8601String();
+        $call->has_transcription = false;
+        $call->transcription_checked_at = now();
+        $call->pbx_metadata = $meta;
+        $call->save();
+    }
 
-        if ($effectiveFlag === true || $normalizedFlag === true || $rawFlag === true) {
-            return true;
-        }
-
-        return is_string($path) && trim($path) !== '';
+    private function markVerificationSaved(Call $call, string $reason): void
+    {
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $meta['transcription_verification_status'] = 'saved';
+        $meta['transcription_last_decision'] = $reason;
+        $meta['transcription_last_decision_at'] = now()->toIso8601String();
+        $call->pbx_metadata = $meta;
+        $call->save();
     }
 
     private function incrementRetryAttempts(Call $call): int
