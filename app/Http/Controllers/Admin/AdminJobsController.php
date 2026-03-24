@@ -8,6 +8,7 @@ use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
 
 class AdminJobsController extends Controller
@@ -106,6 +107,7 @@ class AdminJobsController extends Controller
                     'resume_count' => (int) ($run->resume_count ?? 0),
                     'started_at' => $run->started_at?->toIso8601String(),
                     'finished_at' => $run->finished_at?->toIso8601String(),
+                    'updated_at' => $run->updated_at?->toIso8601String(),
                     'last_error' => $this->trimException((string) ($run->last_error ?? '')),
                     'can_resume' => in_array($run->status, ['failed', 'queued'], true),
                     'stages' => $stages,
@@ -120,6 +122,13 @@ class AdminJobsController extends Controller
             ];
         }
 
+        $workerHealth = $this->buildWorkerHealth(
+            queueConnection: (string) $queueConnection,
+            queuedJobs: (int) ($totals['queued'] ?? 0),
+            reservedJobs: (int) ($totals['reserved'] ?? 0),
+            queuedPipelines: (int) ($pipelineTotals['queued'] ?? 0)
+        );
+
         return response()->json([
             'data' => [
                 'queue_connection' => $queueConnection,
@@ -129,6 +138,7 @@ class AdminJobsController extends Controller
                 'failed_jobs' => $failed,
                 'pipeline_totals' => $pipelineTotals,
                 'pipeline_runs' => $pipelineRows,
+                'worker_health' => $workerHealth,
             ],
         ]);
     }
@@ -143,7 +153,18 @@ class AdminJobsController extends Controller
 
         $run = PipelineRun::query()->findOrFail($pipelineRunId);
 
-        if (! in_array($run->status, ['failed', 'queued'], true)) {
+        if ($run->status === 'queued') {
+            return response()->json([
+                'message' => 'Pipeline is already queued. If nothing is processing, verify Horizon/queue workers are running.',
+                'data' => [
+                    'pipeline_run_id' => $run->id,
+                    'status' => $run->status,
+                    'already_queued' => true,
+                ],
+            ]);
+        }
+
+        if (! in_array($run->status, ['failed'], true)) {
             return response()->json([
                 'message' => 'This pipeline cannot be resumed in its current state.',
             ], 422);
@@ -168,6 +189,8 @@ class AdminJobsController extends Controller
         }
 
         $metrics = is_array($run->metrics) ? $run->metrics : [];
+        $metrics['last_resume_requested_at'] = now()->toIso8601String();
+        $metrics['last_resume_requested_by'] = auth()->id();
 
         $run->forceFill([
             'status' => 'queued',
@@ -175,6 +198,7 @@ class AdminJobsController extends Controller
             'active_key' => $activeKey,
             'finished_at' => null,
             'resume_count' => (int) $run->resume_count + 1,
+            'metrics' => $metrics,
         ])->save();
 
         AdminTestPipelineJob::dispatch(
@@ -228,5 +252,49 @@ class AdminJobsController extends Controller
     private function buildActiveKey(int $companyId, string $from, string $to): string
     {
         return $companyId . ':' . $from . ':' . $to;
+    }
+
+    private function buildWorkerHealth(string $queueConnection, int $queuedJobs, int $reservedJobs, int $queuedPipelines): array
+    {
+        $horizonRunning = null;
+
+        if ($queueConnection === 'redis') {
+            $horizonRunning = $this->isHorizonLikelyRunning();
+        }
+
+        $hasBacklog = $queuedJobs > 0 || $queuedPipelines > 0;
+        $suspectedStalled = $hasBacklog && $reservedJobs === 0;
+
+        $message = 'Workers appear healthy.';
+        $level = 'ok';
+
+        if ($suspectedStalled && $queueConnection === 'redis' && $horizonRunning === false) {
+            $level = 'warning';
+            $message = 'Queued work exists but Horizon appears offline. Start Horizon workers to process queued pipelines.';
+        } elseif ($suspectedStalled) {
+            $level = 'warning';
+            $message = 'Queued work exists but no jobs are reserved. Verify queue workers are running.';
+        }
+
+        return [
+            'level' => $level,
+            'has_backlog' => $hasBacklog,
+            'suspected_stalled' => $suspectedStalled,
+            'horizon_running' => $horizonRunning,
+            'message' => $message,
+        ];
+    }
+
+    private function isHorizonLikelyRunning(): ?bool
+    {
+        try {
+            $prefix = (string) config('horizon.prefix', 'horizon:');
+            $mastersKey = rtrim($prefix, ':') . ':masters';
+            $redisConnection = (string) config('queue.connections.redis.connection', 'default');
+
+            return (bool) Redis::connection($redisConnection)->exists($mastersKey);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 }

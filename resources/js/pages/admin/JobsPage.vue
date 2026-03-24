@@ -7,6 +7,22 @@
                 <p class="admin-page__subtitle">
                     Monitor queued, running, and failed jobs across the system.
                 </p>
+                <p
+                    v-if="resumeFeedback.message"
+                    class="resume-feedback"
+                    :class="`is-${resumeFeedback.type}`"
+                    role="status"
+                >
+                    {{ resumeFeedback.message }}
+                </p>
+                <p
+                    v-if="workerHealthMessage"
+                    class="worker-health"
+                    :class="`is-${overview.worker_health?.level || 'ok'}`"
+                    role="status"
+                >
+                    {{ workerHealthMessage }}
+                </p>
             </div>
             <BaseButton
                 variant="secondary"
@@ -80,19 +96,28 @@
                 empty-description="No pipelines have been started yet."
             >
                 <template #cell-range="{ row }">
-                    <span class="admin-callsMono">{{ row.range_from }} to {{ row.range_to }}</span>
+                    <span class="admin-callsMono"
+                        >{{ row.range_from }} to {{ row.range_to }}</span
+                    >
                 </template>
                 <template #cell-status="{ value }">
-                    <span class="pipeline-status" :class="`is-${value || 'unknown'}`">{{ value || 'unknown' }}</span>
+                    <span
+                        class="pipeline-status"
+                        :class="`is-${value || 'unknown'}`"
+                        >{{ value || "unknown" }}</span
+                    >
                 </template>
                 <template #cell-started_at="{ value }">
+                    <span class="admin-callsMono">{{ formatDate(value) }}</span>
+                </template>
+                <template #cell-updated_at="{ value }">
                     <span class="admin-callsMono">{{ formatDate(value) }}</span>
                 </template>
                 <template #cell-finished_at="{ value }">
                     <span class="admin-callsMono">{{ formatDate(value) }}</span>
                 </template>
                 <template #cell-last_error="{ value }">
-                    <span class="pipeline-error">{{ value || '—' }}</span>
+                    <span class="pipeline-error">{{ value || "—" }}</span>
                 </template>
                 <template #cell-actions="{ row }">
                     <BaseButton
@@ -162,6 +187,10 @@ import adminApi from "../../router/admin/api";
 
 const loading = ref(true);
 const resumeLoadingById = ref({});
+const resumeFeedback = ref({
+    type: "info",
+    message: "",
+});
 const error = ref("");
 const overview = ref({
     queue_connection: "",
@@ -171,6 +200,13 @@ const overview = ref({
     failed_jobs: [],
     pipeline_totals: {},
     pipeline_runs: [],
+    worker_health: {
+        level: "ok",
+        has_backlog: false,
+        suspected_stalled: false,
+        horizon_running: null,
+        message: "",
+    },
 });
 
 const queueColumns = [
@@ -204,12 +240,26 @@ const pipelineColumns = [
     { key: "current_stage", label: "Current stage" },
     { key: "resume_count", label: "Resumes" },
     { key: "started_at", label: "Started" },
+    { key: "updated_at", label: "Updated" },
     { key: "finished_at", label: "Finished" },
     { key: "last_error", label: "Error" },
     { key: "actions", label: "Actions" },
 ];
 
 const queueMeta = computed(() => (loading.value ? "Loading…" : "Last update"));
+
+const workerHealthMessage = computed(() => {
+    const health = overview.value?.worker_health;
+    if (!health || !health.message) {
+        return "";
+    }
+
+    if (health.level === "warning" || health.level === "error") {
+        return health.message;
+    }
+
+    return "";
+});
 
 onMounted(() => {
     load();
@@ -221,6 +271,9 @@ async function load() {
     try {
         const res = await adminApi.get("/jobs/overview");
         overview.value = res?.data?.data ?? overview.value;
+        if (!resumeFeedback.value.message) {
+            resumeFeedback.value = { type: "info", message: "" };
+        }
     } catch (e) {
         error.value = "Failed to load jobs overview.";
     } finally {
@@ -252,9 +305,21 @@ async function resumePipeline(pipelineRunId) {
     };
 
     try {
-        await adminApi.post(`/jobs/pipelines/${pipelineRunId}/resume`);
+        const res = await adminApi.post(
+            `/jobs/pipelines/${pipelineRunId}/resume`,
+        );
+        const msg = res?.data?.message || "Resume request sent.";
+        resumeFeedback.value = {
+            type: "success",
+            message: msg,
+        };
         await load();
     } catch (e) {
+        const apiMessage = e?.response?.data?.message;
+        resumeFeedback.value = {
+            type: "error",
+            message: apiMessage || "Failed to resume selected pipeline.",
+        };
         error.value = "Failed to resume selected pipeline.";
     } finally {
         resumeLoadingById.value = {
@@ -299,5 +364,39 @@ async function resumePipeline(pipelineRunId) {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.resume-feedback {
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.resume-feedback.is-success {
+    color: #047857;
+}
+
+.resume-feedback.is-error {
+    color: #b91c1c;
+}
+
+.resume-feedback.is-info {
+    color: #1d4ed8;
+}
+
+.worker-health {
+    margin-top: 6px;
+    font-size: 13px;
+}
+
+.worker-health.is-warning {
+    color: #92400e;
+}
+
+.worker-health.is-error {
+    color: #b91c1c;
+}
+
+.worker-health.is-ok {
+    color: #047857;
 }
 </style>
