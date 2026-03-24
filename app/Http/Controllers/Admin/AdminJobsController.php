@@ -8,6 +8,7 @@ use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class AdminJobsController extends Controller
 {
@@ -67,50 +68,60 @@ class AdminJobsController extends Controller
             ];
         })->values();
 
-        $pipelineRuns = PipelineRun::query()
-            ->with(['company:id,name', 'stages'])
-            ->latest('id')
-            ->limit(25)
-            ->get();
-
-        $pipelineRows = $pipelineRuns->map(function (PipelineRun $run) {
-            $rangeFrom = $run->range_from?->toDateString();
-            $rangeTo = $run->range_to?->toDateString();
-
-            $stages = $run->stages
-                ->map(function ($stage) {
-                    return [
-                        'stage_key' => $stage->stage_key,
-                        'status' => $stage->status,
-                        'finished_at' => optional($stage->finished_at)?->toIso8601String(),
-                        'error_message' => $this->trimException((string) ($stage->error_message ?? '')),
-                    ];
-                })
-                ->values();
-
-            return [
-                'id' => $run->id,
-                'company_id' => $run->company_id,
-                'company_name' => $run->company?->name ?? 'Unknown company',
-                'range_from' => $rangeFrom,
-                'range_to' => $rangeTo,
-                'status' => $run->status,
-                'current_stage' => $run->current_stage,
-                'resume_count' => (int) ($run->resume_count ?? 0),
-                'started_at' => optional($run->started_at)?->toIso8601String(),
-                'finished_at' => optional($run->finished_at)?->toIso8601String(),
-                'last_error' => $this->trimException((string) ($run->last_error ?? '')),
-                'can_resume' => in_array($run->status, ['failed', 'queued'], true),
-                'stages' => $stages,
-            ];
-        })->values();
-
+        $pipelineRows = collect();
         $pipelineTotals = [
-            'running' => PipelineRun::query()->where('status', 'running')->count(),
-            'queued' => PipelineRun::query()->where('status', 'queued')->count(),
-            'failed' => PipelineRun::query()->where('status', 'failed')->count(),
-            'completed' => PipelineRun::query()->where('status', 'completed')->count(),
+            'running' => 0,
+            'queued' => 0,
+            'failed' => 0,
+            'completed' => 0,
         ];
+
+        if (Schema::hasTable('pipeline_runs') && Schema::hasTable('pipeline_run_stages')) {
+            $pipelineRuns = PipelineRun::query()
+                ->with(['company:id,name', 'stages'])
+                ->latest('id')
+                ->limit(25)
+                ->get();
+
+            $pipelineRows = $pipelineRuns->map(function (PipelineRun $run) {
+                $rangeFrom = $run->range_from?->toDateString();
+                $rangeTo = $run->range_to?->toDateString();
+
+                $stages = $run->stages
+                    ->map(function ($stage) {
+                        return [
+                            'stage_key' => $stage->stage_key,
+                            'status' => $stage->status,
+                            'finished_at' => $stage->finished_at?->toIso8601String(),
+                            'error_message' => $this->trimException((string) ($stage->error_message ?? '')),
+                        ];
+                    })
+                    ->values();
+
+                return [
+                    'id' => $run->id,
+                    'company_id' => $run->company_id,
+                    'company_name' => $run->company?->name ?? 'Unknown company',
+                    'range_from' => $rangeFrom,
+                    'range_to' => $rangeTo,
+                    'status' => $run->status,
+                    'current_stage' => $run->current_stage,
+                    'resume_count' => (int) ($run->resume_count ?? 0),
+                    'started_at' => $run->started_at?->toIso8601String(),
+                    'finished_at' => $run->finished_at?->toIso8601String(),
+                    'last_error' => $this->trimException((string) ($run->last_error ?? '')),
+                    'can_resume' => in_array($run->status, ['failed', 'queued'], true),
+                    'stages' => $stages,
+                ];
+            })->values();
+
+            $pipelineTotals = [
+                'running' => PipelineRun::query()->where('status', 'running')->count(),
+                'queued' => PipelineRun::query()->where('status', 'queued')->count(),
+                'failed' => PipelineRun::query()->where('status', 'failed')->count(),
+                'completed' => PipelineRun::query()->where('status', 'completed')->count(),
+            ];
+        }
 
         return response()->json([
             'data' => [
@@ -127,6 +138,12 @@ class AdminJobsController extends Controller
 
     public function resumePipeline(int $pipelineRunId): JsonResponse
     {
+        if (! Schema::hasTable('pipeline_runs')) {
+            return response()->json([
+                'message' => 'Pipeline tracking tables are not available yet. Run migrations first.',
+            ], 422);
+        }
+
         $run = PipelineRun::query()->findOrFail($pipelineRunId);
 
         if (! in_array($run->status, ['failed', 'queued'], true)) {

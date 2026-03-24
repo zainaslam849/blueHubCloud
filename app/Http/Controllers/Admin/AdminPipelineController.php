@@ -10,6 +10,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class AdminPipelineController extends Controller
 {
@@ -42,6 +43,7 @@ class AdminPipelineController extends Controller
         $to = CarbonImmutable::now('UTC')->toDateString();
         $from = CarbonImmutable::now('UTC')->subDays($rangeDays)->toDateString();
         $activeKey = $this->buildActiveKey($companyId, $from, $to);
+        $trackingAvailable = Schema::hasTable('pipeline_runs') && Schema::hasTable('pipeline_run_stages');
 
         Log::info('AdminPipelineController::run - Checking active PBX account', ['company_id' => $companyId]);
 
@@ -62,38 +64,41 @@ class AdminPipelineController extends Controller
             ], 422);
         }
 
-        $existingActiveRun = PipelineRun::query()
-            ->where('active_key', $activeKey)
-            ->whereNotIn('status', self::TERMINAL_STATUSES)
-            ->latest('id')
-            ->first();
+        $pipelineRun = null;
+        if ($trackingAvailable) {
+            $existingActiveRun = PipelineRun::query()
+                ->where('active_key', $activeKey)
+                ->whereNotIn('status', self::TERMINAL_STATUSES)
+                ->latest('id')
+                ->first();
 
-        if ($existingActiveRun) {
-            return response()->json([
-                'message' => 'A pipeline for this company and date range is already running or queued.',
-                'data' => [
-                    'pipeline_run_id' => $existingActiveRun->id,
-                    'status' => $existingActiveRun->status,
-                    'current_stage' => $existingActiveRun->current_stage,
+            if ($existingActiveRun) {
+                return response()->json([
+                    'message' => 'A pipeline for this company and date range is already running or queued.',
+                    'data' => [
+                        'pipeline_run_id' => $existingActiveRun->id,
+                        'status' => $existingActiveRun->status,
+                        'current_stage' => $existingActiveRun->current_stage,
+                    ],
+                ], 409);
+            }
+
+            $pipelineRun = PipelineRun::query()->create([
+                'company_id' => $companyId,
+                'range_from' => $from,
+                'range_to' => $to,
+                'status' => 'queued',
+                'current_stage' => 'call_discovery',
+                'triggered_by_user_id' => auth()->id(),
+                'active_key' => $activeKey,
+                'started_at' => now(),
+                'metrics' => [
+                    'range_days' => $rangeDays,
+                    'summarize_limit' => $summarizeLimit,
+                    'categorize_limit' => $categorizeLimit,
                 ],
-            ], 409);
+            ]);
         }
-
-        $pipelineRun = PipelineRun::query()->create([
-            'company_id' => $companyId,
-            'range_from' => $from,
-            'range_to' => $to,
-            'status' => 'queued',
-            'current_stage' => 'call_discovery',
-            'triggered_by_user_id' => auth()->id(),
-            'active_key' => $activeKey,
-            'started_at' => now(),
-            'metrics' => [
-                'range_days' => $rangeDays,
-                'summarize_limit' => $summarizeLimit,
-                'categorize_limit' => $categorizeLimit,
-            ],
-        ]);
 
         Log::info('AdminPipelineController::run - Dispatching AdminTestPipelineJob', [
             'company_id' => $companyId,
@@ -101,7 +106,8 @@ class AdminPipelineController extends Controller
             'to' => $to,
             'summarize_limit' => $summarizeLimit,
             'categorize_limit' => $categorizeLimit,
-            'pipeline_run_id' => $pipelineRun->id,
+            'pipeline_run_id' => $pipelineRun?->id,
+            'tracking_available' => $trackingAvailable,
         ]);
 
         AdminTestPipelineJob::dispatch(
@@ -111,7 +117,7 @@ class AdminPipelineController extends Controller
             $summarizeLimit,
             $categorizeLimit,
             'default',
-            $pipelineRun->id,
+            $pipelineRun?->id,
             false
         )->onQueue('default');
 
@@ -124,7 +130,8 @@ class AdminPipelineController extends Controller
                 'range_days' => $rangeDays,
                 'from' => $from,
                 'to' => $to,
-                'pipeline_run_id' => $pipelineRun->id,
+                'pipeline_run_id' => $pipelineRun?->id,
+                'tracking_available' => $trackingAvailable,
             ],
         ], 202);
     }
