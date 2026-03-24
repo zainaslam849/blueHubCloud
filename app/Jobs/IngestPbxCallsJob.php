@@ -91,59 +91,80 @@ class IngestPbxCallsJob implements ShouldQueue
             $transcriptionSkippedNoRecording = 0;
             $transcriptionNotFound = 0;
 
-            $params = $this->buildCdrDownloadParams($range['from'], $range['to'], $serverId);
+            $windows = $this->buildCdrDateWindows($range['from'], $range['to']);
 
-            Log::info('PBXware CDR date range used', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'server_id' => $serverId,
-                'start' => $params['start'],
-                'end' => $params['end'],
-                'status' => $params['status'],
-            ]);
+            foreach ($windows as $windowIndex => $window) {
+                $params = $this->buildCdrDownloadParams($window['from'], $window['to'], $serverId);
 
-            $result = method_exists($client, 'fetchCdrRecords')
-                ? $client->fetchCdrRecords($params)
-                : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
+                Log::info('PBXware CDR date range used', [
+                    'company_id' => $this->companyId,
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
+                    'start' => $params['start'],
+                    'end' => $params['end'],
+                    'status' => $params['status'],
+                    'window_index' => $windowIndex,
+                    'window_count' => count($windows),
+                ]);
 
-            Log::info('PBX_TRACE cdr.endpoint.response_shape', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'server_id' => $serverId,
-                'php_type' => gettype($result),
-                'is_array' => is_array($result),
-                'top_level_keys' => is_array($result) ? array_slice(array_keys($result), 0, 20) : [],
-                'has_csv' => is_array($result) && array_key_exists('csv', $result),
-                'has_header' => is_array($result) && array_key_exists('header', $result),
-            ]);
+                $result = method_exists($client, 'fetchCdrRecords')
+                    ? $client->fetchCdrRecords($params)
+                    : (method_exists($client, 'fetchAction') ? $client->fetchAction('pbxware.cdr.download', $params) : []);
 
-            $this->persistRawPayload(
-                endpoint: 'cdr.download',
-                serverId: $serverId,
-                externalId: null,
-                payload: $result,
-                status: 'received'
-            );
+                Log::info('PBX_TRACE cdr.endpoint.response_shape', [
+                    'company_id' => $this->companyId,
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
+                    'window_index' => $windowIndex,
+                    'php_type' => gettype($result),
+                    'is_array' => is_array($result),
+                    'top_level_keys' => is_array($result) ? array_slice(array_keys($result), 0, 20) : [],
+                    'has_csv' => is_array($result) && array_key_exists('csv', $result),
+                    'has_header' => is_array($result) && array_key_exists('header', $result),
+                    'next_page' => is_array($result) ? ($result['next_page'] ?? null) : null,
+                ]);
 
-            $headers = (is_array($result) && isset($result['header']) && is_array($result['header']))
-                ? $result['header']
-                : [];
+                $this->persistRawPayload(
+                    endpoint: 'cdr.download',
+                    serverId: $serverId,
+                    externalId: null,
+                    payload: $result,
+                    status: 'received'
+                );
 
-            $csvRows = $this->extractCsvRows($result);
-            $rowCount = count($csvRows);
-            $cdrRowsReturned += $rowCount;
+                $headers = (is_array($result) && isset($result['header']) && is_array($result['header']))
+                    ? $result['header']
+                    : [];
 
-            Log::info('PBXware CDR rows received', [
-                'company_id' => $this->companyId,
-                'company_pbx_account_id' => $this->companyPbxAccountId,
-                'server_id' => $serverId,
-                'rows' => $rowCount,
-                'header_count' => count($headers),
-                'first_header_sample' => array_slice($headers, 0, 12),
-                'first_row_sample' => $rowCount > 0 && is_array($csvRows[0]) ? array_slice($csvRows[0], 0, 12) : [],
-            ]);
+                $csvRows = $this->extractCsvRows($result);
+                $rowCount = count($csvRows);
+                $cdrRowsReturned += $rowCount;
 
-            foreach ($csvRows as $rowIndex => $row) {
+                Log::info('PBXware CDR rows received', [
+                    'company_id' => $this->companyId,
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
+                    'window_index' => $windowIndex,
+                    'rows' => $rowCount,
+                    'header_count' => count($headers),
+                    'first_header_sample' => array_slice($headers, 0, 12),
+                    'first_row_sample' => $rowCount > 0 && is_array($csvRows[0]) ? array_slice($csvRows[0], 0, 12) : [],
+                ]);
+
+                if (is_array($result) && ! empty($result['next_page'])) {
+                    Log::warning('PBX_TRACE cdr.window.paginated', [
+                        'company_id' => $this->companyId,
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        'server_id' => $serverId,
+                        'window_index' => $windowIndex,
+                        'start' => $params['start'],
+                        'end' => $params['end'],
+                        'rows' => $rowCount,
+                        'message' => 'PBX indicated additional pages. Reduce window size if transcript-bearing rows are still missing.',
+                    ]);
+                }
+
+                foreach ($csvRows as $rowIndex => $row) {
                 if (! is_array($row)) {
                     $cdrRowsSkippedInvalid++;
                     continue;
@@ -449,6 +470,7 @@ class IngestPbxCallsJob implements ShouldQueue
                         $call->transcription_checked_at = now();
                         $call->save();
                     }
+                }
             }
 
             Log::info('PBXware ingestion summary', [
@@ -515,6 +537,29 @@ class IngestPbxCallsJob implements ShouldQueue
         ];
 
         return $this->normalizePbxwareQueryParams($params);
+    }
+
+    private function buildCdrDateWindows(\Carbon\Carbon $from, \Carbon\Carbon $to): array
+    {
+        $windows = [];
+        $cursor = $from->copy()->startOfDay();
+        $end = $to->copy()->endOfDay();
+
+        while ($cursor->lte($end)) {
+            $windowEnd = $cursor->copy()->addDays(2)->endOfDay();
+            if ($windowEnd->gt($end)) {
+                $windowEnd = $end->copy();
+            }
+
+            $windows[] = [
+                'from' => $cursor->copy(),
+                'to' => $windowEnd->copy(),
+            ];
+
+            $cursor = $windowEnd->copy()->addSecond()->startOfDay();
+        }
+
+        return $windows;
     }
 
     private function determineRequestedRange(): array
