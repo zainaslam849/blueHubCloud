@@ -23,6 +23,11 @@
                 >
                     {{ workerHealthMessage }}
                 </p>
+                <p v-if="showWorkerStartHint" class="worker-hint" role="status">
+                    Start workers:
+                    {{ overview.worker_start_hint?.start_command }} | Check:
+                    {{ overview.worker_start_hint?.status_command }}
+                </p>
             </div>
             <BaseButton
                 variant="secondary"
@@ -207,6 +212,12 @@ const overview = ref({
         horizon_running: null,
         message: "",
     },
+    worker_start_hint: {
+        mode: "",
+        status_command: "",
+        start_command: "",
+        restart_command: "",
+    },
 });
 
 const queueColumns = [
@@ -261,6 +272,17 @@ const workerHealthMessage = computed(() => {
     return "";
 });
 
+const showWorkerStartHint = computed(() => {
+    const health = overview.value?.worker_health;
+    const hint = overview.value?.worker_start_hint;
+
+    return Boolean(
+        health?.suspected_stalled &&
+        hint?.start_command &&
+        hint?.status_command,
+    );
+});
+
 onMounted(() => {
     load();
 });
@@ -309,8 +331,22 @@ async function resumePipeline(pipelineRunId) {
             `/jobs/pipelines/${pipelineRunId}/resume`,
         );
         const msg = res?.data?.message || "Resume request sent.";
+        const alreadyQueued = Boolean(res?.data?.data?.already_queued);
+        const requeued = Boolean(res?.data?.data?.requeued);
+        const workerHealth = res?.data?.data?.worker_health;
+        const workerHint = res?.data?.data?.worker_start_hint;
+
+        if (workerHealth) {
+            overview.value = {
+                ...overview.value,
+                worker_health: workerHealth,
+                worker_start_hint:
+                    workerHint || overview.value.worker_start_hint,
+            };
+        }
+
         resumeFeedback.value = {
-            type: "success",
+            type: alreadyQueued && !requeued ? "info" : "success",
             message: msg,
         };
         await load();
@@ -398,5 +434,11 @@ async function resumePipeline(pipelineRunId) {
 
 .worker-health.is-ok {
     color: #047857;
+}
+
+.worker-hint {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #7c2d12;
 }
 </style>

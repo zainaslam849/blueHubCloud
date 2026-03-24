@@ -129,6 +129,7 @@ class AdminJobsController extends Controller
             reservedJobs: (int) ($totals['reserved'] ?? 0),
             queuedPipelines: (int) ($pipelineTotals['queued'] ?? 0)
         );
+        $workerStartHint = $this->buildWorkerStartHint((string) $queueConnection);
 
         return response()->json([
             'data' => [
@@ -140,6 +141,7 @@ class AdminJobsController extends Controller
                 'pipeline_totals' => $pipelineTotals,
                 'pipeline_runs' => $pipelineRows,
                 'worker_health' => $workerHealth,
+                'worker_start_hint' => $workerStartHint,
             ],
         ]);
     }
@@ -155,12 +157,56 @@ class AdminJobsController extends Controller
         $run = PipelineRun::query()->findOrFail($pipelineRunId);
 
         if ($run->status === 'queued') {
+            $queueConnection = (string) config('queue.default');
+            $totals = [
+                'queued' => (int) DB::table('jobs')->count(),
+                'reserved' => (int) DB::table('jobs')->whereNotNull('reserved_at')->count(),
+            ];
+            $queuedPipelines = (int) PipelineRun::query()->where('status', 'queued')->count();
+            $workerHealth = $this->buildWorkerHealth(
+                queueConnection: $queueConnection,
+                queuedJobs: (int) ($totals['queued'] ?? 0),
+                reservedJobs: (int) ($totals['reserved'] ?? 0),
+                queuedPipelines: $queuedPipelines
+            );
+
+            $isStaleQueued = ! $run->updated_at || $run->updated_at->lt(now()->subSeconds(15));
+
+            if ($isStaleQueued) {
+                $metrics = is_array($run->metrics) ? $run->metrics : [];
+                $metrics['last_resume_requested_at'] = now()->toIso8601String();
+                $metrics['last_resume_requested_by'] = auth()->id();
+
+                $run->forceFill([
+                    'resume_count' => (int) $run->resume_count + 1,
+                    'metrics' => $metrics,
+                    'updated_at' => now(),
+                ])->save();
+
+                $this->dispatchPipelineRun($run, $metrics);
+
+                return response()->json([
+                    'message' => 'Pipeline was queued and has been re-dispatched to workers.',
+                    'data' => [
+                        'pipeline_run_id' => $run->id,
+                        'status' => $run->status,
+                        'already_queued' => true,
+                        'requeued' => true,
+                        'worker_health' => $workerHealth,
+                        'worker_start_hint' => $this->buildWorkerStartHint($queueConnection),
+                    ],
+                ]);
+            }
+
             return response()->json([
-                'message' => 'Pipeline is already queued. If nothing is processing, verify Horizon/queue workers are running.',
+                'message' => 'Pipeline is already queued and was recently dispatched. Please wait a few seconds before retrying.',
                 'data' => [
                     'pipeline_run_id' => $run->id,
                     'status' => $run->status,
                     'already_queued' => true,
+                    'requeued' => false,
+                    'worker_health' => $workerHealth,
+                    'worker_start_hint' => $this->buildWorkerStartHint($queueConnection),
                 ],
             ]);
         }
@@ -202,16 +248,7 @@ class AdminJobsController extends Controller
             'metrics' => $metrics,
         ])->save();
 
-        AdminTestPipelineJob::dispatch(
-            (int) $run->company_id,
-            $run->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
-            $run->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
-            (int) ($metrics['summarize_limit'] ?? 500),
-            (int) ($metrics['categorize_limit'] ?? 500),
-            'default',
-            $run->id,
-            true
-        )->onQueue('default');
+        $this->dispatchPipelineRun($run, $metrics);
 
         return response()->json([
             'message' => 'Pipeline resume queued.',
@@ -312,5 +349,38 @@ class AdminJobsController extends Controller
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    private function buildWorkerStartHint(string $queueConnection): array
+    {
+        if ($queueConnection === 'redis') {
+            return [
+                'mode' => 'horizon',
+                'status_command' => 'php artisan horizon:status',
+                'start_command' => 'php artisan horizon',
+                'restart_command' => 'php artisan horizon:terminate',
+            ];
+        }
+
+        return [
+            'mode' => 'queue-work',
+            'status_command' => 'php artisan queue:monitor default',
+            'start_command' => 'php artisan queue:work --queue=default',
+            'restart_command' => 'php artisan queue:restart',
+        ];
+    }
+
+    private function dispatchPipelineRun(PipelineRun $run, array $metrics = []): void
+    {
+        AdminTestPipelineJob::dispatch(
+            (int) $run->company_id,
+            $run->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
+            $run->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
+            (int) ($metrics['summarize_limit'] ?? 500),
+            (int) ($metrics['categorize_limit'] ?? 500),
+            'default',
+            $run->id,
+            true
+        )->onQueue('default');
     }
 }
