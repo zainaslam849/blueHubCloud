@@ -50,6 +50,16 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
                 'pipeline_run_id' => $this->pipelineRunId,
             ]);
 
+            FetchTranscriptionsJob::dispatch(
+                $this->companyId,
+                $this->fromDate,
+                $this->toDate,
+                $this->pipelineRunId,
+                $this->pipelineQueue,
+                $this->summarizeLimit,
+                $this->categorizeLimit,
+            )->onQueue($this->pipelineQueue);
+
             static::dispatch(
                 $this->companyId,
                 $this->fromDate,

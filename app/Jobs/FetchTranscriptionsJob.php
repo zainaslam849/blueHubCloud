@@ -40,7 +40,8 @@ class FetchTranscriptionsJob implements ShouldQueue
 
     // Number of calls to process per job execution
     private const BATCH_SIZE = 50;
-    private const RETRY_COOLDOWN_MINUTES = 30;
+    private const RETRY_COOLDOWN_SECONDS = 20;
+    private const MAX_RETRY_ATTEMPTS = 5;
 
     // Maximum attempts before giving up
     public int $tries = 5;
@@ -69,13 +70,15 @@ class FetchTranscriptionsJob implements ShouldQueue
         try {
             $adapter = app(PbxwareAdapter::class);
 
+            $promotedCount = $this->promoteRecordingCandidates();
+
             // Find calls with recordings but no transcription (limit to batch size)
             $callsQuery = Call::query()
                 ->where('has_transcription', true)
                 ->whereNull('transcript_text')
                 ->where(function ($q) {
                     $q->whereNull('transcription_checked_at')
-                        ->orWhere('transcription_checked_at', '<=', now()->subMinutes(self::RETRY_COOLDOWN_MINUTES));
+                        ->orWhere('transcription_checked_at', '<=', now()->subSeconds(self::RETRY_COOLDOWN_SECONDS));
                 });
 
             if ($this->companyId !== null) {
@@ -99,6 +102,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'from' => $this->fromDate,
                 'to' => $this->toDate,
                 'pipeline_run_id' => $this->pipelineRunId,
+                'promoted_candidates' => $promotedCount,
                 'candidate_count' => $calls->count(),
                 'candidate_call_ids' => $calls->pluck('id')->take(10)->values()->all(),
             ]);
@@ -185,7 +189,11 @@ class FetchTranscriptionsJob implements ShouldQueue
 
             // If no transcription found, mark it and skip
             if (empty($transcriptionData)) {
+                $attempt = $this->incrementRetryAttempts($call);
+                $shouldTerminate = $attempt >= self::MAX_RETRY_ATTEMPTS;
+
                 $call->update([
+                    'has_transcription' => $shouldTerminate ? false : true,
                     'transcription_checked_at' => now(),
                 ]);
                 Log::warning('FetchTranscriptionsJob: terminal outcome api_empty_response_retry_later', [
@@ -193,7 +201,10 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'server_id' => $call->server_id,
                     'pbx_unique_id' => $call->pbx_unique_id,
                     'pipeline_run_id' => $this->pipelineRunId,
-                    'retry_after_minutes' => self::RETRY_COOLDOWN_MINUTES,
+                    'retry_after_seconds' => self::RETRY_COOLDOWN_SECONDS,
+                    'retry_attempt' => $attempt,
+                    'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
+                    'terminal_after_max_retries' => $shouldTerminate,
                 ]);
                 return;
             }
@@ -217,10 +228,12 @@ class FetchTranscriptionsJob implements ShouldQueue
 
             if ($transcriptText === '') {
                 $explicitNotFound = $this->isExplicitNoTranscription($transcriptionData);
+                $attempt = $this->incrementRetryAttempts($call);
+                $shouldTerminate = $explicitNotFound || $attempt >= self::MAX_RETRY_ATTEMPTS;
 
                 $call->update([
                     'transcription_checked_at' => now(),
-                    'has_transcription' => $explicitNotFound ? false : true,
+                    'has_transcription' => $shouldTerminate ? false : true,
                 ]);
 
                 Log::warning('FetchTranscriptionsJob: terminal outcome unusable_text_extraction', [
@@ -231,7 +244,10 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'pipeline_run_id' => $this->pipelineRunId,
                     'preview' => $this->extractPreview($transcriptionData),
                     'explicit_not_found' => $explicitNotFound,
-                    'retry_after_minutes' => $explicitNotFound ? null : self::RETRY_COOLDOWN_MINUTES,
+                    'retry_after_seconds' => $shouldTerminate ? null : self::RETRY_COOLDOWN_SECONDS,
+                    'retry_attempt' => $attempt,
+                    'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
+                    'terminal_after_max_retries' => $shouldTerminate,
                 ]);
 
                 return;
@@ -258,6 +274,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'has_transcription' => true,
                 'transcription_checked_at' => now(),
             ]);
+            $this->setRetryAttempts($call, 0);
 
             $call->refresh();
 
@@ -318,6 +335,80 @@ class FetchTranscriptionsJob implements ShouldQueue
         }
 
         return null;
+    }
+
+    private function promoteRecordingCandidates(): int
+    {
+        $query = Call::query()
+            ->where('has_transcription', false)
+            ->whereNull('transcript_text');
+
+        if ($this->companyId !== null) {
+            $query->where('company_id', $this->companyId);
+        }
+
+        if ($this->fromDate !== null && $this->toDate !== null) {
+            $query->whereBetween('started_at', [
+                Carbon::parse($this->fromDate)->startOfDay(),
+                Carbon::parse($this->toDate)->endOfDay(),
+            ]);
+        }
+
+        $promoted = 0;
+
+        $query->orderBy('id')->chunkById(200, function ($calls) use (&$promoted) {
+            foreach ($calls as $call) {
+                if (! $this->isRecordingLikelyAvailable($call)) {
+                    continue;
+                }
+
+                $call->has_transcription = true;
+                $call->transcription_checked_at = null;
+                $call->save();
+                $promoted++;
+            }
+        });
+
+        return $promoted;
+    }
+
+    private function isRecordingLikelyAvailable(Call $call): bool
+    {
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+
+        $normalizedFlag = $meta['recording_available_normalized'] ?? null;
+        $effectiveFlag = $meta['recording_available_effective'] ?? null;
+        $rawFlag = $meta['recording_available'] ?? null;
+        $path = $meta['recording_path_normalized'] ?? ($meta['recording_path'] ?? null);
+
+        if ($effectiveFlag === true || $normalizedFlag === true || $rawFlag === true) {
+            return true;
+        }
+
+        return is_string($path) && trim($path) !== '';
+    }
+
+    private function incrementRetryAttempts(Call $call): int
+    {
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $attempt = (int) ($meta['transcription_retry_attempts'] ?? 0) + 1;
+        $meta['transcription_retry_attempts'] = $attempt;
+        $meta['transcription_last_attempt_at'] = now()->toIso8601String();
+
+        $call->pbx_metadata = $meta;
+        $call->save();
+
+        return $attempt;
+    }
+
+    private function setRetryAttempts(Call $call, int $attempt): void
+    {
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $meta['transcription_retry_attempts'] = max(0, $attempt);
+        $meta['transcription_last_attempt_at'] = now()->toIso8601String();
+
+        $call->pbx_metadata = $meta;
+        $call->save();
     }
 
     private function isExplicitNoTranscription(array $payload): bool
