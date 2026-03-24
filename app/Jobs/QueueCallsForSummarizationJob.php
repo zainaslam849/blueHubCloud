@@ -35,7 +35,10 @@ class QueueCallsForSummarizationJob implements ShouldQueue
             ->where('company_id', $this->companyId)
             ->whereNotNull('transcript_text')
             ->where('transcript_text', '!=', '')
-            ->whereNull('ai_summary')
+            ->where(function ($q) {
+                $q->whereNull('ai_summary')
+                    ->orWhere('ai_summary', '');
+            })
             ->orderByDesc('started_at');
 
         if ($this->fromDate !== null && $this->toDate !== null) {

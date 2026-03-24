@@ -157,21 +157,48 @@ class FetchTranscriptionsJob implements ShouldQueue
                 $call
             );
 
-            // Store transcription in database
-            $transcription = CallTranscription::create($normalized);
+            $transcriptText = is_string($normalized['transcript_text'] ?? null)
+                ? trim($normalized['transcript_text'])
+                : '';
+
+            if ($transcriptText === '') {
+                $call->update([
+                    'transcription_checked_at' => now(),
+                    'has_transcription' => false,
+                ]);
+
+                Log::warning("FetchTranscriptionsJob: Transcription payload had no usable text for call {$call->id}", [
+                    'call_id' => $call->id,
+                    'server_id' => $call->server_id,
+                    'pbx_unique_id' => $call->pbx_unique_id,
+                    'payload_keys' => array_keys($transcriptionData),
+                ]);
+
+                return;
+            }
+
+            $normalized['transcript_text'] = $transcriptText;
+
+            // Store transcription in database (upsert for idempotency)
+            $transcription = CallTranscription::query()->updateOrCreate(
+                ['call_id' => $call->id],
+                $normalized
+            );
 
             // Update call record with transcript
             $call->update([
-                'transcript_text' => $normalized['transcript_text'],
-                'has_transcription' => !empty($normalized['transcript_text']),
+                'transcript_text' => $transcriptText,
+                'has_transcription' => true,
+                'transcription_checked_at' => now(),
             ]);
 
-            Log::info("FetchTranscriptionsJob: Stored transcription for call {$call->id}");
+            Log::info("FetchTranscriptionsJob: Stored transcription for call {$call->id}", [
+                'call_id' => $call->id,
+                'characters' => mb_strlen($transcriptText),
+            ]);
 
             // Dispatch insight analysis job to extract intent/department/deflection
-            if (!empty($normalized['transcript_text'])) {
-                InsightAnalysisJob::dispatch($call, $transcription);
-            }
+            InsightAnalysisJob::dispatch($call, $transcription);
         } catch (\Exception $e) {
             Log::error("FetchTranscriptionsJob: Failed to process call {$call->id}", [
                 'error' => $e->getMessage(),

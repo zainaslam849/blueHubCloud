@@ -130,8 +130,8 @@ class PbxPayloadNormalizer
         array $transcriptionData,
         Call $call
     ): array {
-        $transcriptText = $transcriptionData['Transcript'] ?? $transcriptionData['transcript'] ?? null;
-        $confidence = (float) ($transcriptionData['Confidence'] ?? $transcriptionData['confidence'] ?? 0.0);
+        $transcriptText = self::extractTranscriptText($transcriptionData);
+        $confidence = self::extractTranscriptConfidence($transcriptionData);
 
         return [
             'call_id' => $call->id,
@@ -139,6 +139,79 @@ class PbxPayloadNormalizer
             'transcript_confidence' => $confidence,
             'processed_at' => now(),
         ];
+    }
+
+    /**
+     * Extract transcript text from known PBXware response shapes.
+     */
+    private static function extractTranscriptText(array $transcriptionData): ?string
+    {
+        $candidateKeys = [
+            'Transcript',
+            'transcript',
+            'text',
+            'message',
+        ];
+
+        foreach ($candidateKeys as $key) {
+            $value = $transcriptionData[$key] ?? null;
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        $nestedCandidates = [
+            data_get($transcriptionData, 'result.transcript'),
+            data_get($transcriptionData, 'result.text'),
+            data_get($transcriptionData, 'data.transcript'),
+            data_get($transcriptionData, 'data.text'),
+            data_get($transcriptionData, 'payload.transcript'),
+            data_get($transcriptionData, 'payload.text'),
+        ];
+
+        foreach ($nestedCandidates as $value) {
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        $vttWords = data_get($transcriptionData, 'vtt.words');
+        if (is_array($vttWords) && ! empty($vttWords)) {
+            $tokens = [];
+            foreach ($vttWords as $word) {
+                $token = is_array($word) ? ($word['word'] ?? null) : null;
+                if (is_string($token) && trim($token) !== '') {
+                    $tokens[] = trim($token);
+                }
+            }
+
+            if (! empty($tokens)) {
+                return implode(' ', $tokens);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract transcription confidence from known PBXware response shapes.
+     */
+    private static function extractTranscriptConfidence(array $transcriptionData): float
+    {
+        $candidates = [
+            $transcriptionData['Confidence'] ?? null,
+            $transcriptionData['confidence'] ?? null,
+            data_get($transcriptionData, 'result.confidence'),
+            data_get($transcriptionData, 'data.confidence'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_numeric($candidate)) {
+                return (float) $candidate;
+            }
+        }
+
+        return 0.0;
     }
 
     /**

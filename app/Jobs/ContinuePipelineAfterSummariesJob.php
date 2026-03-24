@@ -39,7 +39,10 @@ class ContinuePipelineAfterSummariesJob implements ShouldQueue
             ->where('company_id', $this->companyId)
             ->whereNotNull('transcript_text')
             ->where('transcript_text', '!=', '')
-            ->whereNull('ai_summary')
+            ->where(function ($q) {
+                $q->whereNull('ai_summary')
+                    ->orWhere('ai_summary', '');
+            })
             ->whereBetween('started_at', [$from, $to])
             ->count();
 
