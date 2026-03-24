@@ -205,6 +205,16 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 'range_days' => $this->rangeDays,
             ]);
         } catch (\Exception $e) {
+            if ($this->isOpenRouterCreditLimitError($e)) {
+                Log::warning('Skipping AI category generation due to OpenRouter credit/token limit', [
+                    'company_id' => $this->companyId,
+                    'model' => $aiSettings->categorization_model ?? 'unknown',
+                    'error' => $e->getMessage(),
+                ]);
+
+                return;
+            }
+
             Log::error('Failed to generate AI categories', [
                 'company_id' => $this->companyId,
                 'model' => $aiSettings->categorization_model ?? 'unknown',
@@ -300,19 +310,35 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
 
     private function callOpenRouter(string $apiKey, string $model, string $prompt): string
     {
-        $response = Http::withHeaders([
+        $headers = [
             'Authorization' => "Bearer {$apiKey}",
             'HTTP-Referer' => config('app.url'),
             'X-Title' => 'blueHubCloud Category Generation',
-        ])->timeout(45)->post('https://openrouter.ai/api/v1/chat/completions', [
+        ];
+
+        $payload = [
             'model' => $model,
             'messages' => [
                 ['role' => 'user', 'content' => $prompt],
             ],
             'response_format' => ['type' => 'json_object'],
             'temperature' => 0.2,
-            'max_tokens' => 1200,
-        ]);
+            'max_tokens' => 300,
+        ];
+
+        $response = Http::withHeaders($headers)
+            ->timeout(45)
+            ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+
+        if ($response->status() === 402) {
+            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
+            if ($affordableTokens !== null) {
+                $payload['max_tokens'] = max(96, min($payload['max_tokens'], $affordableTokens - 16));
+                $response = Http::withHeaders($headers)
+                    ->timeout(45)
+                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+            }
+        }
 
         if (! $response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -324,6 +350,24 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         }
 
         return $content;
+    }
+
+    private function extractAffordableTokenLimit(string $body): ?int
+    {
+        if (preg_match('/can only afford\s+(\d+)\.?/i', $body, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function isOpenRouterCreditLimitError(\Throwable $exception): bool
+    {
+        $message = $exception->getMessage();
+        $lower = strtolower($message);
+
+        return str_contains($message, 'OpenRouter API failed (402)')
+            || (str_contains($lower, 'more credits') && str_contains($lower, 'max_tokens'));
     }
 
     private function parseJsonResponse(string $response): array

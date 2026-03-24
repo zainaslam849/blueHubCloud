@@ -68,7 +68,7 @@ class SummarizeSingleCallJob implements ShouldQueue
             'user' => $this->buildUserPrompt($call),
             'model_parameters' => [
                 'temperature' => 0.3,
-                'max_tokens' => 600,
+                'max_tokens' => 250,
             ],
         ];
 
@@ -97,6 +97,16 @@ class SummarizeSingleCallJob implements ShouldQueue
             Log::info("✓ Summarized call {$this->callId} using {$aiSettings->categorization_model}");
 
         } catch (\Exception $e) {
+            if ($this->isOpenRouterCreditLimitError($e)) {
+                Log::warning("Skipping summary for call {$this->callId} due to OpenRouter credit/token limit", [
+                    'call_id' => $this->callId,
+                    'model' => $aiSettings->categorization_model ?? 'unknown',
+                    'message' => $e->getMessage(),
+                ]);
+
+                return;
+            }
+
             Log::error("Failed to summarize call {$this->callId}: {$e->getMessage()}", [
                 'call_id' => $this->callId,
                 'exception' => get_class($e),
@@ -187,11 +197,13 @@ PROMPT;
 
     private function callOpenRouter(string $apiKey, string $model, array $prompt): string
     {
-        $response = Http::withHeaders([
+        $headers = [
             'Authorization' => "Bearer {$apiKey}",
             'HTTP-Referer' => config('app.url'),
             'X-Title' => 'blueHubCloud Call Summarization',
-        ])->timeout(30)->post('https://openrouter.ai/api/v1/chat/completions', [
+        ];
+
+        $payload = [
             'model' => $model,
             'messages' => [
                 ['role' => 'system', 'content' => $prompt['system']],
@@ -199,7 +211,21 @@ PROMPT;
             ],
             'temperature' => $prompt['model_parameters']['temperature'],
             'max_tokens' => $prompt['model_parameters']['max_tokens'],
-        ]);
+        ];
+
+        $response = Http::withHeaders($headers)
+            ->timeout(30)
+            ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+
+        if ($response->status() === 402) {
+            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
+            if ($affordableTokens !== null) {
+                $payload['max_tokens'] = max(64, min($payload['max_tokens'], $affordableTokens - 16));
+                $response = Http::withHeaders($headers)
+                    ->timeout(30)
+                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+            }
+        }
 
         if (! $response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -212,6 +238,23 @@ PROMPT;
         }
 
         return $content;
+    }
+
+    private function extractAffordableTokenLimit(string $body): ?int
+    {
+        if (preg_match('/can only afford\s+(\d+)\.?/i', $body, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function isOpenRouterCreditLimitError(\Throwable $exception): bool
+    {
+        $message = $exception->getMessage();
+
+        return str_contains($message, 'OpenRouter API failed (402)')
+            || (str_contains(strtolower($message), 'more credits') && str_contains(strtolower($message), 'max_tokens'));
     }
 
     private function formatDuration(int $seconds): string

@@ -8,6 +8,13 @@
                     Monitor queued, running, and failed jobs across the system.
                 </p>
                 <p
+                    v-if="showHorizonStatus"
+                    class="horizon-status"
+                    :class="`is-${horizonStatusClass}`"
+                >
+                    Horizon status: {{ horizonStatusLabel }}
+                </p>
+                <p
                     v-if="resumeFeedback.message"
                     class="resume-feedback"
                     :class="`is-${resumeFeedback.type}`"
@@ -29,14 +36,26 @@
                     {{ overview.worker_start_hint?.status_command }}
                 </p>
             </div>
-            <BaseButton
-                variant="secondary"
-                size="sm"
-                :loading="loading"
-                @click="load"
-            >
-                Refresh
-            </BaseButton>
+            <div class="header-actions">
+                <BaseButton
+                    v-if="showStartWorkersButton"
+                    variant="secondary"
+                    size="sm"
+                    :loading="startingWorkers"
+                    :disabled="startingWorkers"
+                    @click="startWorkers"
+                >
+                    Start Workers
+                </BaseButton>
+                <BaseButton
+                    variant="secondary"
+                    size="sm"
+                    :loading="loading"
+                    @click="load"
+                >
+                    Refresh
+                </BaseButton>
+            </div>
         </header>
 
         <section class="admin-dashboard__grid">
@@ -191,6 +210,7 @@ import PanelCard from "../../components/admin/PanelCard.vue";
 import adminApi from "../../router/admin/api";
 
 const loading = ref(true);
+const startingWorkers = ref(false);
 const resumeLoadingById = ref({});
 const resumeFeedback = ref({
     type: "info",
@@ -217,6 +237,10 @@ const overview = ref({
         status_command: "",
         start_command: "",
         restart_command: "",
+    },
+    horizon_status: {
+        enabled: false,
+        running: null,
     },
 });
 
@@ -258,6 +282,31 @@ const pipelineColumns = [
 ];
 
 const queueMeta = computed(() => (loading.value ? "Loading…" : "Last update"));
+
+const showHorizonStatus = computed(() => {
+    return Boolean(overview.value?.horizon_status?.enabled);
+});
+
+const horizonStatusLabel = computed(() => {
+    const running = overview.value?.horizon_status?.running;
+    if (running === true) return "Running";
+    if (running === false) return "Stopped";
+    return "Unknown";
+});
+
+const horizonStatusClass = computed(() => {
+    const running = overview.value?.horizon_status?.running;
+    if (running === true) return "running";
+    if (running === false) return "stopped";
+    return "unknown";
+});
+
+const showStartWorkersButton = computed(() => {
+    return Boolean(
+        overview.value?.horizon_status?.enabled &&
+            overview.value?.horizon_status?.running !== true,
+    );
+});
 
 const workerHealthMessage = computed(() => {
     const health = overview.value?.worker_health;
@@ -364,9 +413,76 @@ async function resumePipeline(pipelineRunId) {
         };
     }
 }
+
+async function startWorkers() {
+    startingWorkers.value = true;
+    error.value = "";
+
+    try {
+        const res = await adminApi.post("/jobs/workers/start");
+        const msg = res?.data?.message || "Worker start request sent.";
+        const workerHealth = res?.data?.data?.worker_health;
+        const workerHint = res?.data?.data?.worker_start_hint;
+        const horizonRunning = res?.data?.data?.horizon_running;
+
+        resumeFeedback.value = {
+            type: horizonRunning === true ? "success" : "info",
+            message: msg,
+        };
+
+        if (workerHealth || workerHint) {
+            overview.value = {
+                ...overview.value,
+                worker_health: workerHealth || overview.value.worker_health,
+                worker_start_hint: workerHint || overview.value.worker_start_hint,
+                horizon_status: {
+                    ...(overview.value?.horizon_status || {}),
+                    running:
+                        typeof horizonRunning === "boolean"
+                            ? horizonRunning
+                            : overview.value?.horizon_status?.running,
+                },
+            };
+        }
+
+        await load();
+    } catch (e) {
+        const apiMessage = e?.response?.data?.message;
+        resumeFeedback.value = {
+            type: "error",
+            message: apiMessage || "Failed to start workers.",
+        };
+        error.value = "Failed to start workers.";
+    } finally {
+        startingWorkers.value = false;
+    }
+}
 </script>
 
 <style scoped>
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.horizon-status {
+    margin-top: 6px;
+    font-size: 13px;
+}
+
+.horizon-status.is-running {
+    color: #047857;
+}
+
+.horizon-status.is-stopped {
+    color: #b45309;
+}
+
+.horizon-status.is-unknown {
+    color: #1d4ed8;
+}
+
 .pipeline-status {
     display: inline-flex;
     align-items: center;

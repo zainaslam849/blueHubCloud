@@ -145,6 +145,7 @@ Route::prefix('admin/api')->group(function () {
         Route::post('/pipeline/run', [\App\Http\Controllers\Admin\AdminPipelineController::class, 'run']);
         Route::get('/system/status', [\App\Http\Controllers\Admin\AdminSystemStatusController::class, 'show']);
         Route::get('/jobs/overview', [\App\Http\Controllers\Admin\AdminJobsController::class, 'overview']);
+        Route::post('/jobs/workers/start', [\App\Http\Controllers\Admin\AdminJobsController::class, 'startWorkers']);
         Route::post('/jobs/pipelines/{pipelineRunId}/resume', [\App\Http\Controllers\Admin\AdminJobsController::class, 'resumePipeline'])
             ->whereNumber('pipelineRunId');
         Route::get('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'show']);

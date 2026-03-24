@@ -142,8 +142,77 @@ class AdminJobsController extends Controller
                 'pipeline_runs' => $pipelineRows,
                 'worker_health' => $workerHealth,
                 'worker_start_hint' => $workerStartHint,
+                'horizon_status' => [
+                    'enabled' => $queueConnection === 'redis',
+                    'running' => $workerHealth['horizon_running'],
+                ],
             ],
         ]);
+    }
+
+    public function startWorkers(): JsonResponse
+    {
+        $queueConnection = (string) config('queue.default');
+
+        if ($queueConnection !== 'redis') {
+            return response()->json([
+                'message' => 'Queue connection is not Redis. Start queue workers using queue:work.',
+                'data' => [
+                    'worker_start_hint' => $this->buildWorkerStartHint($queueConnection),
+                ],
+            ], 422);
+        }
+
+        $runningBefore = $this->isHorizonLikelyRunning();
+        if ($runningBefore === true) {
+            return response()->json([
+                'message' => 'Horizon is already running.',
+                'data' => [
+                    'started' => false,
+                    'horizon_running' => true,
+                    'worker_start_hint' => $this->buildWorkerStartHint($queueConnection),
+                ],
+            ]);
+        }
+
+        [$started, $startMessage, $details] = $this->startHorizonInBackground();
+
+        // Give Horizon a brief moment to boot before reporting status.
+        usleep(700000);
+        $runningAfter = $this->isHorizonLikelyRunning();
+
+        $totals = [
+            'queued' => (int) DB::table('jobs')->count(),
+            'reserved' => (int) DB::table('jobs')->whereNotNull('reserved_at')->count(),
+        ];
+        $queuedPipelines = Schema::hasTable('pipeline_runs')
+            ? (int) PipelineRun::query()->where('status', 'queued')->count()
+            : 0;
+
+        $workerHealth = $this->buildWorkerHealth(
+            queueConnection: $queueConnection,
+            queuedJobs: (int) ($totals['queued'] ?? 0),
+            reservedJobs: (int) ($totals['reserved'] ?? 0),
+            queuedPipelines: $queuedPipelines
+        );
+
+        $message = $startMessage;
+        if ($runningAfter === true) {
+            $message = 'Horizon start command executed. Workers are running.';
+        } elseif ($started) {
+            $message = 'Horizon start command was sent, but status is not running yet. Check horizon.log and run horizon:status.';
+        }
+
+        return response()->json([
+            'message' => $message,
+            'data' => [
+                'started' => $started,
+                'horizon_running' => $runningAfter,
+                'worker_health' => $workerHealth,
+                'worker_start_hint' => $this->buildWorkerStartHint($queueConnection),
+                'details' => $details,
+            ],
+        ], $runningAfter === true ? 200 : 202);
     }
 
     public function resumePipeline(int $pipelineRunId): JsonResponse
@@ -382,5 +451,61 @@ class AdminJobsController extends Controller
             $run->id,
             true
         )->onQueue('default');
+    }
+
+    private function startHorizonInBackground(): array
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $command = 'start /B "" ' . escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(base_path('artisan')) . ' horizon';
+
+            try {
+                @pclose(@popen($command, 'r'));
+
+                return [
+                    true,
+                    'Horizon start command executed in background.',
+                    ['os' => 'windows'],
+                ];
+            } catch (\Throwable $e) {
+                return [
+                    false,
+                    'Failed to start Horizon in background on Windows: ' . $e->getMessage(),
+                    ['os' => 'windows'],
+                ];
+            }
+        }
+
+        if (! function_exists('shell_exec')) {
+            return [
+                false,
+                'Cannot start Horizon automatically because shell_exec is disabled on this server.',
+                ['os' => 'unix'],
+            ];
+        }
+
+        $phpBinary = escapeshellarg(PHP_BINARY ?: 'php');
+        $artisan = escapeshellarg(base_path('artisan'));
+        $logFile = escapeshellarg(storage_path('logs/horizon.log'));
+        $command = "nohup {$phpBinary} {$artisan} horizon >> {$logFile} 2>&1 & echo $!";
+
+        try {
+            $output = @shell_exec($command);
+            $pid = trim((string) $output);
+
+            return [
+                true,
+                'Horizon start command executed in background.',
+                [
+                    'os' => 'unix',
+                    'pid' => $pid !== '' ? $pid : null,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return [
+                false,
+                'Failed to start Horizon in background: ' . $e->getMessage(),
+                ['os' => 'unix'],
+            ];
+        }
     }
 }

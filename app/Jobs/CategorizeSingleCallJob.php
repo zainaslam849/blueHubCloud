@@ -134,6 +134,16 @@ class CategorizeSingleCallJob implements ShouldQueue
             }
 
         } catch (\Exception $e) {
+            if ($this->isOpenRouterCreditLimitError($e)) {
+                Log::warning("Skipping categorization for call {$this->callId} due to OpenRouter credit/token limit", [
+                    'call_id' => $this->callId,
+                    'model' => $aiSettings->categorization_model ?? 'unknown',
+                    'error' => $e->getMessage(),
+                ]);
+
+                return;
+            }
+
             Log::error("Failed to categorize call {$this->callId}: {$e->getMessage()}", [
                 'call_id' => $this->callId,
                 'exception' => get_class($e),
@@ -233,11 +243,13 @@ class CategorizeSingleCallJob implements ShouldQueue
      */
     private function callOpenRouter(string $apiKey, string $model, array $prompt): array
     {
-        $response = Http::withHeaders([
+        $headers = [
             'Authorization' => "Bearer {$apiKey}",
             'HTTP-Referer' => config('app.url'),
             'X-Title' => 'blueHubCloud Call Categorization',
-        ])->timeout(30)->post('https://openrouter.ai/api/v1/chat/completions', [
+        ];
+
+        $payload = [
             'model' => $model,
             'messages' => [
                 ['role' => 'system', 'content' => $prompt['system']],
@@ -245,8 +257,22 @@ class CategorizeSingleCallJob implements ShouldQueue
             ],
             'response_format' => ['type' => 'json_object'],
             'temperature' => 0.3,
-            'max_tokens' => 500, // Categorization output is small JSON (~100-200 tokens)
-        ]);
+            'max_tokens' => 220, // Categorization output is small JSON (~100-200 tokens)
+        ];
+
+        $response = Http::withHeaders($headers)
+            ->timeout(30)
+            ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+
+        if ($response->status() === 402) {
+            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
+            if ($affordableTokens !== null) {
+                $payload['max_tokens'] = max(96, min($payload['max_tokens'], $affordableTokens - 16));
+                $response = Http::withHeaders($headers)
+                    ->timeout(30)
+                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+            }
+        }
 
         if (!$response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -265,6 +291,24 @@ class CategorizeSingleCallJob implements ShouldQueue
         }
 
         return $result;
+    }
+
+    private function extractAffordableTokenLimit(string $body): ?int
+    {
+        if (preg_match('/can only afford\s+(\d+)\.?/i', $body, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function isOpenRouterCreditLimitError(\Throwable $exception): bool
+    {
+        $message = $exception->getMessage();
+        $lower = strtolower($message);
+
+        return str_contains($message, 'OpenRouter API failed (402)')
+            || (str_contains($lower, 'more credits') && str_contains($lower, 'max_tokens'));
     }
 
     /**
