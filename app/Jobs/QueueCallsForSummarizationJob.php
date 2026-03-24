@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\Call;
+use App\Models\PipelineRun;
+use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,24 +23,49 @@ class QueueCallsForSummarizationJob implements ShouldQueue
         public int $companyId,
         public int $limit = 500,
         public int $batch = 25,
-        public string $targetQueue = 'summarization'
+        public string $targetQueue = 'summarization',
+        public ?string $fromDate = null,
+        public ?string $toDate = null,
+        public ?int $pipelineRunId = null,
     ) {}
 
     public function handle(): void
     {
-        $calls = Call::query()
+        $query = Call::query()
             ->where('company_id', $this->companyId)
             ->whereNotNull('transcript_text')
             ->where('transcript_text', '!=', '')
             ->whereNull('ai_summary')
-            ->orderByDesc('started_at')
-            ->limit($this->limit)
-            ->get(['id']);
+            ->orderByDesc('started_at');
+
+        if ($this->fromDate !== null && $this->toDate !== null) {
+            $query->whereBetween('started_at', [
+                CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay(),
+                CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay(),
+            ]);
+        }
+
+        $calls = $query->limit($this->limit)->get(['id']);
 
         if ($calls->isEmpty()) {
             Log::info('QueueCallsForSummarizationJob: no calls to summarize', [
                 'company_id' => $this->companyId,
+                'pipeline_run_id' => $this->pipelineRunId,
             ]);
+
+            if ($this->pipelineRunId) {
+                $run = PipelineRun::query()->find($this->pipelineRunId);
+                if ($run) {
+                    $run->upsertStage('ai_summary', [
+                        'status' => 'completed',
+                        'metrics' => [
+                            'queued_calls' => 0,
+                        ],
+                        'finished_at' => now(),
+                    ]);
+                }
+            }
+
             return;
         }
 
@@ -55,6 +82,21 @@ class QueueCallsForSummarizationJob implements ShouldQueue
         Log::info('QueueCallsForSummarizationJob: queued calls', [
             'company_id' => $this->companyId,
             'count' => $calls->count(),
+            'pipeline_run_id' => $this->pipelineRunId,
         ]);
+
+        if ($this->pipelineRunId) {
+            $run = PipelineRun::query()->find($this->pipelineRunId);
+            if ($run) {
+                $run->upsertStage('ai_summary', [
+                    'status' => 'queued',
+                    'metrics' => [
+                        'queued_calls' => $calls->count(),
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $run->markQueued('ai_summary');
+            }
+        }
     }
 }

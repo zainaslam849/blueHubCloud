@@ -10,7 +10,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 
 class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
@@ -104,34 +103,25 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             ->limit($this->summarizeLimit)
             ->get(['id']);
 
-        foreach ($callsToSummarize as $call) {
-            SummarizeSingleCallJob::dispatch($call->id)
-                ->onQueue($this->pipelineQueue);
-        }
+        QueueCallsForSummarizationJob::dispatch(
+            $this->companyId,
+            $this->summarizeLimit,
+            25,
+            $this->pipelineQueue,
+            $this->fromDate,
+            $this->toDate,
+            $this->pipelineRunId,
+        )->onQueue($this->pipelineQueue);
 
-        $postSummaryChain = [
-            new GenerateAiCategoriesForCompanyJob($this->companyId, $this->rangeDays),
-            new QueueCallsForCategorizationJob(
-                $this->companyId,
-                $this->categorizeLimit,
-                25,
-                false,
-                $this->pipelineQueue,
-                $this->fromDate,
-                $this->toDate,
-                $this->pipelineRunId
-            ),
-        ];
-
-        if ($callsToSummarize->count() > 0) {
-            Bus::chain($postSummaryChain)
-                ->onQueue($this->pipelineQueue)
-                ->dispatch();
-        } else {
-            foreach ($postSummaryChain as $job) {
-                dispatch($job->onQueue($this->pipelineQueue));
-            }
-        }
+        ContinuePipelineAfterSummariesJob::dispatch(
+            $this->companyId,
+            $this->fromDate,
+            $this->toDate,
+            $this->categorizeLimit,
+            $this->pipelineQueue,
+            $this->pipelineRunId,
+            $this->rangeDays,
+        )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(20));
 
         if ($pipelineRun) {
             $pipelineRun->upsertStage('ai_summary', [
@@ -141,22 +131,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
                 ],
                 'finished_at' => now(),
             ]);
-            $pipelineRun->upsertStage('category_generation', [
-                'status' => 'queued',
-                'metrics' => ['queued' => true],
-                'finished_at' => now(),
-            ]);
-            $pipelineRun->upsertStage('call_categorization', [
-                'status' => 'queued',
-                'metrics' => ['queued_limit' => $this->categorizeLimit],
-                'finished_at' => now(),
-            ]);
-            $pipelineRun->upsertStage('report_generation', [
-                'status' => 'queued',
-                'metrics' => ['queued' => true],
-                'finished_at' => now(),
-            ]);
-            $pipelineRun->markQueued('report_generation');
+            $pipelineRun->markQueued('ai_summary');
             $pipelineRun->forceFill([
                 'metrics' => array_merge(
                     is_array($pipelineRun->metrics) ? $pipelineRun->metrics : [],

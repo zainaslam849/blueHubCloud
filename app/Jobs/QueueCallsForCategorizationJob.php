@@ -44,10 +44,57 @@ class QueueCallsForCategorizationJob implements ShouldQueue
 
         $calls = $query->limit($this->limit)->get(['id']);
 
+        // Dispatch report generation even when no calls require categorization.
+        $dispatchReportGeneration = function (int $delaySeconds = 0): void {
+            if (! $this->fromDate || ! $this->toDate) {
+                return;
+            }
+
+            Log::info('QueueCallsForCategorizationJob: scheduling report generation', [
+                'company_id' => $this->companyId,
+                'delay_seconds' => $delaySeconds,
+                'from_date' => $this->fromDate,
+                'to_date' => $this->toDate,
+            ]);
+
+            GenerateWeeklyPbxReportsJob::dispatch($this->fromDate, $this->toDate, $this->pipelineRunId)
+                ->onQueue($this->targetQueue)
+                ->delay(now()->addSeconds($delaySeconds));
+
+            if ($this->pipelineRunId) {
+                $run = PipelineRun::query()->find($this->pipelineRunId);
+                if ($run) {
+                    $run->upsertStage('report_generation', [
+                        'status' => 'queued',
+                        'metrics' => [
+                            'delay_seconds' => $delaySeconds,
+                        ],
+                        'finished_at' => now(),
+                    ]);
+                    $run->markQueued('report_generation');
+                }
+            }
+        };
+
         if ($calls->isEmpty()) {
             Log::info('QueueCallsForCategorizationJob: no calls to categorize', [
                 'company_id' => $this->companyId,
             ]);
+
+            if ($this->pipelineRunId) {
+                $run = PipelineRun::query()->find($this->pipelineRunId);
+                if ($run) {
+                    $run->upsertStage('call_categorization', [
+                        'status' => 'completed',
+                        'metrics' => [
+                            'queued_calls' => 0,
+                        ],
+                        'finished_at' => now(),
+                    ]);
+                }
+            }
+
+            $dispatchReportGeneration(0);
             return;
         }
 
@@ -85,32 +132,7 @@ class QueueCallsForCategorizationJob implements ShouldQueue
         // Dispatch report generation AFTER categorization completes
         // Calculate delay: number of chunks * 2 seconds per chunk + buffer for processing
         $delaySeconds = ($chunks->count() * 2) + 30; // 30s buffer for categorization processing
-        
-        if ($this->fromDate && $this->toDate) {
-            Log::info('QueueCallsForCategorizationJob: scheduling report generation', [
-                'company_id' => $this->companyId,
-                'delay_seconds' => $delaySeconds,
-                'from_date' => $this->fromDate,
-                'to_date' => $this->toDate,
-            ]);
-            
-            GenerateWeeklyPbxReportsJob::dispatch($this->fromDate, $this->toDate, $this->pipelineRunId)
-                ->onQueue($this->targetQueue)
-                ->delay(now()->addSeconds($delaySeconds));
 
-            if ($this->pipelineRunId) {
-                $run = PipelineRun::query()->find($this->pipelineRunId);
-                if ($run) {
-                    $run->upsertStage('report_generation', [
-                        'status' => 'queued',
-                        'metrics' => [
-                            'delay_seconds' => $delaySeconds,
-                        ],
-                        'finished_at' => now(),
-                    ]);
-                    $run->markQueued('report_generation');
-                }
-            }
-        }
+        $dispatchReportGeneration($delaySeconds);
     }
 }
