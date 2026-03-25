@@ -196,7 +196,8 @@ class CallInsightAnalyzer
         }
 
         // Return highest-scoring intent
-        return array_key_first(array_reverse(asort($scores, SORT_NUMERIC) || $scores));
+        arsort($scores, SORT_NUMERIC);
+        return array_key_first($scores);
     }
 
     /**
@@ -227,7 +228,8 @@ class CallInsightAnalyzer
             return 'general';
         }
 
-        return array_key_first(array_reverse(asort($scores, SORT_NUMERIC) || $scores));
+        arsort($scores, SORT_NUMERIC);
+        return array_key_first($scores);
     }
 
     /**

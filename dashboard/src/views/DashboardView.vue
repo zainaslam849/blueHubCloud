@@ -39,10 +39,13 @@ async function loadAiPending(): Promise<void> {
     aiError.value = null;
 
     try {
-        const stats = await getAiPendingStats({ steps: ["summary", "categories"] });
+        const stats = await getAiPendingStats({
+            steps: ["summary", "categories"],
+        });
         aiPending.value = stats.total_pending;
     } catch (e) {
-        aiError.value = e instanceof Error ? e.message : "Failed to load AI pending stats";
+        aiError.value =
+            e instanceof Error ? e.message : "Failed to load AI pending stats";
     } finally {
         loadingAiPending.value = false;
     }
@@ -104,9 +107,13 @@ onMounted(async () => {
             <Card title="Health" subtitle="Pipeline snapshot">
                 <div class="kv">
                     <div class="k">AI pending calls</div>
-                    <div class="v">{{ loadingAiPending ? "..." : aiPending }}</div>
+                    <div class="v">
+                        {{ loadingAiPending ? "..." : aiPending }}
+                    </div>
                     <div class="k">AI processing health</div>
-                    <div class="v" :class="aiHealthClass">{{ aiHealthText }}</div>
+                    <div class="v" :class="aiHealthClass">
+                        {{ aiHealthText }}
+                    </div>
                 </div>
                 <p v-if="aiError" class="error-text">{{ aiError }}</p>
                 <div class="actions-row">

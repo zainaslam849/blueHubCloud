@@ -40,7 +40,9 @@ export type AiRegeneratePayload = {
     steps: AiProcessingStep[];
 };
 
-function toQueryParams(scope: AiPendingScope): Record<string, string | string[]> {
+function toQueryParams(
+    scope: AiPendingScope,
+): Record<string, string | string[]> {
     const params: Record<string, string | string[]> = {};
 
     if (typeof scope.company_id === "number") {
@@ -65,9 +67,12 @@ function toQueryParams(scope: AiPendingScope): Record<string, string | string[]>
 export async function getAiPendingStats(
     scope: AiPendingScope = {},
 ): Promise<AiPendingStats> {
-    const response = await adminApi.get<{ data: AiPendingStats }>("/ai/pending", {
-        params: toQueryParams(scope),
-    });
+    const response = await adminApi.get<{ data: AiPendingStats }>(
+        "/ai/pending",
+        {
+            params: toQueryParams(scope),
+        },
+    );
 
     return response.data.data;
 }

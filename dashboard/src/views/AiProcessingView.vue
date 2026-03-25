@@ -36,7 +36,10 @@ const lastPolledPending = ref(0);
 const pollTimer = ref<number | null>(null);
 
 const canPreview = computed(
-    () => fromDate.value !== "" && toDate.value !== "" && selectedSteps.value.length > 0,
+    () =>
+        fromDate.value !== "" &&
+        toDate.value !== "" &&
+        selectedSteps.value.length > 0,
 );
 
 const progressPercent = computed(() => {
@@ -47,11 +50,17 @@ const progressPercent = computed(() => {
     const remaining = Math.max(0, lastPolledPending.value);
     const done = initialPending.value - remaining;
 
-    return Math.max(0, Math.min(100, Math.round((done / initialPending.value) * 100)));
+    return Math.max(
+        0,
+        Math.min(100, Math.round((done / initialPending.value) * 100)),
+    );
 });
 
 const isDone = computed(
-    () => polling.value && initialPending.value > 0 && lastPolledPending.value === 0,
+    () =>
+        polling.value &&
+        initialPending.value > 0 &&
+        lastPolledPending.value === 0,
 );
 
 function normalizeDateInput(value: unknown): string {
@@ -89,15 +98,16 @@ async function loadCompanies(): Promise<void> {
     loadingCompanies.value = true;
 
     try {
-        const response = await adminApi.get<{ data: Array<{ id: number; display_label: string }> }>(
-            "/companies/dropdown",
-        );
+        const response = await adminApi.get<{
+            data: Array<{ id: number; display_label: string }>;
+        }>("/companies/dropdown");
         companies.value = (response.data.data ?? []).map((item) => ({
             id: item.id,
             display_label: item.display_label,
         }));
     } catch (e) {
-        error.value = e instanceof Error ? e.message : "Failed to load companies";
+        error.value =
+            e instanceof Error ? e.message : "Failed to load companies";
     } finally {
         loadingCompanies.value = false;
     }
@@ -121,7 +131,8 @@ async function runPreview(): Promise<void> {
         preview.value = stats;
         lastPolledPending.value = stats.total_pending;
     } catch (e) {
-        error.value = e instanceof Error ? e.message : "Failed to load pending stats";
+        error.value =
+            e instanceof Error ? e.message : "Failed to load pending stats";
     } finally {
         loadingPreview.value = false;
     }
@@ -181,7 +192,8 @@ async function startRegeneration(): Promise<void> {
             }
         }, 3000);
     } catch (e) {
-        error.value = e instanceof Error ? e.message : "Failed to queue regeneration";
+        error.value =
+            e instanceof Error ? e.message : "Failed to queue regeneration";
         stopPolling();
     } finally {
         submitting.value = false;
@@ -218,7 +230,10 @@ onUnmounted(() => {
             description="Preview and regenerate transcript, summary, and category processing for selected calls."
         />
 
-        <Card title="Scope" subtitle="Choose company, dates, and processing steps">
+        <Card
+            title="Scope"
+            subtitle="Choose company, dates, and processing steps"
+        >
             <div class="form-grid">
                 <label class="field">
                     <span>Company</span>
@@ -279,7 +294,11 @@ onUnmounted(() => {
                     :disabled="!canPreview || loadingPreview"
                     @click="runPreview"
                 >
-                    {{ loadingPreview ? "Loading preview..." : "Preview pending" }}
+                    {{
+                        loadingPreview
+                            ? "Loading preview..."
+                            : "Preview pending"
+                    }}
                 </button>
                 <button
                     class="btn"
@@ -292,7 +311,11 @@ onUnmounted(() => {
             </div>
         </Card>
 
-        <Card v-if="preview" title="Pending work" subtitle="Live view of remaining calls">
+        <Card
+            v-if="preview"
+            title="Pending work"
+            subtitle="Live view of remaining calls"
+        >
             <div class="stats-grid">
                 <div class="stat">
                     <div class="label">Summary pending</div>
@@ -304,7 +327,9 @@ onUnmounted(() => {
                 </div>
                 <div class="stat">
                     <div class="label">Transcript estimate</div>
-                    <div class="value">{{ preview.transcript_pending_estimate }}</div>
+                    <div class="value">
+                        {{ preview.transcript_pending_estimate }}
+                    </div>
                 </div>
                 <div class="stat">
                     <div class="label">Affected reports</div>
@@ -318,12 +343,17 @@ onUnmounted(() => {
                     <span>{{ progressPercent }}%</span>
                 </div>
                 <div class="progress-track">
-                    <div class="progress-fill" :style="{ width: `${progressPercent}%` }"></div>
+                    <div
+                        class="progress-fill"
+                        :style="{ width: `${progressPercent}%` }"
+                    ></div>
                 </div>
                 <p class="progress-note">
                     Remaining AI pending: {{ lastPolledPending }}
                 </p>
-                <p v-if="isDone" class="done">All selected AI steps have completed.</p>
+                <p v-if="isDone" class="done">
+                    All selected AI steps have completed.
+                </p>
             </div>
 
             <table v-if="preview.per_report.length > 0" class="report-table">

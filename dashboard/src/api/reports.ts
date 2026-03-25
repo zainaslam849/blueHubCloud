@@ -56,7 +56,9 @@ function normalizeDetail(raw: any): WeeklyReportDetail {
         ...summary,
         pdf_url: raw?.pdf_url ?? raw?.pdfUrl ?? null,
         csv_url: raw?.csv_url ?? raw?.csvUrl ?? null,
-        ai_incomplete: Boolean(raw?.ai_incomplete ?? raw?.header?.ai_incomplete),
+        ai_incomplete: Boolean(
+            raw?.ai_incomplete ?? raw?.header?.ai_incomplete,
+        ),
         ai_incomplete_call_count: Number(
             raw?.ai_incomplete_call_count ??
                 raw?.header?.ai_incomplete_call_count ??
@@ -73,7 +75,7 @@ export async function listWeeklyReports(): Promise<WeeklyReportSummary[]> {
 
 export async function getWeeklyReport(id: string): Promise<WeeklyReportDetail> {
     const { data } = await http.get(
-        `/api/v1/reports/${encodeURIComponent(id)}`
+        `/api/v1/reports/${encodeURIComponent(id)}`,
     );
     const item = unwrap<any>(data);
     return normalizeDetail(item);

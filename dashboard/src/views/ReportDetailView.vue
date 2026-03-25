@@ -90,12 +90,12 @@ const hourlyDistributionArray = computed(() => {
         .sort((a, b) => a.hour - b.hour);
 });
 
-const isAiIncomplete = computed(
-    () => Boolean(reportData.value?.header.ai_incomplete),
+const isAiIncomplete = computed(() =>
+    Boolean(reportData.value?.header.ai_incomplete),
 );
 
-const aiIncompleteCount = computed(
-    () => Number(reportData.value?.header.ai_incomplete_call_count ?? 0),
+const aiIncompleteCount = computed(() =>
+    Number(reportData.value?.header.ai_incomplete_call_count ?? 0),
 );
 
 const extractCategoryFromOpp = (opp: string): string => {
@@ -183,8 +183,8 @@ onMounted(async () => {
 
             <div v-if="isAiIncomplete" class="ai-alert">
                 <div>
-                    This report is incomplete. {{ aiIncompleteCount }} calls could
-                    not be AI-processed due to credit limits.
+                    This report is incomplete. {{ aiIncompleteCount }} calls
+                    could not be AI-processed due to credit limits.
                 </div>
                 <button class="btn" type="button" @click="goToAiRegeneration">
                     Regenerate AI for this report

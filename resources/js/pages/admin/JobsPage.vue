@@ -144,7 +144,9 @@
                     <span class="pipeline-error">{{ value || "—" }}</span>
                 </template>
                 <template #cell-transcript_signal="{ value }">
-                    <span class="pipeline-transcript-signal">{{ value || "—" }}</span>
+                    <span class="pipeline-transcript-signal">{{
+                        value || "—"
+                    }}</span>
                 </template>
                 <template #cell-actions="{ row }">
                     <BaseButton
@@ -182,10 +184,17 @@
                         }}
                     </p>
                 </div>
-                <div class="pipeline-diagnostic-item pipeline-diagnostic-item--wide">
+                <div
+                    class="pipeline-diagnostic-item pipeline-diagnostic-item--wide"
+                >
                     <p class="pipeline-diagnostic-label">Transcript signal</p>
-                    <p class="pipeline-diagnostic-value pipeline-diagnostic-signal">
-                        {{ overview.pipeline_diagnostics.transcript_signal || "—" }}
+                    <p
+                        class="pipeline-diagnostic-value pipeline-diagnostic-signal"
+                    >
+                        {{
+                            overview.pipeline_diagnostics.transcript_signal ||
+                            "—"
+                        }}
                     </p>
                 </div>
                 <div class="pipeline-diagnostic-item">
