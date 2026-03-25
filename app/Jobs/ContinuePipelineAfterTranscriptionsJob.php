@@ -175,6 +175,39 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             ->limit($this->summarizeLimit)
             ->get(['id']);
 
+        if ($callsToSummarize->isEmpty()) {
+            Log::info('ContinuePipelineAfterTranscriptionsJob: no calls eligible for summarization', [
+                'company_id' => $this->companyId,
+                'pipeline_run_id' => $this->pipelineRunId,
+                'from' => $this->fromDate,
+                'to' => $this->toDate,
+                'reason' => 'no_transcripts_available',
+            ]);
+
+            if ($pipelineRun) {
+                $pipelineRun->upsertStage('ai_summary', [
+                    'status' => 'completed',
+                    'metrics' => [
+                        'queued_summaries' => 0,
+                        'reason' => 'no_transcripts_available',
+                    ],
+                    'finished_at' => now(),
+                ]);
+            }
+
+            ContinuePipelineAfterSummariesJob::dispatch(
+                $this->companyId,
+                $this->fromDate,
+                $this->toDate,
+                $this->categorizeLimit,
+                $this->pipelineQueue,
+                $this->pipelineRunId,
+                $this->rangeDays,
+            )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(5));
+
+            return;
+        }
+
         QueueCallsForSummarizationJob::dispatch(
             $this->companyId,
             $this->summarizeLimit,
