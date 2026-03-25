@@ -87,6 +87,7 @@ class IngestPbxCallsJob implements ShouldQueue
             $cdrRowsReturned = 0;
             $cdrRowsSkippedInvalid = 0;
             $cdrRowsMissingEndpoints = 0;
+            $answeredCalls = 0;
             $transcriptionAttempts = 0;
             $transcriptionSkippedNoRecording = 0;
             $transcriptionNotFound = 0;
@@ -213,8 +214,24 @@ class IngestPbxCallsJob implements ShouldQueue
                 $epoch = $this->extractFieldValue($sourceRow, [2, 'Date/Time', 'datetime', 'timestamp', 'started_at']);
                 $status = $this->extractFieldValue($sourceRow, [6, 'Status', 'status', 'disposition']);
                 $callUid = $this->extractFieldValue($sourceRow, [7, 'Unique ID', 'uniqueid', 'unique_id']);
-                $recordingPath = $this->extractFieldValue($sourceRow, [8, 'Recording Path', 'recording_path']);
-                $recordingAvailableRaw = $this->extractFieldValue($sourceRow, [9, 'Recording Available', 'recording_available']);
+                $recordingPath = $this->extractFieldValue($sourceRow, [8, 'Recording Path', 'recording_path', 'recording', 'recording_file']);
+                $recordingPathSource = ! empty($rowByHeader) ? 'header_or_named' : 'raw_index_or_named';
+                if (($recordingPath === null || trim((string) $recordingPath) === '') && ! empty($rowByHeader)) {
+                    $recordingPath = $this->extractFieldValue($row, [8]);
+                    if ($recordingPath !== null && trim((string) $recordingPath) !== '') {
+                        $recordingPathSource = 'raw_index_8_fallback';
+                    }
+                }
+
+                $recordingAvailableRaw = $this->extractFieldValue($sourceRow, [9, 'Recording Available', 'recording_available', 'recording status', 'is_recorded']);
+                $recordingAvailableRawSource = ! empty($rowByHeader) ? 'header_or_named' : 'raw_index_or_named';
+                if (($recordingAvailableRaw === null || trim((string) $recordingAvailableRaw) === '') && ! empty($rowByHeader)) {
+                    $recordingAvailableRaw = $this->extractFieldValue($row, [9]);
+                    if ($recordingAvailableRaw !== null && trim((string) $recordingAvailableRaw) !== '') {
+                        $recordingAvailableRawSource = 'raw_index_9_fallback';
+                    }
+                }
+
                 $locationType = $this->extractFieldValue($sourceRow, [10, 'Location Type', 'location_type', 'department', 'queue']);
                 $recordingAvailable = $this->toBooleanLike($recordingAvailableRaw);
                 $recordingPathNormalized = is_string($recordingPath) ? trim($recordingPath) : '';
@@ -267,6 +284,9 @@ class IngestPbxCallsJob implements ShouldQueue
                     $finalStatus = 'unknown';
                 }
                 $isVerificationCandidate = $finalStatus === 'answered';
+                if ($isVerificationCandidate) {
+                    $answeredCalls++;
+                }
 
                 // Ensure duration is an integer billsec
                 $billsec = is_numeric($durationSeconds) ? (int) $durationSeconds : 0;
@@ -304,15 +324,21 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Include raw row for diagnostics and future column mapping enhancements.
                 if (is_array($pbxMetadata)) {
                     $pbxMetadata['raw_row'] = $row;
+                    $pbxMetadata['recording_available_raw'] = $recordingAvailableRaw;
                     $pbxMetadata['recording_available_normalized'] = $recordingAvailable;
                     $pbxMetadata['recording_available_effective'] = $recordingAvailableEffective;
+                    $pbxMetadata['recording_available_source'] = $recordingAvailableRawSource;
                     $pbxMetadata['recording_path_normalized'] = $recordingPathNormalized !== '' ? $recordingPathNormalized : null;
+                    $pbxMetadata['recording_path_source'] = $recordingPathSource;
                 } else {
                     $pbxMetadata = [
                         'raw_row' => $row,
+                        'recording_available_raw' => $recordingAvailableRaw,
                         'recording_available_normalized' => $recordingAvailable,
                         'recording_available_effective' => $recordingAvailableEffective,
+                        'recording_available_source' => $recordingAvailableRawSource,
                         'recording_path_normalized' => $recordingPathNormalized !== '' ? $recordingPathNormalized : null,
+                        'recording_path_source' => $recordingPathSource,
                     ];
                 }
 
@@ -432,9 +458,11 @@ class IngestPbxCallsJob implements ShouldQueue
                             'pbx_unique_id' => $callUid,
                             'is_verification_candidate' => $isVerificationCandidate,
                             'recording_available_raw' => $recordingAvailableRaw,
+                            'recording_available_source' => $recordingAvailableRawSource,
                             'recording_available_normalized' => $recordingAvailable,
                             'recording_available_effective' => $recordingAvailableEffective,
                             'recording_path' => $recordingPathNormalized,
+                            'recording_path_source' => $recordingPathSource,
                         ]);
                     }
 
@@ -570,6 +598,22 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
             }
 
+            $skippedNoRecordingRatio = $answeredCalls > 0
+                ? round(($transcriptionSkippedNoRecording / $answeredCalls) * 100, 2)
+                : 0.0;
+
+            if ($answeredCalls > 0 && $skippedNoRecordingRatio >= 80.0) {
+                Log::warning('PBX_TRACE transcription.high_skip_no_recording_ratio', [
+                    'company_id' => $this->companyId,
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
+                    'answered_calls' => $answeredCalls,
+                    'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
+                    'skip_ratio_percent' => $skippedNoRecordingRatio,
+                    'message' => 'High skipped-no-recording ratio detected. Verify PBX recording policy and CDR column mapping.',
+                ]);
+            }
+
             Log::info('PBXware ingestion summary', [
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
@@ -580,11 +624,13 @@ class IngestPbxCallsJob implements ShouldQueue
                 'cdr_rows_returned' => $cdrRowsReturned,
                 'cdr_rows_skipped_invalid' => $cdrRowsSkippedInvalid,
                 'cdr_rows_missing_endpoints' => $cdrRowsMissingEndpoints,
+                'answered_calls' => $answeredCalls,
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
                 'transcriptions_stored' => $transcriptionsStored,
                 'transcription_attempts' => $transcriptionAttempts,
                 'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
+                'transcription_skipped_no_recording_ratio_percent' => $skippedNoRecordingRatio,
                 'transcription_not_found' => $transcriptionNotFound,
             ]);
 
@@ -596,6 +642,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 'transcription_attempts' => $transcriptionAttempts,
                 'transcriptions_stored' => $transcriptionsStored,
                 'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
+                'transcription_skipped_no_recording_ratio_percent' => $skippedNoRecordingRatio,
                 'transcription_not_found' => $transcriptionNotFound,
             ];
 
@@ -826,11 +873,13 @@ class IngestPbxCallsJob implements ShouldQueue
             return null;
         }
 
-        if (in_array($normalized, ['1', 'true', 'yes', 'y', 'on'], true)) {
+        $compact = str_replace([' ', '_', '-'], '', $normalized);
+
+        if (in_array($compact, ['1', 'true', 'yes', 'y', 'on', 't', 'enabled', 'available', 'recorded'], true)) {
             return true;
         }
 
-        if (in_array($normalized, ['0', 'false', 'no', 'n', 'off'], true)) {
+        if (in_array($compact, ['0', 'false', 'no', 'n', 'off', 'f', 'disabled', 'unavailable', 'notrecorded'], true)) {
             return false;
         }
 
