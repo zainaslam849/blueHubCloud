@@ -6,6 +6,7 @@ use App\Contracts\ProviderAdapterInterface;
 use App\Models\PbxRawPayload;
 use App\Services\AwsSecretsService;
 use Carbon\Carbon;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -132,13 +133,23 @@ class PbxwareAdapter implements ProviderAdapterInterface
     public function listTenants(): array
     {
         try {
-            $response = Http::timeout(self::TIMEOUT)
-                ->get($this->baseUrl, [
-                    'action' => 'pbxware.tenant.list',
-                    'apikey' => $this->apiKey,
-                ])
-                ->throw()
-                ->json();
+            $result = $this->executeQueryRequest(
+                action: 'pbxware.tenant.list',
+                params: [],
+                timeoutSeconds: self::TIMEOUT,
+                endpointLabel: 'tenant.list',
+                serverId: null,
+                externalId: null,
+            );
+
+            if ($result['status'] < 200 || $result['status'] >= 300) {
+                throw new RuntimeException("PBXware tenant.list failed ({$result['status']})");
+            }
+
+            $response = $result['decoded'];
+            if (! is_array($response)) {
+                throw new RuntimeException('PBXware tenant.list returned non-JSON payload');
+            }
 
             // Store raw payload for audit/debugging
             $this->storeRawPayload(
@@ -189,17 +200,28 @@ class PbxwareAdapter implements ProviderAdapterInterface
             $start = Carbon::parse($startDate)->format('n-d-Y');
             $end = Carbon::parse($endDate)->format('n-d-Y');
 
-            $response = Http::timeout(self::TIMEOUT)
-                ->get($this->baseUrl, [
-                    'action' => 'pbxware.cdr.download',
+            $result = $this->executeQueryRequest(
+                action: 'pbxware.cdr.download',
+                params: [
                     'server' => $serverId,
                     'start' => $start,
                     'end' => $end,
-                    'status' => 8, // Completed calls only
-                    'apikey' => $this->apiKey,
-                ])
-                ->throw()
-                ->json();
+                    'status' => 8,
+                ],
+                timeoutSeconds: self::TIMEOUT,
+                endpointLabel: 'cdr.download',
+                serverId: $serverId,
+                externalId: null,
+            );
+
+            if ($result['status'] < 200 || $result['status'] >= 300) {
+                throw new RuntimeException("PBXware cdr.download failed ({$result['status']})");
+            }
+
+            $response = $result['decoded'];
+            if (! is_array($response)) {
+                throw new RuntimeException('PBXware cdr.download returned non-JSON payload');
+            }
 
             // Store raw payload for audit/debugging
             $this->storeRawPayload(
@@ -250,15 +272,32 @@ class PbxwareAdapter implements ProviderAdapterInterface
     public function fetchTranscription(string $serverId, string $externalCallId): array
     {
         try {
-            $response = Http::timeout(self::TRANSCRIPTION_TIMEOUT)
-                ->get($this->baseUrl, [
-                    'action' => 'pbxware.transcription.get',
+            $result = $this->executeQueryRequest(
+                action: 'pbxware.transcription.get',
+                params: [
                     'uniqueid' => $externalCallId,
                     'server' => $serverId,
-                    'apikey' => $this->apiKey,
-                ])
-                ->throw()
-                ->json();
+                ],
+                timeoutSeconds: self::TRANSCRIPTION_TIMEOUT,
+                endpointLabel: 'transcription.get',
+                serverId: $serverId,
+                externalId: $externalCallId,
+            );
+
+            if ($result['status'] < 200 || $result['status'] >= 300) {
+                throw new RuntimeException("PBXware transcription.get failed ({$result['status']})");
+            }
+
+            $response = $result['decoded'];
+            if (! is_array($response)) {
+                Log::warning('PbxwareAdapter: transcription.get returned non-JSON body, treating as empty', [
+                    'server_id' => $serverId,
+                    'external_call_id' => $externalCallId,
+                    'status' => $result['status'],
+                    'content_type' => $result['content_type'],
+                ]);
+                $response = [];
+            }
 
             // Store raw payload for audit/debugging
             $this->storeRawPayload(
@@ -358,5 +397,92 @@ class PbxwareAdapter implements ProviderAdapterInterface
             'processing_status' => 'failed',
             'processing_error' => $error,
         ]);
+    }
+
+    /**
+     * Execute PBXware query endpoint and log exact raw response before decoding.
+     *
+     * @return array{status:int,body:string,decoded:mixed,content_type:string,url:string}
+     */
+    private function executeQueryRequest(
+        string $action,
+        array $params,
+        int $timeoutSeconds,
+        string $endpointLabel,
+        ?string $serverId,
+        ?string $externalId,
+    ): array {
+        $query = array_merge($params, [
+            'action' => $action,
+            'apikey' => $this->apiKey,
+        ]);
+
+        /** @var Response $httpResponse */
+        $httpResponse = Http::timeout($timeoutSeconds)->get($this->baseUrl, $query);
+
+        $rawBody = (string) $httpResponse->body();
+        $contentType = (string) ($httpResponse->header('Content-Type') ?? '');
+        $requestUrl = $this->redactUrl((string) $httpResponse->effectiveUri());
+
+        Log::info('PBXWARE_EXACT_RESPONSE', [
+            'endpoint' => $endpointLabel,
+            'action' => $action,
+            'server_id' => $serverId,
+            'external_id' => $externalId,
+            'status' => $httpResponse->status(),
+            'content_type' => $contentType,
+            'url' => $requestUrl,
+            'request_params' => $this->redactRequestParams($query),
+            'raw_body' => $this->redactRawResponseBody($rawBody),
+        ]);
+
+        $decoded = null;
+        if ($rawBody !== '') {
+            $decoded = json_decode($rawBody, true);
+        }
+
+        Log::info('PBX_TRACE endpoint.raw_shape', [
+            'endpoint' => $endpointLabel,
+            'action' => $action,
+            'server_id' => $serverId,
+            'external_id' => $externalId,
+            'status' => $httpResponse->status(),
+            'json_decode_ok' => is_array($decoded),
+            'json_error' => is_array($decoded) ? null : json_last_error_msg(),
+            'raw_len' => strlen($rawBody),
+            'content_type' => $contentType,
+        ]);
+
+        return [
+            'status' => $httpResponse->status(),
+            'body' => $rawBody,
+            'decoded' => $decoded,
+            'content_type' => $contentType,
+            'url' => $requestUrl,
+        ];
+    }
+
+    private function redactUrl(string $url): string
+    {
+        return (string) preg_replace('/(apikey=)([^&]+)/i', '$1REDACTED', $url);
+    }
+
+    private function redactRequestParams(array $params): array
+    {
+        $out = $params;
+        if (isset($out['apikey'])) {
+            $out['apikey'] = 'REDACTED';
+        }
+
+        return $out;
+    }
+
+    private function redactRawResponseBody(string $rawBody): string
+    {
+        $rawBody = preg_replace('/(apikey=)([^&\s]+)/i', '$1REDACTED', $rawBody) ?? $rawBody;
+        $rawBody = preg_replace('/("api_key"\s*:\s*")([^"]+)(")/i', '$1REDACTED$3', $rawBody) ?? $rawBody;
+        $rawBody = preg_replace('/("apikey"\s*:\s*")([^"]+)(")/i', '$1REDACTED$3', $rawBody) ?? $rawBody;
+
+        return $rawBody;
     }
 }
