@@ -92,12 +92,16 @@ class SummarizeSingleCallJob implements ShouldQueue
             }
 
             $call->ai_summary = $summary;
+            $call->ai_summary_status = 'completed';
             $call->save();
 
             Log::info("✓ Summarized call {$this->callId} using {$aiSettings->categorization_model}");
 
         } catch (\Exception $e) {
             if ($this->isOpenRouterCreditLimitError($e)) {
+                $call->ai_summary_status = 'credit_exhausted';
+                $call->save();
+
                 Log::warning("Skipping summary for call {$this->callId} due to OpenRouter credit/token limit", [
                     'call_id' => $this->callId,
                     'model' => $aiSettings->categorization_model ?? 'unknown',

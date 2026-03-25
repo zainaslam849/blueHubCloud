@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
 use App\Http\Controllers\Admin\AdminCompaniesController;
 use App\Http\Controllers\Admin\AdminPbxAccountsController;
+use App\Http\Controllers\Admin\AdminAiRegenerateController;
 use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
 use App\Http\Controllers\Admin\AdminTenantSyncController;
@@ -102,6 +103,8 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/weekly-call-reports', [AdminWeeklyCallReportsController::class, 'index']);
         Route::get('/weekly-call-reports/{id}', [AdminWeeklyCallReportsController::class, 'show'])
             ->whereNumber('id');
+        Route::get('/ai/pending', [AdminAiRegenerateController::class, 'pendingStats']);
+        Route::post('/ai/regenerate', [AdminAiRegenerateController::class, 'regenerate']);
         
         // Category routes
         Route::get('/categories', [CategoryController::class, 'index']);

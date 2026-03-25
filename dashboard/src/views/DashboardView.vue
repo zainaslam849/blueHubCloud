@@ -1,12 +1,19 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import Card from "../components/ui/Card.vue";
 import DashboardSummaryCards from "../components/dashboard/DashboardSummaryCards.vue";
 import PageHeader from "../components/ui/PageHeader.vue";
 import TriggerIngestButton from "../components/admin/TriggerIngestButton.vue";
+import { getAiPendingStats } from "../api/aiProcessing";
 
 // UI-only: demonstrate loading + empty states without backend calls.
 const demoState = ref<"loaded" | "loading" | "empty">("loaded");
+const loadingAiPending = ref(false);
+const aiPending = ref(0);
+const aiError = ref<string | null>(null);
+
+const router = useRouter();
 
 const summaryData = {
     totalCallsWeek: 1248,
@@ -14,6 +21,36 @@ const summaryData = {
     reportsGenerated: 12,
     currentProcessingJobs: 3,
 } as const;
+
+const aiHealthText = computed(() => {
+    if (loadingAiPending.value) {
+        return "Loading";
+    }
+
+    return aiPending.value > 0 ? "Action required" : "Healthy";
+});
+
+const aiHealthClass = computed(() =>
+    aiPending.value > 0 ? "health--warning" : "health--ok",
+);
+
+async function loadAiPending(): Promise<void> {
+    loadingAiPending.value = true;
+    aiError.value = null;
+
+    try {
+        const stats = await getAiPendingStats({ steps: ["summary", "categories"] });
+        aiPending.value = stats.total_pending;
+    } catch (e) {
+        aiError.value = e instanceof Error ? e.message : "Failed to load AI pending stats";
+    } finally {
+        loadingAiPending.value = false;
+    }
+}
+
+onMounted(async () => {
+    await loadAiPending();
+});
 </script>
 
 <template>
@@ -66,14 +103,27 @@ const summaryData = {
 
             <Card title="Health" subtitle="Pipeline snapshot">
                 <div class="kv">
-                    <div class="k">Ingestion</div>
-                    <div class="v">OK</div>
-                    <div class="k">Processing</div>
-                    <div class="v">OK</div>
-                    <div class="k">Transcription</div>
-                    <div class="v">OK</div>
-                    <div class="k">Reporting</div>
-                    <div class="v">OK</div>
+                    <div class="k">AI pending calls</div>
+                    <div class="v">{{ loadingAiPending ? "..." : aiPending }}</div>
+                    <div class="k">AI processing health</div>
+                    <div class="v" :class="aiHealthClass">{{ aiHealthText }}</div>
+                </div>
+                <p v-if="aiError" class="error-text">{{ aiError }}</p>
+                <div class="actions-row">
+                    <button
+                        class="btn btn--ghost"
+                        type="button"
+                        @click="loadAiPending"
+                    >
+                        Refresh pending
+                    </button>
+                    <button
+                        class="btn"
+                        type="button"
+                        @click="router.push({ name: 'ai-processing' })"
+                    >
+                        Manage AI processing
+                    </button>
                 </div>
             </Card>
         </section>
@@ -113,6 +163,26 @@ const summaryData = {
 
 .v {
     font-weight: 700;
+}
+
+.health--ok {
+    color: #1f9d55;
+}
+
+.health--warning {
+    color: #b7791f;
+}
+
+.actions-row {
+    margin-top: var(--space-3);
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.error-text {
+    margin-top: 10px;
+    color: #a60020;
 }
 
 @media (max-width: 960px) {

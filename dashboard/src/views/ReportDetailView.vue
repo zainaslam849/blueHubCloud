@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 interface ReportData {
     header: {
@@ -14,6 +14,8 @@ interface ReportData {
         };
         generated_at: string;
         status: string;
+        ai_incomplete?: boolean;
+        ai_incomplete_call_count?: number;
     };
     executive_summary: string;
     metrics: {
@@ -52,6 +54,7 @@ interface ReportData {
 }
 
 const route = useRoute();
+const router = useRouter();
 const loading = ref(true);
 const error = ref<string | null>(null);
 const reportData = ref<ReportData | null>(null);
@@ -87,21 +90,40 @@ const hourlyDistributionArray = computed(() => {
         .sort((a, b) => a.hour - b.hour);
 });
 
-const currentDate = computed(() => {
-    const now = new Date();
-    return now.toISOString().split("T")[0];
-});
+const isAiIncomplete = computed(
+    () => Boolean(reportData.value?.header.ai_incomplete),
+);
+
+const aiIncompleteCount = computed(
+    () => Number(reportData.value?.header.ai_incomplete_call_count ?? 0),
+);
 
 const extractCategoryFromOpp = (opp: string): string => {
     // Extract category name from format like "Property Enquiry (Availability/Pricing): ..."
     const match = opp.match(/^([^:]+)/);
-    return match ? match[1].trim() : opp;
+    const category = match?.[1];
+    return category ? category.trim() : opp;
 };
 
 const extractDescriptionFromOpp = (opp: string): string => {
     // Extract description after the colon
     const match = opp.match(/:\s*(.+)$/);
-    return match ? match[1].trim() : opp;
+    const description = match?.[1];
+    return description ? description.trim() : opp;
+};
+
+const goToAiRegeneration = (): void => {
+    const report = reportData.value;
+    if (!report) return;
+
+    router.push({
+        name: "ai-processing",
+        query: {
+            company_id: report.header.company?.id,
+            from_date: report.header.week_range.start,
+            to_date: report.header.week_range.end,
+        },
+    });
 };
 
 onMounted(async () => {
@@ -157,6 +179,16 @@ onMounted(async () => {
                         ).toLocaleDateString()
                     }}
                 </p>
+            </div>
+
+            <div v-if="isAiIncomplete" class="ai-alert">
+                <div>
+                    This report is incomplete. {{ aiIncompleteCount }} calls could
+                    not be AI-processed due to credit limits.
+                </div>
+                <button class="btn" type="button" @click="goToAiRegeneration">
+                    Regenerate AI for this report
+                </button>
             </div>
 
             <!-- Table of Contents -->
@@ -523,6 +555,19 @@ body {
     margin-bottom: 10px;
 }
 
+.ai-alert {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border: 1px solid #f7c873;
+    background: #fff8e6;
+    color: #7c4a00;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 h1,
 h2,
 h3,
@@ -670,6 +715,11 @@ tr:nth-child(even) {
     th,
     td {
         padding: 8px;
+    }
+
+    .ai-alert {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }
 </style>

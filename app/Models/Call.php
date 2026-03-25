@@ -30,12 +30,14 @@ class Call extends Model
         'has_transcription',
         'transcript_text',
         'ai_summary',
+        'ai_summary_status',
         'transcription_checked_at',
         'category_id',
         'sub_category_id',
         'sub_category_label',
         'category_source',
         'category_confidence',
+        'ai_category_status',
         'categorized_at',
     ];
 
@@ -46,6 +48,8 @@ class Call extends Model
         'transcription_checked_at' => 'datetime',
         'categorized_at' => 'datetime',
         'category_confidence' => 'float',
+        'ai_summary_status' => 'string',
+        'ai_category_status' => 'string',
         'pbx_metadata' => 'array',
     ];
 

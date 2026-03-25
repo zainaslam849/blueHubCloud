@@ -421,6 +421,18 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         })
                         ->update(['weekly_call_report_id' => $reportModel->id]);
 
+                    $aiIncompleteCallCount = (int) DB::table('calls')
+                        ->where('weekly_call_report_id', $reportModel->id)
+                        ->where(function ($query) {
+                            $query->where('ai_summary_status', 'credit_exhausted')
+                                ->orWhere('ai_category_status', 'credit_exhausted');
+                        })
+                        ->count();
+
+                    $reportModel->ai_incomplete = $aiIncompleteCallCount > 0;
+                    $reportModel->ai_incomplete_call_count = $aiIncompleteCallCount;
+                    $reportModel->save();
+
                     \Illuminate\Support\Facades\Log::info('Assigned calls to weekly report', [
                         'report_id' => $reportModel->id,
                         'company_id' => $companyId,
@@ -428,6 +440,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         'week_start' => $weekStart->toDateString(),
                         'week_end' => $weekEnd->toDateString(),
                         'affected_rows' => $affectedRows,
+                        'ai_incomplete' => $reportModel->ai_incomplete,
+                        'ai_incomplete_call_count' => $aiIncompleteCallCount,
                     ]);
                 } catch (\Throwable $e) {
                     // Non-fatal: indexing of calls to reports should not stop report generation

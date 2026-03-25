@@ -26,6 +26,18 @@ const routes: RouteRecordRaw[] = [
                 meta: { title: "Reports" },
             },
             {
+                path: "reports/:id",
+                name: "report-detail",
+                component: () => import("../views/ReportDetailView.vue"),
+                meta: { title: "Report Detail" },
+            },
+            {
+                path: "ai-processing",
+                name: "ai-processing",
+                component: () => import("../views/AiProcessingView.vue"),
+                meta: { title: "AI Processing" },
+            },
+            {
                 path: "account",
                 name: "account",
                 component: () => import("../views/AccountView.vue"),

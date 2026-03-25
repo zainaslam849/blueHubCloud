@@ -118,6 +118,9 @@ class CategorizeSingleCallJob implements ShouldQueue
             );
 
             if ($persistResult['success']) {
+                $call->ai_category_status = 'completed';
+                $call->save();
+
                 $logMsg = "✓ Categorized call {$this->callId} as '{$result['category']}' using {$aiSettings->categorization_model}";
                 if ($persistResult['fallback_used']) {
                     $logMsg .= " (fallback: {$persistResult['reason']})";
@@ -135,6 +138,9 @@ class CategorizeSingleCallJob implements ShouldQueue
 
         } catch (\Exception $e) {
             if ($this->isOpenRouterCreditLimitError($e)) {
+                $call->ai_category_status = 'credit_exhausted';
+                $call->save();
+
                 Log::warning("Skipping categorization for call {$this->callId} due to OpenRouter credit/token limit", [
                     'call_id' => $this->callId,
                     'model' => $aiSettings->categorization_model ?? 'unknown',

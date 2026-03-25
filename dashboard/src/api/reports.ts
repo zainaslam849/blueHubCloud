@@ -20,6 +20,8 @@ export type WeeklyReportSummary = {
 export type WeeklyReportDetail = WeeklyReportSummary & {
     pdf_url?: string | null;
     csv_url?: string | null;
+    ai_incomplete?: boolean;
+    ai_incomplete_call_count?: number;
 };
 
 function unwrap<T>(payload: any): T {
@@ -54,6 +56,12 @@ function normalizeDetail(raw: any): WeeklyReportDetail {
         ...summary,
         pdf_url: raw?.pdf_url ?? raw?.pdfUrl ?? null,
         csv_url: raw?.csv_url ?? raw?.csvUrl ?? null,
+        ai_incomplete: Boolean(raw?.ai_incomplete ?? raw?.header?.ai_incomplete),
+        ai_incomplete_call_count: Number(
+            raw?.ai_incomplete_call_count ??
+                raw?.header?.ai_incomplete_call_count ??
+                0,
+        ),
     };
 }
 

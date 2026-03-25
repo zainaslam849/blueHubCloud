@@ -92,6 +92,7 @@ class IngestPbxCallsJob implements ShouldQueue
             $transcriptionSkippedNoRecording = 0;
             $transcriptionNotFound = 0;
             $splitWindowRetries = 0;
+            $paginationUnresolvedSingleDay = 0;
 
             $windows = $this->buildCdrDateWindows($range['from'], $range['to']);
             $pendingWindows = $windows;
@@ -162,31 +163,38 @@ class IngestPbxCallsJob implements ShouldQueue
                     $splitWindows = $this->splitCdrWindow($window['from'], $window['to']);
 
                     if (empty($splitWindows)) {
-                        throw new PbxwareClientException(sprintf(
-                            'PBX pagination unresolved for single-day window %s to %s (server %s). Failing to avoid partial ingestion.',
-                            $params['start'],
-                            $params['end'],
-                            $serverId
-                        ));
+                        $paginationUnresolvedSingleDay++;
+
+                        Log::warning('PBX_TRACE cdr.pagination.unresolved_single_day', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'server_id' => $serverId,
+                            'window_index' => $windowIndex,
+                            'start' => $params['start'],
+                            'end' => $params['end'],
+                            'rows' => $rowCount,
+                            'action' => 'accept_partial_window_and_continue',
+                            'message' => 'PBX indicated additional pages for an unsplittable single-day window. Accepting current rows and continuing.',
+                        ]);
+                    } else {
+                        // Reprocess smaller windows first; skip current partial window rows to avoid accepting truncated data.
+                        array_unshift($pendingWindows, ...array_reverse($splitWindows));
+                        $splitWindowRetries++;
+
+                        Log::warning('PBX_TRACE cdr.window.paginated', [
+                            'company_id' => $this->companyId,
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'server_id' => $serverId,
+                            'window_index' => $windowIndex,
+                            'start' => $params['start'],
+                            'end' => $params['end'],
+                            'rows' => $rowCount,
+                            'action' => 'window_split_retry',
+                            'message' => 'PBX indicated additional pages. Splitting window and retrying to avoid partial ingestion.',
+                        ]);
+
+                        continue;
                     }
-
-                    // Reprocess smaller windows first; skip current partial window rows to avoid accepting truncated data.
-                    array_unshift($pendingWindows, ...array_reverse($splitWindows));
-                    $splitWindowRetries++;
-
-                    Log::warning('PBX_TRACE cdr.window.paginated', [
-                        'company_id' => $this->companyId,
-                        'company_pbx_account_id' => $this->companyPbxAccountId,
-                        'server_id' => $serverId,
-                        'window_index' => $windowIndex,
-                        'start' => $params['start'],
-                        'end' => $params['end'],
-                        'rows' => $rowCount,
-                        'action' => 'window_split_retry',
-                        'message' => 'PBX indicated additional pages. Splitting window and retrying to avoid partial ingestion.',
-                    ]);
-
-                    continue;
                 }
 
                 foreach ($csvRows as $rowIndex => $row) {
@@ -621,6 +629,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 'inline_transcription_fetch' => 'recording_available_only',
                 'split_window_retries' => $splitWindowRetries,
                 'strict_lossless_discovery' => true,
+                'pagination_unresolved_single_day' => $paginationUnresolvedSingleDay,
                 'cdr_rows_returned' => $cdrRowsReturned,
                 'cdr_rows_skipped_invalid' => $cdrRowsSkippedInvalid,
                 'cdr_rows_missing_endpoints' => $cdrRowsMissingEndpoints,
@@ -639,6 +648,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 'calls_skipped_existing' => $callsSkipped,
                 'split_window_retries' => $splitWindowRetries,
                 'strict_lossless_discovery' => true,
+                'pagination_unresolved_single_day' => $paginationUnresolvedSingleDay,
                 'transcription_attempts' => $transcriptionAttempts,
                 'transcriptions_stored' => $transcriptionsStored,
                 'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
