@@ -278,6 +278,9 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             ->count();
 
         $terminal = max(0, $answeredTotal - $pending - $saved);
+        $recordingUnavailableCandidates = (clone $baseQuery)
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.recording_available_effective')) = 'false'")
+            ->count();
         $coveragePct = $answeredTotal > 0
             ? round(($saved / $answeredTotal) * 100, 2)
             : 100.0;
@@ -287,6 +290,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             'successful' => $saved,
             'remaining' => $pending,
             'terminal_non_transcript' => $terminal,
+            'recording_unavailable_candidates' => $recordingUnavailableCandidates,
             'coverage_pct' => $coveragePct,
         ];
     }

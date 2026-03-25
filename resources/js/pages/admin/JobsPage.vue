@@ -143,6 +143,9 @@
                 <template #cell-last_error="{ value }">
                     <span class="pipeline-error">{{ value || "—" }}</span>
                 </template>
+                <template #cell-transcript_signal="{ value }">
+                    <span class="pipeline-transcript-signal">{{ value || "—" }}</span>
+                </template>
                 <template #cell-actions="{ row }">
                     <BaseButton
                         size="sm"
@@ -177,6 +180,12 @@
                         {{
                             overview.pipeline_diagnostics.pending_transcriptions
                         }}
+                    </p>
+                </div>
+                <div class="pipeline-diagnostic-item pipeline-diagnostic-item--wide">
+                    <p class="pipeline-diagnostic-label">Transcript signal</p>
+                    <p class="pipeline-diagnostic-value pipeline-diagnostic-signal">
+                        {{ overview.pipeline_diagnostics.transcript_signal || "—" }}
                     </p>
                 </div>
                 <div class="pipeline-diagnostic-item">
@@ -319,6 +328,7 @@ const pipelineColumns = [
     { key: "range", label: "Range" },
     { key: "status", label: "Status" },
     { key: "current_stage", label: "Current stage" },
+    { key: "transcript_signal", label: "Transcript signal" },
     { key: "resume_count", label: "Resumes" },
     { key: "started_at", label: "Started" },
     { key: "updated_at", label: "Updated" },
@@ -580,6 +590,14 @@ async function startWorkers() {
     text-overflow: ellipsis;
 }
 
+.pipeline-transcript-signal {
+    display: inline-block;
+    max-width: 420px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .resume-feedback {
     margin-top: 8px;
     font-size: 13px;
@@ -633,6 +651,10 @@ async function startWorkers() {
     background: var(--admin-surface-2, #f9fafb);
 }
 
+.pipeline-diagnostic-item--wide {
+    grid-column: span 2;
+}
+
 .pipeline-diagnostic-label {
     margin: 0;
     font-size: 12px;
@@ -643,6 +665,12 @@ async function startWorkers() {
     margin: 4px 0 0;
     font-size: 18px;
     font-weight: 700;
+}
+
+.pipeline-diagnostic-signal {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
 }
 
 .pipeline-diagnostic-value.is-healthy {

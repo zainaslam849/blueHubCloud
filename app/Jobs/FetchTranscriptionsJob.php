@@ -218,16 +218,16 @@ class FetchTranscriptionsJob implements ShouldQueue
             $recordingAvailableEffective = $meta['recording_available_effective'] ?? null;
 
             if ($recordingAvailableEffective === false) {
-                $this->markVerificationTerminal($call, 'terminal_no_transcription', 'skipped_no_recording_async_guard');
-                Log::info('FetchTranscriptionsJob: skipped ineligible call', [
+                // PBX CDR recording hints are known to be unreliable for some tenants.
+                // Attempt transcription API fetch anyway before deciding terminal state.
+                Log::info('FetchTranscriptionsJob: forcing transcription fetch despite recording hint=false', [
                     'call_id' => $call->id,
                     'company_id' => $call->company_id,
                     'server_id' => $call->server_id,
                     'pbx_unique_id' => $call->pbx_unique_id,
                     'pipeline_run_id' => $this->pipelineRunId,
-                    'event' => 'terminal_state_set',
+                    'event' => 'force_fetch_without_recording_hint',
                 ]);
-                return;
             }
 
             $callStartedAt = microtime(true);
@@ -448,12 +448,8 @@ class FetchTranscriptionsJob implements ShouldQueue
             ->where('has_transcription', false)
             ->whereNull('transcript_text')
             ->where(function ($q) {
-                $q->whereRaw("JSON_EXTRACT(pbx_metadata, '$.recording_available_effective') IS NULL")
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.recording_available_effective')) = 'true'");
-            })
-            ->where(function ($q) {
                 $q->whereRaw("JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status') IS NULL")
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status')) NOT IN ('terminal_no_transcription','terminal_error','skipped_no_recording')");
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status')) NOT IN ('terminal_no_transcription','terminal_error')");
             });
 
         if ($this->companyId !== null) {

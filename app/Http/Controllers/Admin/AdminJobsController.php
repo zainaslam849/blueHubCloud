@@ -87,6 +87,43 @@ class AdminJobsController extends Controller
             $pipelineRows = $pipelineRuns->map(function (PipelineRun $run) {
                 $rangeFrom = $run->range_from?->toDateString();
                 $rangeTo = $run->range_to?->toDateString();
+                $callDiscoveryStage = $run->stages->firstWhere('stage_key', 'call_discovery');
+                $transcriptionStage = $run->stages->firstWhere('stage_key', 'transcription_fetch');
+                $summaryStage = $run->stages->firstWhere('stage_key', 'ai_summary');
+                $discoveryMetrics = is_array($callDiscoveryStage?->metrics) ? $callDiscoveryStage->metrics : [];
+                $transcriptionMetrics = is_array($transcriptionStage?->metrics) ? $transcriptionStage->metrics : [];
+                $summaryMetrics = is_array($summaryStage?->metrics) ? $summaryStage->metrics : [];
+
+                $candidateTotal = (int) ($transcriptionMetrics['candidate_total'] ?? 0);
+                $successfulTranscripts = (int) ($transcriptionMetrics['successful'] ?? 0);
+                $terminalNonTranscript = (int) ($transcriptionMetrics['terminal_non_transcript'] ?? 0);
+                $discoverySkippedNoRecording = (int) ($discoveryMetrics['transcription_skipped_no_recording'] ?? 0);
+                $recordingUnavailableCandidates = (int) ($transcriptionMetrics['recording_unavailable_candidates'] ?? 0);
+                $summaryReason = (string) ($summaryMetrics['reason'] ?? '');
+
+                $transcriptSignal = null;
+                if ($candidateTotal > 0) {
+                    $transcriptSignal = sprintf(
+                        '%d/%d transcripts saved (terminal_no_transcript=%d)',
+                        $successfulTranscripts,
+                        $candidateTotal,
+                        $terminalNonTranscript
+                    );
+                } elseif ($discoverySkippedNoRecording > 0 || $recordingUnavailableCandidates > 0) {
+                    $unavailableCount = max($discoverySkippedNoRecording, $recordingUnavailableCandidates);
+                    $transcriptSignal = sprintf(
+                        'No transcript candidates: PBX recording unavailable (%d calls)',
+                        $unavailableCount
+                    );
+                }
+
+                if ($transcriptSignal === null && $summaryReason === 'no_transcripts_available') {
+                    $transcriptSignal = 'No transcript candidates in selected range';
+                }
+
+                if ($transcriptSignal === null) {
+                    $transcriptSignal = 'Transcript diagnostics not available';
+                }
 
                 $stages = $run->stages
                     ->map(function ($stage) {
@@ -114,6 +151,14 @@ class AdminJobsController extends Controller
                     'last_error' => $this->trimException((string) ($run->last_error ?? '')),
                     'can_resume' => in_array($run->status, ['failed', 'queued'], true),
                     'metrics' => is_array($run->metrics) ? $run->metrics : [],
+                    'transcript_signal' => $transcriptSignal,
+                    'transcript_diagnostics' => [
+                        'candidate_total' => $candidateTotal,
+                        'successful' => $successfulTranscripts,
+                        'terminal_non_transcript' => $terminalNonTranscript,
+                        'discovery_skipped_no_recording' => $discoverySkippedNoRecording,
+                        'recording_unavailable_candidates' => $recordingUnavailableCandidates,
+                    ],
                     'stages' => $stages,
                 ];
             })->values();
@@ -416,6 +461,7 @@ class AdminJobsController extends Controller
         $stageMetrics = is_array($callDiscoveryStage?->metrics) ? $callDiscoveryStage->metrics : [];
 
         $pendingTranscriptions = 0;
+        $transcriptSignal = null;
         if ($rangeFrom && $rangeTo) {
             $pendingTranscriptions = (int) Call::query()
                 ->where('company_id', $activeRun->company_id)
@@ -425,12 +471,36 @@ class AdminJobsController extends Controller
                 ->count();
         }
 
+        $transcriptionStage = $activeRun->stages->firstWhere('stage_key', 'transcription_fetch');
+        $transcriptionMetrics = is_array($transcriptionStage?->metrics) ? $transcriptionStage->metrics : [];
+        $candidateTotal = (int) ($transcriptionMetrics['candidate_total'] ?? 0);
+        $successful = (int) ($transcriptionMetrics['successful'] ?? 0);
+        $terminal = (int) ($transcriptionMetrics['terminal_non_transcript'] ?? 0);
+        $discoverySkippedNoRecording = (int) ($stageMetrics['transcription_skipped_no_recording'] ?? 0);
+        $recordingUnavailableCandidates = (int) ($transcriptionMetrics['recording_unavailable_candidates'] ?? 0);
+
+        if ($candidateTotal > 0) {
+            $transcriptSignal = sprintf('%d/%d transcripts saved', $successful, $candidateTotal);
+        } elseif ($discoverySkippedNoRecording > 0 || $recordingUnavailableCandidates > 0) {
+            $unavailableCount = max($discoverySkippedNoRecording, $recordingUnavailableCandidates);
+            $transcriptSignal = sprintf(
+                'No transcript candidates: PBX recording unavailable (%d calls)',
+                $unavailableCount
+            );
+        } else {
+            $transcriptSignal = 'Transcript diagnostics not available';
+        }
+
         return [
             'run_id' => $activeRun->id,
             'company_id' => $activeRun->company_id,
             'range_from' => $activeRun->range_from?->toDateString(),
             'range_to' => $activeRun->range_to?->toDateString(),
             'pending_transcriptions' => $pendingTranscriptions,
+            'candidate_total' => $candidateTotal,
+            'successful_transcripts' => $successful,
+            'terminal_non_transcript' => $terminal,
+            'transcript_signal' => $transcriptSignal,
             'split_retries' => (int) ($stageMetrics['split_window_retries'] ?? 0),
             'strict_lossless_discovery' => (bool) ($stageMetrics['strict_lossless_discovery'] ?? false),
             'calls_created' => (int) ($stageMetrics['calls_created'] ?? 0),
