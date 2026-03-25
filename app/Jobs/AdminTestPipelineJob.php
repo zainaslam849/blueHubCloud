@@ -124,6 +124,16 @@ class AdminTestPipelineJob implements ShouldQueue
 
         if (! $this->shouldSkipStage(self::STAGE_TRANSCRIPTION_FETCH)) {
             $this->startStage(self::STAGE_TRANSCRIPTION_FETCH);
+
+            $transcriptionCandidates = \App\Models\Call::query()
+                ->where('company_id', $this->companyId)
+                ->where('status', 'answered')
+                ->whereBetween('started_at', [
+                    CarbonImmutable::parse($from, 'UTC')->startOfDay(),
+                    CarbonImmutable::parse($to, 'UTC')->endOfDay(),
+                ])
+                ->count();
+
             FetchTranscriptionsJob::dispatch(
                 $this->companyId,
                 $from,
@@ -135,7 +145,16 @@ class AdminTestPipelineJob implements ShouldQueue
             )->onQueue($this->pipelineQueue);
             $this->completeStage(self::STAGE_TRANSCRIPTION_FETCH, [
                 'mode' => 'queued',
+                'candidate_total' => $transcriptionCandidates,
+                'queued_at' => now()->toIso8601String(),
             ], 'queued');
+
+            Log::info('AdminTestPipelineJob - transcription stage queued', [
+                'company_id' => $this->companyId,
+                'pipeline_run_id' => $this->pipelineRun?->id,
+                'candidate_total' => $transcriptionCandidates,
+                'event' => 'stage_queued',
+            ]);
         }
 
         Log::info('AdminTestPipelineJob - Pipeline Step 1 complete: Ingest finished', ['company_id' => $this->companyId]);

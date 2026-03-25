@@ -68,6 +68,7 @@ class FetchTranscriptionsJob implements ShouldQueue
     public function handle(): void
     {
         try {
+            $stageStartedAt = microtime(true);
             Log::info('FetchTranscriptionsJob: stage_start', [
                 'company_id' => $this->companyId,
                 'from' => $this->fromDate,
@@ -75,6 +76,9 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'pipeline_run_id' => $this->pipelineRunId,
                 'queue' => $this->pipelineQueue,
                 'batch_size' => self::BATCH_SIZE,
+                'job_id' => $this->job?->getJobId(),
+                'attempt' => $this->attempts(),
+                'event' => 'stage_start',
             ]);
 
             $adapter = app(PbxwareAdapter::class);
@@ -115,6 +119,8 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'promoted_candidates' => $promotedCount,
                 'candidate_count' => $calls->count(),
                 'candidate_call_ids' => $calls->pluck('id')->take(10)->values()->all(),
+                'job_id' => $this->job?->getJobId(),
+                'attempt' => $this->attempts(),
                 'event' => 'candidate_query',
             ]);
 
@@ -158,6 +164,9 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'pipeline_run_id' => $this->pipelineRunId,
                 'processed_count' => $calls->count(),
                 'remaining_pending' => $remainingCount,
+                'elapsed_ms' => (int) round((microtime(true) - $stageStartedAt) * 1000),
+                'job_id' => $this->job?->getJobId(),
+                'attempt' => $this->attempts(),
                 'event' => 'batch_complete',
             ]);
 
@@ -177,12 +186,17 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'pipeline_run_id' => $this->pipelineRunId,
                     'remaining_pending' => $remainingCount,
                     'delay_seconds' => 5,
+                    'job_id' => $this->job?->getJobId(),
+                    'attempt' => $this->attempts(),
                     'event' => 'retry_scheduled',
                 ]);
             }
         } catch (\Exception $e) {
             Log::error('FetchTranscriptionsJob: Batch processing failed', [
                 'error' => $e->getMessage(),
+                'job_id' => $this->job?->getJobId(),
+                'attempt' => $this->attempts(),
+                'event' => 'stage_failed',
             ]);
 
             // Rethrow to leverage queue retry logic
@@ -199,12 +213,16 @@ class FetchTranscriptionsJob implements ShouldQueue
     private function processCall(Call $call, PbxwareAdapter $adapter): void
     {
         try {
+            $callStartedAt = microtime(true);
             Log::info('FetchTranscriptionsJob: api request start', [
                 'call_id' => $call->id,
                 'company_id' => $call->company_id,
                 'server_id' => $call->server_id,
                 'pbx_unique_id' => $call->pbx_unique_id,
                 'pipeline_run_id' => $this->pipelineRunId,
+                'job_id' => $this->job?->getJobId(),
+                'attempt' => $this->attempts(),
+                'event' => 'api_request_start',
             ]);
 
             // Fetch transcription from PBXware API
@@ -229,6 +247,8 @@ class FetchTranscriptionsJob implements ShouldQueue
                 ],
                 'vtt_word_count' => is_array(data_get($transcriptionData, 'vtt.words')) ? count(data_get($transcriptionData, 'vtt.words')) : 0,
                 'preview' => $this->extractPreview($transcriptionData),
+                'elapsed_ms' => (int) round((microtime(true) - $callStartedAt) * 1000),
+                'event' => 'api_response_received',
             ]);
 
             // If no transcription found, mark it and skip
@@ -251,6 +271,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'retry_attempt' => $attempt,
                     'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
                     'terminal_after_max_retries' => $shouldTerminate,
+                    'event' => 'terminal_state_set',
                 ]);
                 return;
             }
@@ -270,6 +291,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'transcript_length' => mb_strlen($transcriptText),
                 'confidence' => $normalized['transcript_confidence'] ?? 0,
                 'pipeline_run_id' => $this->pipelineRunId,
+                'event' => 'normalization_result',
             ]);
 
             if ($transcriptText === '') {
@@ -296,6 +318,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'retry_attempt' => $attempt,
                     'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
                     'terminal_after_max_retries' => $shouldTerminate,
+                    'event' => 'terminal_state_set',
                 ]);
 
                 return;
@@ -314,6 +337,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'transcription_id' => $transcription->id,
                 'transcript_length' => mb_strlen($transcriptText),
                 'pipeline_run_id' => $this->pipelineRunId,
+                'event' => 'persistence_result',
             ]);
 
             // Update call record with transcript
@@ -339,6 +363,8 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'call_id' => $call->id,
                 'characters' => mb_strlen($transcriptText),
                 'pipeline_run_id' => $this->pipelineRunId,
+                'elapsed_ms' => (int) round((microtime(true) - $callStartedAt) * 1000),
+                'event' => 'terminal_state_set',
             ]);
 
             // Dispatch insight analysis job to extract intent/department/deflection
@@ -362,6 +388,7 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'retry_attempt' => $attempt,
                 'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
                 'terminal_after_max_retries' => $shouldTerminate,
+                'event' => 'terminal_state_set',
             ]);
 
             // Don't rethrow - continue processing other calls in batch

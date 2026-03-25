@@ -33,6 +33,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
 
     public function handle(): void
     {
+        $stageStartedAt = microtime(true);
         $from = CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay();
         $to = CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay();
 
@@ -42,8 +43,12 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             'to' => $this->toDate,
             'pipeline_run_id' => $this->pipelineRunId,
             'queue' => $this->pipelineQueue,
+            'job_id' => $this->job?->getJobId(),
+            'attempt' => $this->attempts(),
             'event' => 'stage_start',
         ]);
+
+        $verificationMetrics = $this->buildVerificationMetrics($from, $to);
 
         $pendingTranscriptions = Call::query()
             ->where('company_id', $this->companyId)
@@ -72,9 +77,26 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
                 'oldest_pending_age_seconds' => $oldestPendingAgeSeconds,
                 'next_retry_in_seconds' => 20,
                 'reason' => 'answered_calls_pending_verification',
+                'verification_metrics' => $verificationMetrics,
                 'pipeline_run_id' => $this->pipelineRunId,
+                'job_id' => $this->job?->getJobId(),
+                'attempt' => $this->attempts(),
                 'event' => 'stage_blocked',
             ]);
+
+            $pipelineRun = $this->pipelineRunId
+                ? PipelineRun::query()->with('stages')->find($this->pipelineRunId)
+                : null;
+            if ($pipelineRun) {
+                $pipelineRun->upsertStage('transcription_fetch', [
+                    'status' => 'running',
+                    'metrics' => array_merge($verificationMetrics, [
+                        'pending_transcriptions' => $pendingTranscriptions,
+                        'oldest_pending_age_seconds' => $oldestPendingAgeSeconds,
+                        'blocked_reason' => 'answered_calls_pending_verification',
+                    ]),
+                ]);
+            }
 
             FetchTranscriptionsJob::dispatch(
                 $this->companyId,
@@ -104,6 +126,10 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             'company_id' => $this->companyId,
             'pipeline_run_id' => $this->pipelineRunId,
             'reason' => 'all_answered_calls_terminal_or_saved',
+            'verification_metrics' => $verificationMetrics,
+            'elapsed_ms' => (int) round((microtime(true) - $stageStartedAt) * 1000),
+            'job_id' => $this->job?->getJobId(),
+            'attempt' => $this->attempts(),
             'event' => 'stage_unblocked',
         ]);
 
@@ -126,10 +152,10 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
 
             $pipelineRun->upsertStage('transcription_fetch', [
                 'status' => 'completed',
-                'metrics' => [
+                'metrics' => array_merge($verificationMetrics, [
                     'pending_transcriptions' => 0,
                     'completed_at' => now()->toIso8601String(),
-                ],
+                ]),
                 'finished_at' => now(),
             ]);
             $pipelineRun->markRunning('ai_summary');
@@ -193,7 +219,42 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             'company_id' => $this->companyId,
             'queued_summaries' => $callsToSummarize->count(),
             'pipeline_run_id' => $this->pipelineRunId,
+            'verification_metrics' => $verificationMetrics,
+            'elapsed_ms' => (int) round((microtime(true) - $stageStartedAt) * 1000),
+            'job_id' => $this->job?->getJobId(),
+            'attempt' => $this->attempts(),
             'event' => 'stage_complete',
         ]);
+    }
+
+    private function buildVerificationMetrics(CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        $baseQuery = Call::query()
+            ->where('company_id', $this->companyId)
+            ->where('status', 'answered')
+            ->whereBetween('started_at', [$from, $to]);
+
+        $answeredTotal = (clone $baseQuery)->count();
+        $saved = (clone $baseQuery)
+            ->whereNotNull('transcript_text')
+            ->where('transcript_text', '!=', '')
+            ->count();
+        $pending = (clone $baseQuery)
+            ->where('has_transcription', true)
+            ->whereNull('transcript_text')
+            ->count();
+
+        $terminal = max(0, $answeredTotal - $pending - $saved);
+        $coveragePct = $answeredTotal > 0
+            ? round(($saved / $answeredTotal) * 100, 2)
+            : 100.0;
+
+        return [
+            'candidate_total' => $answeredTotal,
+            'successful' => $saved,
+            'remaining' => $pending,
+            'terminal_non_transcript' => $terminal,
+            'coverage_pct' => $coveragePct,
+        ];
     }
 }
