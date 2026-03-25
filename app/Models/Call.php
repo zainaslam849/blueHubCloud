@@ -29,6 +29,7 @@ class Call extends Model
         'weekly_call_report_id',
         'has_transcription',
         'transcript_text',
+        'transcription_status',
         'ai_summary',
         'ai_summary_status',
         'transcription_checked_at',
@@ -50,6 +51,7 @@ class Call extends Model
         'category_confidence' => 'float',
         'ai_summary_status' => 'string',
         'ai_category_status' => 'string',
+        'transcription_status' => 'string',
         'pbx_metadata' => 'array',
     ];
 

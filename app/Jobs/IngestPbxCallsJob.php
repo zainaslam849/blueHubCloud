@@ -626,7 +626,12 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'server_id' => $serverId,
-                'inline_transcription_fetch' => 'recording_available_only',
+                // inline_transcription_strategy: only calls with recording_available_effective=true
+                // are fetched inline. Calls without a recording hint are stored with
+                // has_transcription=false and will be promoted as async verification candidates
+                // by FetchTranscriptionsJob (which force-fetches to confirm absence).
+                'inline_transcription_strategy' => 'recording_available_only',
+                'transcription_async_verification_candidates' => $transcriptionSkippedNoRecording,
                 'split_window_retries' => $splitWindowRetries,
                 'strict_lossless_discovery' => true,
                 'pagination_unresolved_single_day' => $paginationUnresolvedSingleDay,
@@ -636,11 +641,11 @@ class IngestPbxCallsJob implements ShouldQueue
                 'answered_calls' => $answeredCalls,
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
-                'transcriptions_stored' => $transcriptionsStored,
-                'transcription_attempts' => $transcriptionAttempts,
+                'transcriptions_stored_inline' => $transcriptionsStored,
+                'transcription_inline_attempts' => $transcriptionAttempts,
                 'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
                 'transcription_skipped_no_recording_ratio_percent' => $skippedNoRecordingRatio,
-                'transcription_not_found' => $transcriptionNotFound,
+                'transcription_inline_not_found' => $transcriptionNotFound,
             ]);
 
             return [
@@ -649,11 +654,12 @@ class IngestPbxCallsJob implements ShouldQueue
                 'split_window_retries' => $splitWindowRetries,
                 'strict_lossless_discovery' => true,
                 'pagination_unresolved_single_day' => $paginationUnresolvedSingleDay,
-                'transcription_attempts' => $transcriptionAttempts,
-                'transcriptions_stored' => $transcriptionsStored,
+                'transcription_inline_attempts' => $transcriptionAttempts,
+                'transcriptions_stored_inline' => $transcriptionsStored,
+                'transcription_async_verification_candidates' => $transcriptionSkippedNoRecording,
                 'transcription_skipped_no_recording' => $transcriptionSkippedNoRecording,
                 'transcription_skipped_no_recording_ratio_percent' => $skippedNoRecordingRatio,
-                'transcription_not_found' => $transcriptionNotFound,
+                'transcription_inline_not_found' => $transcriptionNotFound,
             ];
 
         } catch (PbxwareClientException $e) {

@@ -91,10 +91,11 @@ class AdminTestPipelineJob implements ShouldQueue
                 'calls_skipped_existing' => 0,
                 'split_window_retries' => 0,
                 'strict_lossless_discovery' => true,
-                'transcription_attempts' => 0,
-                'transcriptions_stored' => 0,
+                'transcription_inline_attempts' => 0,
+                'transcriptions_stored_inline' => 0,
+                'transcription_async_verification_candidates' => 0,
                 'transcription_skipped_no_recording' => 0,
-                'transcription_not_found' => 0,
+                'transcription_inline_not_found' => 0,
             ];
 
             foreach ($accounts as $account) {
@@ -112,10 +113,11 @@ class AdminTestPipelineJob implements ShouldQueue
                     $discoveryMetrics['strict_lossless_discovery'] =
                         $discoveryMetrics['strict_lossless_discovery']
                         && (bool) ($ingestResult['strict_lossless_discovery'] ?? true);
-                    $discoveryMetrics['transcription_attempts'] += (int) ($ingestResult['transcription_attempts'] ?? 0);
-                    $discoveryMetrics['transcriptions_stored'] += (int) ($ingestResult['transcriptions_stored'] ?? 0);
+                    $discoveryMetrics['transcription_inline_attempts'] += (int) ($ingestResult['transcription_inline_attempts'] ?? 0);
+                    $discoveryMetrics['transcriptions_stored_inline'] += (int) ($ingestResult['transcriptions_stored_inline'] ?? 0);
+                    $discoveryMetrics['transcription_async_verification_candidates'] += (int) ($ingestResult['transcription_async_verification_candidates'] ?? 0);
                     $discoveryMetrics['transcription_skipped_no_recording'] += (int) ($ingestResult['transcription_skipped_no_recording'] ?? 0);
-                    $discoveryMetrics['transcription_not_found'] += (int) ($ingestResult['transcription_not_found'] ?? 0);
+                    $discoveryMetrics['transcription_inline_not_found'] += (int) ($ingestResult['transcription_inline_not_found'] ?? 0);
                 }
             }
 

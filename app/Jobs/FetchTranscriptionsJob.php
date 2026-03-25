@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\InsightAnalysisJob;
 use App\Models\Call;
 use App\Models\CallTranscription;
 use App\Services\Normalization\PbxPayloadNormalizer;
@@ -137,8 +138,26 @@ class FetchTranscriptionsJob implements ShouldQueue
 
             Log::info("FetchTranscriptionsJob: Processing {$calls->count()} calls");
 
+            $batchOutcomes = [];
             foreach ($calls as $call) {
-                $this->processCall($call, $adapter);
+                $batchOutcomes[] = $this->processCall($call, $adapter);
+            }
+
+            // If most calls in this batch returned an explicit PBX "no transcription found",
+            // the PBX server likely does not have recording/transcription configured.
+            $batchSize = count($batchOutcomes);
+            $explicitNotFoundCount = count(array_filter($batchOutcomes, fn ($o) => $o === 'explicit_not_found'));
+            if ($batchSize >= 5 && $explicitNotFoundCount >= (int) round($batchSize * 0.8)) {
+                Log::warning('FetchTranscriptionsJob: batch_high_explicit_not_found_rate', [
+                    'company_id' => $this->companyId,
+                    'batch_size' => $batchSize,
+                    'explicit_not_found_count' => $explicitNotFoundCount,
+                    'explicit_not_found_pct' => round(($explicitNotFoundCount / $batchSize) * 100),
+                    'server_ids' => $calls->pluck('server_id')->unique()->values()->all(),
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'recommendation' => 'PBX server returned no transcriptions for the majority of calls. Verify call recording and transcription is enabled in PBXware settings for this server.',
+                    'event' => 'batch_diagnostic',
+                ]);
             }
 
             $remainingQuery = Call::query()
@@ -209,9 +228,9 @@ class FetchTranscriptionsJob implements ShouldQueue
      * Process a single call: fetch transcription and analyze.
      *
      * @param Call $call
-     * @return void
+     * @return string Outcome: 'saved'|'explicit_not_found'|'terminal_max_retries'|'terminal_empty_response'|'pending_retry'|'error'|'error_retry'
      */
-    private function processCall(Call $call, PbxwareAdapter $adapter): void
+    private function processCall(Call $call, PbxwareAdapter $adapter): string
     {
         try {
             $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
@@ -287,10 +306,12 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'retry_after_seconds' => self::RETRY_COOLDOWN_SECONDS,
                     'retry_attempt' => $attempt,
                     'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
-                    'terminal_after_max_retries' => $shouldTerminate,
+                    'is_terminal' => $shouldTerminate,
+                    'termination_reason' => 'api_empty_response_max_retries',
                     'event' => 'terminal_state_set',
                 ]);
-                return;
+
+                return $shouldTerminate ? 'terminal_empty_response' : 'pending_retry';
             }
 
             // Normalize transcription payload
@@ -315,10 +336,10 @@ class FetchTranscriptionsJob implements ShouldQueue
                 $explicitNotFound = $this->isExplicitNoTranscription($transcriptionData);
                 $attempt = $this->incrementRetryAttempts($call);
                 $shouldTerminate = $explicitNotFound || $this->shouldTerminateAfterRetry($call, $attempt);
+                $terminationReason = $explicitNotFound ? 'explicit_no_transcription' : 'unusable_text_max_retries';
 
                 if ($shouldTerminate) {
-                    $reason = $explicitNotFound ? 'explicit_no_transcription' : 'unusable_text_max_retries';
-                    $this->markVerificationTerminal($call, 'terminal_no_transcription', $reason);
+                    $this->markVerificationTerminal($call, 'terminal_no_transcription', $terminationReason);
                 } else {
                     $this->markVerificationPending($call, 'unusable_text_retry');
                 }
@@ -334,11 +355,12 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'retry_after_seconds' => $shouldTerminate ? null : self::RETRY_COOLDOWN_SECONDS,
                     'retry_attempt' => $attempt,
                     'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
-                    'terminal_after_max_retries' => $shouldTerminate,
+                    'is_terminal' => $shouldTerminate,
+                    'termination_reason' => $terminationReason,
                     'event' => 'terminal_state_set',
                 ]);
 
-                return;
+                return $shouldTerminate ? ($explicitNotFound ? 'explicit_not_found' : 'terminal_max_retries') : 'pending_retry';
             }
 
             $normalized['transcript_text'] = $transcriptText;
@@ -386,6 +408,8 @@ class FetchTranscriptionsJob implements ShouldQueue
 
             // Dispatch insight analysis job to extract intent/department/deflection
             InsightAnalysisJob::dispatch($call, $transcription);
+
+            return 'saved';
         } catch (\Exception $e) {
             $attempt = $this->incrementRetryAttempts($call);
             $shouldTerminate = $this->shouldTerminateAfterRetry($call, $attempt);
@@ -404,11 +428,13 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'error' => $e->getMessage(),
                 'retry_attempt' => $attempt,
                 'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
-                'terminal_after_max_retries' => $shouldTerminate,
+                'is_terminal' => $shouldTerminate,
+                'termination_reason' => 'exception',
                 'event' => 'terminal_state_set',
             ]);
 
             // Don't rethrow - continue processing other calls in batch
+            return $shouldTerminate ? 'error' : 'error_retry';
         }
     }
 
@@ -448,8 +474,10 @@ class FetchTranscriptionsJob implements ShouldQueue
             ->where('has_transcription', false)
             ->whereNull('transcript_text')
             ->where(function ($q) {
-                $q->whereRaw("JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status') IS NULL")
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status')) NOT IN ('terminal_no_transcription','terminal_error')");
+                // Exclude calls that have already been confirmed terminal or saved
+                // via the indexed transcription_status column (much faster than JSON extraction).
+                $q->whereNull('transcription_status')
+                    ->orWhere('transcription_status', 'pending');
             });
 
         if ($this->companyId !== null) {
@@ -484,6 +512,7 @@ class FetchTranscriptionsJob implements ShouldQueue
         $meta['transcription_last_decision'] = $reason;
         $meta['transcription_last_decision_at'] = now()->toIso8601String();
         $call->has_transcription = true;
+        $call->transcription_status = 'pending';
         $call->transcription_checked_at = $setCheckedAt ? now() : null;
         $call->pbx_metadata = $meta;
         $call->save();
@@ -496,6 +525,7 @@ class FetchTranscriptionsJob implements ShouldQueue
         $meta['transcription_last_decision'] = $reason;
         $meta['transcription_last_decision_at'] = now()->toIso8601String();
         $call->has_transcription = false;
+        $call->transcription_status = $status;
         $call->transcription_checked_at = now();
         $call->pbx_metadata = $meta;
         $call->save();
@@ -507,6 +537,7 @@ class FetchTranscriptionsJob implements ShouldQueue
         $meta['transcription_verification_status'] = 'saved';
         $meta['transcription_last_decision'] = $reason;
         $meta['transcription_last_decision_at'] = now()->toIso8601String();
+        $call->transcription_status = 'saved';
         $call->pbx_metadata = $meta;
         $call->save();
     }
