@@ -42,6 +42,7 @@ class FetchTranscriptionsJob implements ShouldQueue
     private const BATCH_SIZE = 50;
     private const RETRY_COOLDOWN_SECONDS = 20;
     private const MAX_RETRY_ATTEMPTS = 5;
+    private const MAX_RETRY_AGE_MINUTES = 60;
 
     // Maximum attempts before giving up
     public int $tries = 5;
@@ -213,6 +214,22 @@ class FetchTranscriptionsJob implements ShouldQueue
     private function processCall(Call $call, PbxwareAdapter $adapter): void
     {
         try {
+            $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+            $recordingAvailableEffective = $meta['recording_available_effective'] ?? null;
+
+            if ($recordingAvailableEffective === false) {
+                $this->markVerificationTerminal($call, 'terminal_no_transcription', 'skipped_no_recording_async_guard');
+                Log::info('FetchTranscriptionsJob: skipped ineligible call', [
+                    'call_id' => $call->id,
+                    'company_id' => $call->company_id,
+                    'server_id' => $call->server_id,
+                    'pbx_unique_id' => $call->pbx_unique_id,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'event' => 'terminal_state_set',
+                ]);
+                return;
+            }
+
             $callStartedAt = microtime(true);
             Log::info('FetchTranscriptionsJob: api request start', [
                 'call_id' => $call->id,
@@ -254,7 +271,7 @@ class FetchTranscriptionsJob implements ShouldQueue
             // If no transcription found, mark it and skip
             if (empty($transcriptionData)) {
                 $attempt = $this->incrementRetryAttempts($call);
-                $shouldTerminate = $attempt >= self::MAX_RETRY_ATTEMPTS;
+                $shouldTerminate = $this->shouldTerminateAfterRetry($call, $attempt);
 
                 if ($shouldTerminate) {
                     $this->markVerificationTerminal($call, 'terminal_no_transcription', 'api_empty_response_max_retries');
@@ -297,7 +314,7 @@ class FetchTranscriptionsJob implements ShouldQueue
             if ($transcriptText === '') {
                 $explicitNotFound = $this->isExplicitNoTranscription($transcriptionData);
                 $attempt = $this->incrementRetryAttempts($call);
-                $shouldTerminate = $explicitNotFound || $attempt >= self::MAX_RETRY_ATTEMPTS;
+                $shouldTerminate = $explicitNotFound || $this->shouldTerminateAfterRetry($call, $attempt);
 
                 if ($shouldTerminate) {
                     $reason = $explicitNotFound ? 'explicit_no_transcription' : 'unusable_text_max_retries';
@@ -371,7 +388,7 @@ class FetchTranscriptionsJob implements ShouldQueue
             InsightAnalysisJob::dispatch($call, $transcription);
         } catch (\Exception $e) {
             $attempt = $this->incrementRetryAttempts($call);
-            $shouldTerminate = $attempt >= self::MAX_RETRY_ATTEMPTS;
+            $shouldTerminate = $this->shouldTerminateAfterRetry($call, $attempt);
             if ($shouldTerminate) {
                 $this->markVerificationTerminal($call, 'terminal_error', 'exception_max_retries');
             } else {
@@ -429,7 +446,15 @@ class FetchTranscriptionsJob implements ShouldQueue
         $query = Call::query()
             ->where('status', 'answered')
             ->where('has_transcription', false)
-            ->whereNull('transcript_text');
+            ->whereNull('transcript_text')
+            ->where(function ($q) {
+                $q->whereRaw("JSON_EXTRACT(pbx_metadata, '$.recording_available_effective') IS NULL")
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.recording_available_effective')) = 'true'");
+            })
+            ->where(function ($q) {
+                $q->whereRaw("JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status') IS NULL")
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(pbx_metadata, '$.transcription_verification_status')) NOT IN ('terminal_no_transcription','terminal_error','skipped_no_recording')");
+            });
 
         if ($this->companyId !== null) {
             $query->where('company_id', $this->companyId);
@@ -494,6 +519,9 @@ class FetchTranscriptionsJob implements ShouldQueue
     {
         $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
         $attempt = (int) ($meta['transcription_retry_attempts'] ?? 0) + 1;
+        if (empty($meta['transcription_first_attempt_at'])) {
+            $meta['transcription_first_attempt_at'] = now()->toIso8601String();
+        }
         $meta['transcription_retry_attempts'] = $attempt;
         $meta['transcription_last_attempt_at'] = now()->toIso8601String();
 
@@ -511,6 +539,26 @@ class FetchTranscriptionsJob implements ShouldQueue
 
         $call->pbx_metadata = $meta;
         $call->save();
+    }
+
+    private function shouldTerminateAfterRetry(Call $call, int $attempt): bool
+    {
+        if ($attempt >= self::MAX_RETRY_ATTEMPTS) {
+            return true;
+        }
+
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $firstAttemptAt = $meta['transcription_first_attempt_at'] ?? null;
+
+        if (! is_string($firstAttemptAt) || trim($firstAttemptAt) === '') {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($firstAttemptAt)->lte(now()->subMinutes(self::MAX_RETRY_AGE_MINUTES));
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     private function isExplicitNoTranscription(array $payload): bool

@@ -80,7 +80,6 @@ class IngestPbxCallsJob implements ShouldQueue
             // PBXware does not expose call media downloads. This system relies on PBX-provided transcriptions only.
 
             $range = $this->determineRequestedRange();
-            $fetchTranscriptionsInline = filter_var($this->params['fetch_transcriptions_inline'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
             $callsCreated = 0;
             $callsSkipped = 0;
@@ -400,11 +399,12 @@ class IngestPbxCallsJob implements ShouldQueue
                     continue;
                 }
 
-                if ($isVerificationCandidate) {
+                if ($isVerificationCandidate && $recordingAvailableEffective) {
                     $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
                     $meta['transcription_verification_status'] = 'pending';
                     $meta['transcription_last_decision'] = 'ingest_marked_candidate';
                     $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                    $meta['recording_available_effective'] = true;
 
                     $call->has_transcription = true;
                     if (empty($call->transcript_text)) {
@@ -412,20 +412,18 @@ class IngestPbxCallsJob implements ShouldQueue
                     }
                     $call->pbx_metadata = $meta;
                     $call->save();
-                } elseif (empty($call->transcript_text)) {
+                } elseif ($isVerificationCandidate && ! $recordingAvailableEffective) {
                     $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
-                    $meta['transcription_verification_status'] = 'skipped_not_answered';
-                    $meta['transcription_last_decision'] = 'ingest_not_candidate';
+                    $meta['transcription_verification_status'] = 'skipped_no_recording';
+                    $meta['transcription_last_decision'] = 'ingest_skipped_no_recording';
                     $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                    $meta['recording_available_effective'] = false;
                     $call->has_transcription = false;
                     $call->transcription_checked_at = now();
                     $call->pbx_metadata = $meta;
                     $call->save();
-                }
-
-                // Recording metadata is advisory only. We still verify answered calls against PBX transcription endpoint.
-                if (! $recordingAvailableEffective) {
                     $transcriptionSkippedNoRecording++;
+
                     if ($rowIndex < 5) {
                         Log::info('PBX_TRACE transcription.recording_hint_missing', [
                             'company_id' => $this->companyId,
@@ -439,9 +437,21 @@ class IngestPbxCallsJob implements ShouldQueue
                             'recording_path' => $recordingPathNormalized,
                         ]);
                     }
+
+                    continue;
+                } elseif (empty($call->transcript_text)) {
+                    $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+                    $meta['transcription_verification_status'] = 'skipped_not_answered';
+                    $meta['transcription_last_decision'] = 'ingest_not_candidate';
+                    $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                    $meta['recording_available_effective'] = $recordingAvailableEffective;
+                    $call->has_transcription = false;
+                    $call->transcription_checked_at = now();
+                    $call->pbx_metadata = $meta;
+                    $call->save();
                 }
 
-                if (! $fetchTranscriptionsInline || ! $isVerificationCandidate) {
+                if (! $isVerificationCandidate || ! $recordingAvailableEffective) {
                     continue;
                 }
 
@@ -519,7 +529,7 @@ class IngestPbxCallsJob implements ShouldQueue
                                     ->onQueue('summarization');
                             }
                         } else {
-                            // Explicitly mark as no transcription when the API returns a sentinel string.
+                            // Inline miss is non-terminal; async fallback retries this eligible call.
                             $transcriptionNotFound++;
                             Log::info('PBX_TRACE transcription.not_found', [
                                 'server_id' => $serverId,
@@ -527,12 +537,18 @@ class IngestPbxCallsJob implements ShouldQueue
                                 'recording_available_raw' => $recordingAvailableRaw,
                                 'recording_path' => $recordingPath,
                             ]);
-                            $call->has_transcription = false;
+                            $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+                            $meta['transcription_verification_status'] = 'pending';
+                            $meta['transcription_last_decision'] = 'ingest_inline_not_ready';
+                            $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                            $meta['recording_available_effective'] = true;
+                            $call->has_transcription = true;
                             $call->transcription_checked_at = now();
+                            $call->pbx_metadata = $meta;
                             $call->save();
                         }
                     } else {
-                        // No transcription provided (non-fatal).
+                        // Inline miss is non-terminal; async fallback retries this eligible call.
                         $transcriptionNotFound++;
                         Log::info('PBX_TRACE transcription.not_found', [
                             'server_id' => $serverId,
@@ -541,8 +557,14 @@ class IngestPbxCallsJob implements ShouldQueue
                             'recording_path' => $recordingPath,
                             'reason' => 'empty_response',
                         ]);
-                        $call->has_transcription = false;
+                        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+                        $meta['transcription_verification_status'] = 'pending';
+                        $meta['transcription_last_decision'] = 'ingest_inline_empty_response';
+                        $meta['transcription_last_decision_at'] = now()->toIso8601String();
+                        $meta['recording_available_effective'] = true;
+                        $call->has_transcription = true;
                         $call->transcription_checked_at = now();
+                        $call->pbx_metadata = $meta;
                         $call->save();
                     }
                 }
@@ -552,7 +574,7 @@ class IngestPbxCallsJob implements ShouldQueue
                 'company_id' => $this->companyId,
                 'company_pbx_account_id' => $this->companyPbxAccountId,
                 'server_id' => $serverId,
-                'inline_transcription_fetch' => $fetchTranscriptionsInline,
+                'inline_transcription_fetch' => 'recording_available_only',
                 'split_window_retries' => $splitWindowRetries,
                 'strict_lossless_discovery' => true,
                 'cdr_rows_returned' => $cdrRowsReturned,
