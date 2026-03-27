@@ -48,19 +48,27 @@ class AdminAiSettingsController extends Controller
         
         try {
             // Test API call to verify connectivity
+            // Make a simple request to models endpoint - validates key without costing anything
             $response = Http::timeout(10)
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $active->api_key,
                     'HTTP-Referer' => config('app.url'),
                 ])
-                ->post('https://openrouter.ai/api/v1/auth/key', [])
+                ->get('https://openrouter.ai/api/v1/models')
                 ->throw();
+            
+            // Check if we got a valid response with models
+            $data = $response->json();
+            if (!isset($data['data']) || !is_array($data['data'])) {
+                throw new \Exception('Invalid response format from AI service');
+            }
             
             return response()->json([
                 'success' => true,
-                'message' => 'AI connection verified',
+                'message' => 'AI connection verified successfully',
                 'data' => [
                     'provider' => $active->provider,
+                    'models_available' => count($data['data']),
                     'models' => [
                         'categorization' => $active->categorization_model,
                         'reports' => $active->report_model,
@@ -68,9 +76,21 @@ class AdminAiSettingsController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
+            // Provide more helpful error messages
+            $message = $e->getMessage();
+            if (strpos($message, '401') !== false) {
+                $message = 'Invalid API key - please check and try again';
+            } elseif (strpos($message, '404') !== false) {
+                $message = 'AI service endpoint not found - please verify provider configuration';
+            } elseif (strpos($message, 'Connection')  !== false) {
+                $message = 'Could not connect to AI service - check your internet connection';
+            } elseif (strpos($message, 'timeout') !== false) {
+                $message = 'Request timeout - AI service took too long to respond';
+            }
+            
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to connect to AI service: ' . $e->getMessage()
+                'message' => 'Failed to connect to AI service: ' . $message
             ], 400);
         }
     }
