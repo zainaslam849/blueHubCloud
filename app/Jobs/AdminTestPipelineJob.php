@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Jobs;
 
 use App\Models\CompanyPbxAccount;
@@ -18,7 +17,7 @@ class AdminTestPipelineJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
-    public int $timeout = 60; // Just for dispatching, actual work is async
+    public int $timeout = 300; // call_discovery runs dispatchSync (synchronous PBX ingest); allow up to 5 min
 
     private const STAGE_CALL_DISCOVERY = 'call_discovery';
     private const STAGE_TRANSCRIPTION_FETCH = 'transcription_fetch';

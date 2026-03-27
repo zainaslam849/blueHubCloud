@@ -149,11 +149,11 @@
                                 </td>
                                 <td>
                                     <span
-                                        :style="priorityBadgeStyle(row.priority)"
+                                        :style="
+                                            priorityBadgeStyle(row.priority)
+                                        "
                                     >
-                                        {{
-                                            (row.priority || "").toUpperCase()
-                                        }}
+                                        {{ (row.priority || "").toUpperCase() }}
                                     </span>
                                 </td>
                                 <td class="admin-table__num admin-mono">
@@ -194,9 +194,7 @@
                         <tr v-for="row in ringGroups" :key="row.ring_group">
                             <td>
                                 <div style="font-weight: 500">
-                                    {{
-                                        row.ring_group_name || row.ring_group
-                                    }}
+                                    {{ row.ring_group_name || row.ring_group }}
                                 </div>
                                 <div
                                     v-if="(row.top_categories || []).length"
@@ -246,7 +244,9 @@
                                         :key="i"
                                         >{{ cat.name
                                         }}{{
-                                            cat.minutes ? ` (${cat.minutes}m)` : ""
+                                            cat.minutes
+                                                ? ` (${cat.minutes}m)`
+                                                : ""
                                         }}{{
                                             i <
                                             Math.min(
@@ -604,7 +604,10 @@
                                                     []
                                                 ).length
                                             "
-                                            style="margin: 0; padding-left: 16px"
+                                            style="
+                                                margin: 0;
+                                                padding-left: 16px;
+                                            "
                                         >
                                             <li
                                                 v-for="(
@@ -634,9 +637,7 @@
                                                 >
                                             </li>
                                         </ul>
-                                        <span
-                                            v-else
-                                            class="admin-muted"
+                                        <span v-else class="admin-muted"
                                             >—</span
                                         >
                                     </div>
@@ -700,7 +701,9 @@ function suggestedAutomationsLabel(items) {
     if (!Array.isArray(items) || items.length === 0) return "—";
     return items
         .slice(0, 3)
-        .map((i) => (typeof i === "object" ? i?.suggestion ?? i?.type ?? "—" : i))
+        .map((i) =>
+            typeof i === "object" ? (i?.suggestion ?? i?.type ?? "—") : i,
+        )
         .join(", ");
 }
 
