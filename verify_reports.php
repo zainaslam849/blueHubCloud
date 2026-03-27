@@ -13,10 +13,12 @@ foreach ($reports as $r) {
     $ext  = DB::table('extension_performance_reports')->where('weekly_call_report_id', $r->id)->count();
     $rg   = DB::table('ring_group_performance_reports')->where('weekly_call_report_id', $r->id)->count();
     $cat  = DB::table('category_analytics_reports')->where('weekly_call_report_id', $r->id)->count();
+    $weekStart = $r->week_start_date ?? $r->reporting_period_start ?? 'null';
+    $weekEnd = $r->week_end_date ?? $r->reporting_period_end ?? 'null';
     printf(
-        "Report %d | company=%d | %s→%s | calls=%d | status=%-10s | generated_at=%s | ext=%d rg=%d cat=%d\n",
-        $r->id, $r->company_id, $r->week_start, $r->week_end,
-        $r->total_calls, $r->status, $r->generated_at ?? 'null', $ext, $rg, $cat
+        "Report %d | company=%d | %s→%s | calls=%d | transcripts=%d | status=%-10s | generated_at=%s | ext=%d rg=%d cat=%d\n",
+        $r->id, $r->company_id, $weekStart, $weekEnd,
+        $r->total_calls, $r->calls_with_transcription ?? 0, $r->status, $r->generated_at ?? 'null', $ext, $rg, $cat
     );
 }
 
