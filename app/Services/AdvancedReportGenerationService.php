@@ -48,6 +48,13 @@ class AdvancedReportGenerationService
             'category_reports' => 0,
         ];
 
+        // Ensure regenerated analytics do not keep stale rows for the same weekly report.
+        if ($weeklyReportId) {
+            ExtensionPerformanceReport::query()->where('weekly_call_report_id', $weeklyReportId)->delete();
+            RingGroupPerformanceReport::query()->where('weekly_call_report_id', $weeklyReportId)->delete();
+            CategoryAnalyticsReport::query()->where('weekly_call_report_id', $weeklyReportId)->delete();
+        }
+
         try {
             // Generate extension performance reports (leaderboard + scorecards)
             $results['extension_reports'] = $this->generateExtensionReports(
@@ -612,31 +619,57 @@ class AdvancedReportGenerationService
 
     private function resolveExtensionIdentifier(Call $call): ?string
     {
-        $candidates = [
+        // Prefer explicit extension sources first.
+        $preferredCandidates = [
             $call->answered_by_extension,
-            $call->to,
-            $call->from,
             $call->caller_extension,
-            data_get($call->pbx_metadata, 'To'),
-            data_get($call->pbx_metadata, 'From'),
-            data_get($call->pbx_metadata, 'raw_row.1'),
-            data_get($call->pbx_metadata, 'raw_row.0'),
+            data_get($call->pbx_metadata, 'answered_by_extension'),
+            data_get($call->pbx_metadata, 'caller_extension'),
         ];
 
-        foreach ($candidates as $candidate) {
-            if (! is_string($candidate)) {
-                continue;
-            }
-
-            $value = trim($candidate);
-            if ($value === '') {
-                continue;
-            }
-
-            // Keep conservative: numeric endpoints only, length 2-15.
-            if (preg_match('/^\d{2,15}$/', $value)) {
+        foreach ($preferredCandidates as $candidate) {
+            $value = $this->normalizeExtensionCandidate($candidate);
+            if ($value !== null) {
                 return $value;
             }
+        }
+
+        // Fallback to destination endpoints only. Do not use caller/from to avoid external numbers.
+        $destinationCandidates = [
+            $call->to,
+            data_get($call->pbx_metadata, 'To'),
+            data_get($call->pbx_metadata, 'raw_row.1'),
+        ];
+
+        foreach ($destinationCandidates as $candidate) {
+            $value = $this->normalizeExtensionCandidate($candidate);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeExtensionCandidate(mixed $candidate): ?string
+    {
+        if (! is_string($candidate)) {
+            return null;
+        }
+
+        $value = trim($candidate);
+        if ($value === '') {
+            return null;
+        }
+
+        // Plain extension numbers are usually short internal identifiers.
+        if (preg_match('/^\d{2,6}$/', $value)) {
+            return $value;
+        }
+
+        // Extract extension from decorated labels, e.g. "Agent Name (2042)".
+        if (preg_match('/\((\d{2,6})\)\s*$/', $value, $matches)) {
+            return $matches[1];
         }
 
         return null;

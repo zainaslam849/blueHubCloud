@@ -399,6 +399,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                             : null,
                         'metrics' => $metrics,
                         'executive_summary' => $executiveSummary,
+                        'status' => 'completed',
+                        'generated_at' => now(),
                     ],
                 );
 

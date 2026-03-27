@@ -620,14 +620,15 @@ class AdminWeeklyCallReportsController extends Controller
             ];
         })->values()->all();
 
-        $topExtensions = $extensionReports->take(5);
-        $extensionScorecards = $topExtensions->map(function ($row) use ($report) {
+        $extensionScorecards = $extensionReports->map(function ($row) use ($report) {
             $timeline = Call::query()
                 ->leftJoin('call_categories', 'call_categories.id', '=', 'calls.category_id')
                 ->leftJoin('sub_categories', 'sub_categories.id', '=', 'calls.sub_category_id')
                 ->where('calls.weekly_call_report_id', $report->id)
                 ->where(function ($query) use ($row) {
                     $query->where('calls.answered_by_extension', $row->extension)
+                        ->orWhere('calls.caller_extension', $row->extension)
+                        ->orWhere('calls.to', 'like', '%('.$row->extension.')%')
                         ->orWhere('calls.to', $row->extension);
                 })
                 ->orderByDesc('calls.started_at')
@@ -685,7 +686,16 @@ class AdminWeeklyCallReportsController extends Controller
                 'examples' => $samples,
                 'recommended_actions' => $recommendedActions,
             ];
-        })->values()->all();
+        })
+            ->filter(function (array $card) {
+                return count($card['timeline']) > 0
+                    || count($card['top_automation_candidates']) > 0
+                    || count($card['examples']) > 0
+                    || count($card['recommended_actions']) > 0;
+            })
+            ->take(5)
+            ->values()
+            ->all();
 
         $categoryDrilldown = $categoryReports->map(function ($row) {
             $topExtension = null;
