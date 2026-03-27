@@ -88,6 +88,36 @@
                     <div v-else class="admin-muted">No category data</div>
                 </div>
 
+                <div
+                    v-if="(company.peak_missed_times || []).length"
+                    class="admin-reportSubsection"
+                >
+                    <h5 class="admin-reportSubsection__title">
+                        Peak Missed Call Times
+                    </h5>
+                    <table class="admin-table admin-table--compact">
+                        <thead>
+                            <tr>
+                                <th>Hour</th>
+                                <th class="admin-table__num">Missed Calls</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="peak in company.peak_missed_times"
+                                :key="peak.hour_label"
+                            >
+                                <td class="admin-mono">
+                                    {{ peak.hour_label }}
+                                </td>
+                                <td class="admin-table__num admin-mono">
+                                    {{ peak.missed_count }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
                 <div class="admin-reportSubsection">
                     <h5 class="admin-reportSubsection__title">
                         Top Automation Opportunities
@@ -117,7 +147,15 @@
                                         `Category #${row.category_id}`
                                     }}
                                 </td>
-                                <td>{{ row.priority }}</td>
+                                <td>
+                                    <span
+                                        :style="priorityBadgeStyle(row.priority)"
+                                    >
+                                        {{
+                                            (row.priority || "").toUpperCase()
+                                        }}
+                                    </span>
+                                </td>
                                 <td class="admin-table__num admin-mono">
                                     {{ row.total_calls }}
                                 </td>
@@ -147,20 +185,82 @@
                             <th class="admin-table__num">Calls</th>
                             <th class="admin-table__num">Missed</th>
                             <th class="admin-table__num">Abandoned</th>
-                            <th class="admin-table__num">Automation Score</th>
+                            <th class="admin-table__num">Minutes</th>
+                            <th>Time Sink Categories</th>
+                            <th class="admin-table__num">Score</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="row in ringGroups" :key="row.ring_group">
-                            <td>{{ row.ring_group_name || row.ring_group }}</td>
+                            <td>
+                                <div style="font-weight: 500">
+                                    {{
+                                        row.ring_group_name || row.ring_group
+                                    }}
+                                </div>
+                                <div
+                                    v-if="(row.top_categories || []).length"
+                                    style="
+                                        font-size: 0.82em;
+                                        color: var(--color-muted, #6b7280);
+                                        margin-top: 2px;
+                                    "
+                                >
+                                    {{
+                                        row.top_categories
+                                            .slice(0, 2)
+                                            .map((c) => c.name)
+                                            .join(", ")
+                                    }}
+                                </div>
+                            </td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.total_calls }}
                             </td>
                             <td class="admin-table__num admin-mono">
-                                {{ row.missed_calls }}
+                                <span
+                                    :style="
+                                        row.missed_calls > 0
+                                            ? 'color:#dc2626;font-weight:600'
+                                            : ''
+                                    "
+                                    >{{ row.missed_calls }}</span
+                                >
                             </td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.abandoned_calls }}
+                            </td>
+                            <td class="admin-table__num admin-mono">
+                                {{ row.total_minutes }}
+                            </td>
+                            <td style="font-size: 0.85em">
+                                <span
+                                    v-if="
+                                        (row.time_sink_categories || []).length
+                                    "
+                                >
+                                    <span
+                                        v-for="(cat, i) in (
+                                            row.time_sink_categories || []
+                                        ).slice(0, 2)"
+                                        :key="i"
+                                        >{{ cat.name
+                                        }}{{
+                                            cat.minutes ? ` (${cat.minutes}m)` : ""
+                                        }}{{
+                                            i <
+                                            Math.min(
+                                                (row.time_sink_categories || [])
+                                                    .length,
+                                                2,
+                                            ) -
+                                                1
+                                                ? ", "
+                                                : ""
+                                        }}</span
+                                    >
+                                </span>
+                                <span v-else class="admin-muted">—</span>
                             </td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.automation_priority_score }}
@@ -351,59 +451,200 @@
                 <h4 class="admin-reportSection__title">
                     5) Category Drill-down
                 </h4>
-                <table
-                    class="admin-table admin-table--compact"
-                    v-if="drilldown.length"
-                >
-                    <thead>
-                        <tr>
-                            <th>Category</th>
-                            <th class="admin-table__num">Calls</th>
-                            <th>Top Extension</th>
-                            <th>Top Ring Group</th>
-                            <th>Trend</th>
-                            <th>Suggested Automations</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="row in drilldown" :key="row.category_id">
-                            <td>
-                                {{
-                                    row.category_name ||
-                                    `Category #${row.category_id}`
-                                }}
-                            </td>
-                            <td class="admin-table__num admin-mono">
-                                {{ row.total_calls }}
-                            </td>
-                            <td>{{ row.top_extension || "—" }}</td>
-                            <td>{{ row.top_ring_group || "—" }}</td>
-                            <td>
-                                <div>
-                                    {{
-                                        trendLabel(
-                                            row.trend_direction,
-                                            row.trend_percentage_change,
-                                        )
-                                    }}
+                <div v-if="drilldown.length" class="admin-insightsList">
+                    <div
+                        v-for="row in drilldown"
+                        :key="row.category_id"
+                        class="admin-insightCard"
+                        style="margin-bottom: 16px"
+                    >
+                        <div
+                            class="admin-insightCard__header"
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: baseline;
+                                flex-wrap: wrap;
+                                gap: 8px;
+                            "
+                        >
+                            <strong>{{
+                                row.category_name ||
+                                `Category #${row.category_id}`
+                            }}</strong>
+                            <span
+                                class="admin-mono"
+                                style="
+                                    font-size: 0.85em;
+                                    color: var(--color-muted, #6b7280);
+                                "
+                                >{{ row.total_calls }} calls ·
+                                {{ row.total_minutes ?? 0 }}m</span
+                            >
+                        </div>
+                        <div class="admin-insightCard__body">
+                            <div class="admin-kvGrid" style="margin-top: 8px">
+                                <div class="admin-kv">
+                                    <div class="admin-kv__k">
+                                        Top Extensions
+                                    </div>
+                                    <div
+                                        class="admin-kv__v admin-mono"
+                                        style="font-size: 0.85em"
+                                    >
+                                        <span
+                                            v-if="
+                                                Object.keys(
+                                                    row.extension_breakdown ||
+                                                        {},
+                                                ).length
+                                            "
+                                        >
+                                            <span
+                                                v-for="(
+                                                    count, ext, i
+                                                ) in getSortedBreakdown(
+                                                    row.extension_breakdown,
+                                                    3,
+                                                )"
+                                                :key="ext"
+                                                >{{ ext }} ({{ count }}){{
+                                                    i <
+                                                    Object.keys(
+                                                        getSortedBreakdown(
+                                                            row.extension_breakdown,
+                                                            3,
+                                                        ),
+                                                    ).length -
+                                                        1
+                                                        ? ", "
+                                                        : ""
+                                                }}</span
+                                            >
+                                        </span>
+                                        <span v-else class="admin-muted"
+                                            >—</span
+                                        >
+                                    </div>
+                                </div>
+                                <div class="admin-kv">
+                                    <div class="admin-kv__k">Ring Groups</div>
+                                    <div
+                                        class="admin-kv__v admin-mono"
+                                        style="font-size: 0.85em"
+                                    >
+                                        <span
+                                            v-if="
+                                                Object.keys(
+                                                    row.ring_group_breakdown ||
+                                                        {},
+                                                ).length
+                                            "
+                                        >
+                                            <span
+                                                v-for="(
+                                                    count, rg, i
+                                                ) in getSortedBreakdown(
+                                                    row.ring_group_breakdown,
+                                                    3,
+                                                )"
+                                                :key="rg"
+                                                >{{ rg }} ({{ count }}){{
+                                                    i <
+                                                    Object.keys(
+                                                        getSortedBreakdown(
+                                                            row.ring_group_breakdown,
+                                                            3,
+                                                        ),
+                                                    ).length -
+                                                        1
+                                                        ? ", "
+                                                        : ""
+                                                }}</span
+                                            >
+                                        </span>
+                                        <span v-else class="admin-muted"
+                                            >—</span
+                                        >
+                                    </div>
+                                </div>
+                                <div class="admin-kv">
+                                    <div class="admin-kv__k">Trend</div>
+                                    <div class="admin-kv__v">
+                                        {{
+                                            trendLabel(
+                                                row.trend_direction,
+                                                row.trend_percentage_change,
+                                            )
+                                        }}
+                                        <span
+                                            class="admin-mono"
+                                            style="
+                                                font-size: 0.85em;
+                                                margin-left: 4px;
+                                            "
+                                            >{{
+                                                trendSparkline(row.daily_trend)
+                                            }}</span
+                                        >
+                                    </div>
                                 </div>
                                 <div
-                                    class="admin-mono"
-                                    style="font-size: 0.85em"
+                                    class="admin-kv"
+                                    style="grid-column: 1 / -1"
                                 >
-                                    {{ trendSparkline(row.daily_trend) }}
+                                    <div class="admin-kv__k">
+                                        Suggested Automations
+                                    </div>
+                                    <div class="admin-kv__v">
+                                        <ul
+                                            v-if="
+                                                (
+                                                    row.suggested_automations ||
+                                                    []
+                                                ).length
+                                            "
+                                            style="margin: 0; padding-left: 16px"
+                                        >
+                                            <li
+                                                v-for="(
+                                                    item, i
+                                                ) in row.suggested_automations"
+                                                :key="i"
+                                            >
+                                                {{
+                                                    typeof item === "object"
+                                                        ? item.suggestion
+                                                        : item
+                                                }}<span
+                                                    v-if="
+                                                        typeof item ===
+                                                            'object' &&
+                                                        item.impact
+                                                    "
+                                                    style="
+                                                        color: var(
+                                                            --color-muted,
+                                                            #6b7280
+                                                        );
+                                                        font-size: 0.85em;
+                                                    "
+                                                >
+                                                    — {{ item.impact }}</span
+                                                >
+                                            </li>
+                                        </ul>
+                                        <span
+                                            v-else
+                                            class="admin-muted"
+                                            >—</span
+                                        >
+                                    </div>
                                 </div>
-                            </td>
-                            <td>
-                                {{
-                                    suggestedAutomationsLabel(
-                                        row.suggested_automations,
-                                    )
-                                }}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 <div v-else class="admin-muted">
                     No category drill-down analytics yet
                 </div>
@@ -457,7 +698,10 @@ function topCategoriesLabel(categories) {
 
 function suggestedAutomationsLabel(items) {
     if (!Array.isArray(items) || items.length === 0) return "—";
-    return items.slice(0, 3).join(", ");
+    return items
+        .slice(0, 3)
+        .map((i) => (typeof i === "object" ? i?.suggestion ?? i?.type ?? "—" : i))
+        .join(", ");
 }
 
 function trendSparkline(dailyTrend) {
@@ -487,5 +731,25 @@ function formatShortDateTime(iso) {
     const date = new Date(iso);
     if (!Number.isFinite(date.getTime())) return "—";
     return date.toLocaleString();
+}
+
+function priorityBadgeStyle(priority) {
+    const styles = {
+        high: "background:#fee2e2;color:#dc2626",
+        medium: "background:#fef9c3;color:#b45309",
+        low: "background:#dcfce7;color:#16a34a",
+    };
+    const base =
+        styles[priority?.toLowerCase?.()] ?? "background:#f3f4f6;color:#6b7280";
+    return `${base};border-radius:4px;padding:1px 6px;font-size:0.8em;font-weight:600`;
+}
+
+function getSortedBreakdown(breakdown, topN) {
+    if (!breakdown || typeof breakdown !== "object") return {};
+    return Object.fromEntries(
+        Object.entries(breakdown)
+            .sort(([, a], [, b]) => Number(b) - Number(a))
+            .slice(0, topN),
+    );
 }
 </script>
