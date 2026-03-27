@@ -100,6 +100,7 @@ Route::prefix('admin/api')->group(function () {
         Route::get('/transcriptions/{id}', [AdminTranscriptionsController::class, 'show']);
             Route::get('/ai-settings', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'index']);
             Route::post('/ai-settings', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'store']);
+            Route::post('/ai-settings/test', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'test']);
         Route::get('/weekly-call-reports', [AdminWeeklyCallReportsController::class, 'index']);
         Route::get('/weekly-call-reports/{id}', [AdminWeeklyCallReportsController::class, 'show'])
             ->whereNumber('id');

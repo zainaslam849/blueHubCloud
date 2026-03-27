@@ -138,8 +138,11 @@
                     </div>
                     <div class="admin-kv">
                         <div class="admin-kv__k">API Key</div>
-                        <div class="admin-kv__v">
-                            {{ apiKeyStatus }}
+                        <div class="admin-kv__v admin-callsMono">
+                            <span v-if="apiKeyHint">{{ apiKeyHint }}</span>
+                            <span v-else style="color: var(--gray-500)"
+                                >Not configured</span
+                            >
                         </div>
                     </div>
                     <div class="admin-kv">
@@ -150,6 +153,46 @@
                             </BaseBadge>
                         </div>
                     </div>
+                </div>
+
+                <div
+                    style="
+                        margin-top: 16px;
+                        display: flex;
+                        gap: 8px;
+                        flex-wrap: wrap;
+                    "
+                >
+                    <BaseButton
+                        variant="secondary"
+                        size="sm"
+                        @click="openProviderModal"
+                    >
+                        Manage Key
+                    </BaseButton>
+                    <BaseButton
+                        v-if="enabled && apiKeyHint"
+                        variant="secondary"
+                        size="sm"
+                        @click="testConnection"
+                        :loading="testing"
+                        :disabled="testing"
+                    >
+                        {{ testing ? "Testing..." : "Test Connection" }}
+                    </BaseButton>
+                </div>
+
+                <div
+                    v-if="testResult"
+                    :class="[
+                        'admin-alert',
+                        testResult.success
+                            ? 'admin-alert--success'
+                            : 'admin-alert--error',
+                    ]"
+                    style="margin-top: 12px"
+                >
+                    {{ testResult.message }}
                 </div>
             </section>
         </section>
@@ -494,6 +537,9 @@ const draftEnabled = ref(false);
 const saving = ref(false);
 const error = ref("");
 const success = ref(false);
+const testing = ref(false);
+const testResult = ref(null);
+const apiKeyHint = ref(null);
 
 const invalidChoice = computed(
     () => categorizationModel.value === reportModel.value,
@@ -501,10 +547,6 @@ const invalidChoice = computed(
 
 const reportInvalidChoice = computed(
     () => draftReportModel.value === categorizationModel.value,
-);
-
-const apiKeyStatus = computed(() =>
-    apiKey.value ? "New key pending save" : "Stored securely (hidden)",
 );
 
 async function load() {
@@ -522,6 +564,7 @@ async function load() {
                 defaultCategorizationPrompt;
             summarySystemPrompt.value =
                 data.summary_system_prompt ?? defaultSummaryPrompt;
+            apiKeyHint.value = data.api_key_hint ?? null;
             // api_key is never returned by API — keep blank
         }
     } catch (e) {
@@ -539,6 +582,7 @@ async function save() {
     saving.value = true;
     error.value = "";
     success.value = false;
+    testResult.value = null;
 
     let ok = false;
 
@@ -554,7 +598,10 @@ async function save() {
             enabled: enabled.value,
         };
 
-        await adminApi.post("/ai-settings", payload);
+        const response = await adminApi.post("/ai-settings", payload);
+        if (response?.data?.data?.api_key_hint) {
+            apiKeyHint.value = response.data.data.api_key_hint;
+        }
         success.value = true;
         apiKey.value = ""; // clear after submit
         showToast("AI settings saved.");
@@ -711,4 +758,27 @@ function showToast(message) {
         alert(message);
     }
 }
+
+async function testConnection() {
+    testing.value = true;
+    testResult.value = null;
+
+    try {
+        const res = await adminApi.post("/ai-settings/test");
+        testResult.value = {
+            success: true,
+            message: res?.data?.message || "Connection successful!",
+        };
+    } catch (e) {
+        testResult.value = {
+            success: false,
+            message:
+                e?.response?.data?.message || "Failed to connect to AI service",
+        };
+    } finally {
+        testing.value = false;
+    }
+}
+
+onMounted(() => load());
 </script>
