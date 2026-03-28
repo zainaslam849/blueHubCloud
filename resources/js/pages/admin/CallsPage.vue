@@ -358,7 +358,7 @@
                                     >Not available</span
                                 >
                                 <BaseButton
-                                    variant="ghost"
+                                    variant="primary"
                                     size="sm"
                                     class="admin-callsPipeline__btn"
                                     :loading="
@@ -400,7 +400,7 @@
                                     >Not generated</span
                                 >
                                 <BaseButton
-                                    variant="ghost"
+                                    variant="primary"
                                     size="sm"
                                     class="admin-callsPipeline__btn"
                                     :loading="regeneratingCallId === row.id"
@@ -445,7 +445,7 @@
                                     >Not generated</span
                                 >
                                 <BaseButton
-                                    variant="ghost"
+                                    variant="primary"
                                     size="sm"
                                     class="admin-callsPipeline__btn"
                                     :loading="regeneratingCallId === row.id"
@@ -464,16 +464,15 @@
                 <template #cell-actions="{ row }">
                     <div class="admin-callsActionStack">
                         <BaseButton
-                            variant="ghost"
+                            variant="secondary"
                             size="sm"
                             @click.stop="viewRow(row)"
                         >
                             View
                         </BaseButton>
                         <BaseButton
-                            variant="ghost"
+                            variant="danger"
                             size="sm"
-                            class="admin-btn--danger-text"
                             @click.stop="openDeleteConfirm(row)"
                         >
                             Delete

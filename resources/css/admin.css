@@ -2071,11 +2071,14 @@ html[data-theme="dark"] .admin-status-badge--inactive {
 .admin-btn--danger {
     border-color: var(--status-failed-border);
     background: var(--status-failed-bg);
-    color: var(--text-primary);
+    color: #f87171;
+    font-weight: 700;
 }
 
 .admin-btn--danger:hover {
-    filter: brightness(1.02);
+    background: var(--status-failed-bg);
+    border-color: rgba(239, 68, 68, 0.45);
+    filter: brightness(1.08);
 }
 
 .admin-btn--sm {
@@ -3392,14 +3395,15 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     gap: 8px;
     min-width: 280px;
     max-width: 420px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     border-radius: 10px;
     background: linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.9),
-        rgba(246, 248, 251, 0.85)
+        160deg,
+        var(--bg-surface),
+        var(--bg-faint)
     );
-    border: 1px solid var(--border-faint);
+    border: 1px solid var(--border-soft);
+    box-shadow: var(--shadow-elev-1);
 }
 
 .admin-callsPipeline__step {
@@ -3412,48 +3416,59 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 }
 
 .admin-callsPipeline__label {
-    color: #6b7280;
+    color: var(--text-faint);
     font-size: 11px;
     min-width: 70px;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     flex-shrink: 0;
 }
 
 .admin-callsPipeline__ok {
-    color: #16a34a;
-    font-weight: 600;
+    color: #22c55e;
+    font-weight: 700;
     font-size: 12px;
 }
 
 .admin-callsPipeline__catName {
-    font-weight: 500;
-    color: #1f2937;
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
 .admin-callsPipeline__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 10px;
-    padding: 2px 7px;
-    border-radius: 4px;
-    background: #fef3c7;
-    color: #92400e;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--status-processing-bg);
+    border: 1px solid var(--status-processing-border);
+    color: var(--text-secondary);
     white-space: nowrap;
+    letter-spacing: 0.02em;
 }
 
 .admin-callsPipeline__missing {
-    color: #9ca3af;
+    color: var(--text-muted);
     font-size: 11px;
+    font-style: italic;
 }
 
 .admin-callsPipeline__dash {
-    color: #d1d5db;
+    color: var(--text-faint);
     font-size: 12px;
 }
 
 .admin-callsPipeline__btn.admin-btn {
-    font-size: 11px;
-    padding: 2px 9px;
-    min-height: 22px;
+    font-size: 10.5px;
+    padding: 3px 10px;
+    min-height: 24px;
+    border-radius: 6px;
+    letter-spacing: 0.03em;
+    font-weight: 700;
 }
 
 .admin-callsCol--pipeline {
