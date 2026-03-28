@@ -700,7 +700,11 @@ const columns = ref([
     { key: "status", label: "Status" },
     { key: "category", label: "Category" },
     { key: "createdAt", label: "Created" },
-    { key: "aiPipeline", label: "AI Pipeline" },
+    {
+        key: "aiPipeline",
+        label: "AI Pipeline",
+        cellClass: "admin-callsCol--pipeline",
+    },
     { key: "actions", label: "Actions", cellClass: "admin-callsCol--right" },
 ]);
 
@@ -825,6 +829,43 @@ async function fetchCalls() {
         error.value = "Failed to load calls.";
     } finally {
         loading.value = false;
+        syncProcessingPoller();
+    }
+}
+
+let processingPoller = 0;
+
+function hasActivePipelineWork() {
+    return rows.value.some((row) => {
+        const summaryStatus = String(row?.aiSummaryStatus || "").toLowerCase();
+        const categoryStatus = String(row?.aiCategoryStatus || "").toLowerCase();
+
+        return (
+            summaryStatus === "queued" ||
+            summaryStatus === "running" ||
+            categoryStatus === "queued" ||
+            categoryStatus === "running"
+        );
+    });
+}
+
+function stopProcessingPoller() {
+    if (!processingPoller) return;
+    window.clearInterval(processingPoller);
+    processingPoller = 0;
+}
+
+function syncProcessingPoller() {
+    const shouldPoll = hasActivePipelineWork();
+
+    if (shouldPoll && !processingPoller) {
+        processingPoller = window.setInterval(() => {
+            if (!loading.value) {
+                fetchCalls();
+            }
+        }, 7000);
+    } else if (!shouldPoll) {
+        stopProcessingPoller();
     }
 }
 
@@ -1031,6 +1072,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    stopProcessingPoller();
     window.removeEventListener("resize", updateViewport);
     document.removeEventListener("click", onDocumentClick);
 });

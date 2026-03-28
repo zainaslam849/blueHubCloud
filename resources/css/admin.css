@@ -3388,16 +3388,25 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
 /* AI pipeline status column */
 .admin-callsPipeline {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    min-width: 210px;
+    display: grid;
+    gap: 8px;
+    min-width: 280px;
+    max-width: 420px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.9),
+        rgba(246, 248, 251, 0.85)
+    );
+    border: 1px solid var(--border-faint);
 }
 
 .admin-callsPipeline__step {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-size: 12px;
     line-height: 1.35;
 }
@@ -3405,7 +3414,9 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 .admin-callsPipeline__label {
     color: #6b7280;
     font-size: 11px;
-    min-width: 62px;
+    min-width: 70px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
     flex-shrink: 0;
 }
 
@@ -3422,7 +3433,7 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
 .admin-callsPipeline__badge {
     font-size: 10px;
-    padding: 1px 6px;
+    padding: 2px 7px;
     border-radius: 4px;
     background: #fef3c7;
     color: #92400e;
@@ -3441,11 +3452,42 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
 .admin-callsPipeline__btn.admin-btn {
     font-size: 11px;
-    padding: 1px 8px;
-    min-height: 20px;
+    padding: 2px 9px;
+    min-height: 22px;
+}
+
+.admin-callsCol--pipeline {
+    white-space: normal !important;
+    min-width: 300px;
+    vertical-align: top;
 }
 
 @media (max-width: 640px) {
+    .admin-callsCol--pipeline {
+        min-width: 0;
+    }
+
+    .admin-callsPipeline {
+        min-width: 0;
+        width: 100%;
+        max-width: none;
+        padding: 8px;
+        gap: 6px;
+    }
+
+    .admin-callsPipeline__step {
+        gap: 6px;
+    }
+
+    .admin-callsPipeline__label {
+        min-width: 64px;
+    }
+
+    .admin-callsPipeline__btn.admin-btn {
+        width: auto;
+        max-width: 100%;
+    }
+
     .admin-callsActionStack {
         flex-direction: column;
         align-items: stretch;
@@ -3465,6 +3507,19 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
     .admin-callsActionHint {
         display: none;
+    }
+}
+
+@media (max-width: 1023px) {
+    .admin-table__td.admin-callsCol--pipeline {
+        display: block;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+
+    .admin-table__td.admin-callsCol--pipeline::before {
+        display: block;
+        margin: 0 0 8px;
     }
 }
 
