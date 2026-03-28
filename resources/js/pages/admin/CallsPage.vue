@@ -705,7 +705,11 @@ const columns = ref([
         label: "AI Pipeline",
         cellClass: "admin-callsCol--pipeline",
     },
-    { key: "actions", label: "Actions", cellClass: "admin-callsCol--right" },
+    {
+        key: "actions",
+        label: "Actions",
+        cellClass: "admin-callsCol--right admin-callsCol--actions",
+    },
 ]);
 
 function normalizeRow(item) {
