@@ -111,6 +111,16 @@
                     </svg>
                     Refresh
                 </BaseButton>
+                <BaseButton
+                    v-if="!loading && aiRecovery?.canRegenerate"
+                    variant="primary"
+                    size="sm"
+                    :loading="regenerating"
+                    @click="regenerateAi"
+                    class="admin-detailActionBtn"
+                >
+                    {{ aiRecovery.actionLabel }}
+                </BaseButton>
             </div>
         </header>
 
@@ -331,6 +341,60 @@
             </BaseCard>
 
             <BaseCard
+                title="AI Processing"
+                description="Transcript, summary, and categorization recovery"
+                variant="glass"
+            >
+                <div v-if="loading" class="admin-skeletonLines">
+                    <div class="admin-skeleton admin-skeleton--line" />
+                    <div class="admin-skeleton admin-skeleton--line" />
+                </div>
+
+                <div v-else class="admin-kvGrid">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Transcript</div>
+                        <div class="admin-kv__v">
+                            {{
+                                transcription?.hasTranscription
+                                    ? "Available"
+                                    : "Transcript is not available for that call."
+                            }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">AI Summary</div>
+                        <div class="admin-kv__v">
+                            {{ summaryStatusLabel }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">AI Category</div>
+                        <div class="admin-kv__v">
+                            {{ categoryStatusLabel }}
+                        </div>
+                    </div>
+
+                    <div class="admin-kv" style="grid-column: 1 / -1">
+                        <div class="admin-kv__k">Recovery</div>
+                        <div class="admin-kv__v admin-callDetailRecovery">
+                            <span>{{ aiRecovery?.statusText || "—" }}</span>
+                            <BaseButton
+                                v-if="aiRecovery?.canRegenerate"
+                                variant="secondary"
+                                size="sm"
+                                :loading="regenerating"
+                                @click="regenerateAi"
+                            >
+                                {{ aiRecovery.actionLabel }}
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </BaseCard>
+
+            <BaseCard
                 title="Transcription"
                 description="PBX-provided transcript"
                 variant="glass"
@@ -405,6 +469,41 @@
             </BaseCard>
 
             <BaseCard
+                title="Categorization"
+                description="AI-generated category assignment"
+                variant="glass"
+            >
+                <div v-if="loading" class="admin-skeletonLines">
+                    <div class="admin-skeleton admin-skeleton--line" />
+                    <div class="admin-skeleton admin-skeleton--line" />
+                </div>
+
+                <div v-else-if="!call?.category" class="admin-empty">
+                    <div class="admin-empty__title">No category yet</div>
+                    <div class="admin-empty__desc">
+                        This call will show its AI category after categorization completes.
+                    </div>
+                </div>
+
+                <div v-else class="admin-kvGrid">
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Category</div>
+                        <div class="admin-kv__v">{{ call?.category || "—" }}</div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Sub-category</div>
+                        <div class="admin-kv__v">{{ call?.subCategory || "—" }}</div>
+                    </div>
+
+                    <div class="admin-kv">
+                        <div class="admin-kv__k">Confidence</div>
+                        <div class="admin-kv__v">{{ formatConfidence(call?.categoryConfidence) }}</div>
+                    </div>
+                </div>
+            </BaseCard>
+
+            <BaseCard
                 title="Metadata"
                 description="Identifiers and raw fields"
                 variant="glass"
@@ -443,9 +542,11 @@ const route = useRoute();
 
 const loading = ref(true);
 const error = ref("");
+const regenerating = ref(false);
 
 const call = ref(null);
 const transcription = ref(null);
+const aiRecovery = ref(null);
 const jobHistory = ref([]);
 const metadata = ref({});
 
@@ -484,6 +585,25 @@ function formatDate(iso) {
     return t.toLocaleString();
 }
 
+function formatConfidence(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "—";
+    return `${Math.round(numeric * 100)}%`;
+}
+
+function humanizeAiStatus(status) {
+    const normalized = String(status || "").toLowerCase();
+
+    if (!normalized) return "Pending";
+    if (normalized === "queued") return "Queued";
+    if (normalized === "running") return "Processing";
+    if (normalized === "completed") return "Completed";
+    if (normalized === "credit_exhausted") return "Credit exhausted";
+    if (normalized === "not_generated") return "Not generated";
+
+    return normalized.replaceAll("_", " ");
+}
+
 async function fetchDetail() {
     const callId = route.params.callId;
 
@@ -496,6 +616,7 @@ async function fetchDetail() {
 
         call.value = data?.call ?? null;
         transcription.value = data?.transcription ?? null;
+        aiRecovery.value = data?.aiRecovery ?? null;
         jobHistory.value = Array.isArray(data?.jobHistory)
             ? data.jobHistory
             : [];
@@ -503,6 +624,7 @@ async function fetchDetail() {
     } catch (e) {
         call.value = null;
         transcription.value = null;
+        aiRecovery.value = null;
         jobHistory.value = [];
         metadata.value = {};
 
@@ -517,6 +639,37 @@ async function fetchDetail() {
 function refresh() {
     fetchDetail();
 }
+
+async function regenerateAi() {
+    const callId = route.params.callId;
+    if (!callId || regenerating.value || !aiRecovery.value?.canRegenerate) {
+        return;
+    }
+
+    regenerating.value = true;
+    error.value = "";
+
+    try {
+        await adminApi.post(`/calls/${callId}/regenerate-ai`);
+        await fetchDetail();
+    } catch (e) {
+        error.value =
+            e?.response?.data?.message ||
+            "Failed to queue AI regeneration for this call.";
+    } finally {
+        regenerating.value = false;
+    }
+}
+
+const summaryStatusLabel = computed(() => {
+    if (call.value?.aiSummary) return "Available";
+    return humanizeAiStatus(call.value?.aiSummaryStatus);
+});
+
+const categoryStatusLabel = computed(() => {
+    if (call.value?.category) return "Available";
+    return humanizeAiStatus(call.value?.aiCategoryStatus);
+});
 
 const metadataRows = computed(() => {
     const m = metadata.value || {};
@@ -562,7 +715,7 @@ const metadataRows = computed(() => {
 });
 
 watch(
-    () => route.params.id,
+    () => route.params.callId,
     () => {
         fetchDetail();
     },

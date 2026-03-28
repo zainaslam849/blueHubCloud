@@ -264,7 +264,7 @@ class GenerateAiCategoriesJob implements ShouldQueue
                 ['role' => 'user', 'content' => $prompt],
             ],
             'temperature' => 0.2,
-            'max_tokens' => 1200,
+            // max_tokens intentionally omitted — let the model return a complete response
             'response_format' => ['type' => 'json_object'],
         ]);
 
@@ -288,7 +288,7 @@ class GenerateAiCategoriesJob implements ShouldQueue
             'anthropic-version' => '2023-06-01',
         ])->timeout(40)->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
-            'max_tokens' => 1200,
+            'max_tokens' => 4096,
             'temperature' => 0.2,
             'system' => 'Return STRICT JSON only.',
             'messages' => [
@@ -323,22 +323,12 @@ class GenerateAiCategoriesJob implements ShouldQueue
             ],
             'response_format' => ['type' => 'json_object'],
             'temperature' => 0.2,
-            'max_tokens' => 300,
+            // max_tokens intentionally omitted — let the model return a complete response
         ];
 
         $response = Http::withHeaders($headers)
             ->timeout(45)
             ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-
-        if ($response->status() === 402) {
-            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
-            if ($affordableTokens !== null) {
-                $payload['max_tokens'] = max(96, min($payload['max_tokens'], $affordableTokens - 16));
-                $response = Http::withHeaders($headers)
-                    ->timeout(45)
-                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-            }
-        }
 
         if (!$response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -374,6 +364,7 @@ class GenerateAiCategoriesJob implements ShouldQueue
     {
         $response = trim($response);
 
+        // Strip markdown fences
         if (str_starts_with($response, '```json')) {
             $response = substr($response, 7);
         }
@@ -383,12 +374,33 @@ class GenerateAiCategoriesJob implements ShouldQueue
         if (str_ends_with($response, '```')) {
             $response = substr($response, 0, -3);
         }
+        $response = trim($response);
 
-        $parsed = json_decode(trim($response), true);
-        if (!is_array($parsed)) {
-            throw new \Exception('Failed to parse AI category JSON response');
+        $parsed = json_decode($response, true);
+        if (is_array($parsed)) {
+            return $parsed;
         }
 
-        return $parsed;
+        // Fallback: extract JSON between the first { and last }
+        $first = strpos($response, '{');
+        $last  = strrpos($response, '}');
+        if ($first !== false && $last !== false && $last > $first) {
+            $extracted = substr($response, $first, $last - $first + 1);
+            $parsed = json_decode($extracted, true);
+            if (is_array($parsed)) {
+                Log::warning('GenerateAiCategoriesJob: parsed JSON via extraction fallback', [
+                    'company_id' => $this->companyId,
+                    'raw_preview' => mb_substr($response, 0, 300),
+                ]);
+                return $parsed;
+            }
+        }
+
+        Log::error('GenerateAiCategoriesJob: unparseable AI response', [
+            'company_id' => $this->companyId,
+            'raw_preview' => mb_substr($response, 0, 500),
+            'json_error'  => json_last_error_msg(),
+        ]);
+        throw new \Exception('Failed to parse AI category JSON response');
     }
 }

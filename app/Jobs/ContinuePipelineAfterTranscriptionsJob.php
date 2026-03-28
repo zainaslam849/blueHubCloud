@@ -170,6 +170,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
                 $q->whereNull('ai_summary')
                     ->orWhere('ai_summary', '');
             })
+            ->where('ai_summary_status', '!=', 'not_generated')
             ->whereBetween('started_at', [$from, $to])
             ->orderByDesc('started_at')
             ->limit($this->summarizeLimit)

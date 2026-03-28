@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\CallCategory;
+use App\Models\PipelineRun;
 use App\Models\SubCategory;
 use App\Repositories\AiSettingsRepository;
 use App\Services\AiCategoryGenerationService;
@@ -30,18 +31,25 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
      */
     public function __construct(
         public int $companyId,
-        public int $rangeDays = 30
+        public int $rangeDays = 30,
+        public ?int $pipelineRunId = null,
     ) {}
 
     public function handle(
         AiSettingsRepository $aiSettingsRepo,
         AiCategoryGenerationService $generationService
     ): void {
+        $this->markPipelineStageRunning();
+
         $aiSettings = $aiSettingsRepo->getActive();
 
         if (! $aiSettings || ! $aiSettings->enabled) {
             Log::warning('AI settings not configured or disabled for category generation', [
                 'company_id' => $this->companyId,
+            ]);
+            $this->markPipelineStageCompleted([
+                'skipped' => true,
+                'reason' => 'ai_settings_disabled',
             ]);
             return;
         }
@@ -50,12 +58,20 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             Log::error('AI API key not configured for category generation', [
                 'company_id' => $this->companyId,
             ]);
+            $this->markPipelineStageCompleted([
+                'skipped' => true,
+                'reason' => 'missing_api_key',
+            ]);
             return;
         }
 
         if (! $aiSettings->categorization_model) {
             Log::error('Categorization model not configured for category generation', [
                 'company_id' => $this->companyId,
+            ]);
+            $this->markPipelineStageCompleted([
+                'skipped' => true,
+                'reason' => 'missing_model',
             ]);
             return;
         }
@@ -78,6 +94,11 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 'company_id' => $this->companyId,
                 'date_range' => ['start' => $start, 'end' => $end],
                 'tip' => 'Ensure QueueCallsForSummarizationJob completes before running AI generation',
+            ]);
+            $this->markPipelineStageCompleted([
+                'skipped' => true,
+                'reason' => 'no_summaries',
+                'summary_count' => 0,
             ]);
             return;
         }
@@ -204,11 +225,23 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 'model' => $aiSettings->categorization_model,
                 'range_days' => $this->rangeDays,
             ]);
+            $this->markPipelineStageCompleted([
+                'generated' => true,
+                'model' => $aiSettings->categorization_model,
+                'range_days' => $this->rangeDays,
+                'summary_count' => (int) ($promptPayload['summary_count'] ?? 0),
+            ]);
         } catch (\Exception $e) {
             if ($this->isOpenRouterCreditLimitError($e)) {
                 Log::warning('Skipping AI category generation due to OpenRouter credit/token limit', [
                     'company_id' => $this->companyId,
                     'model' => $aiSettings->categorization_model ?? 'unknown',
+                    'error' => $e->getMessage(),
+                ]);
+
+                $this->markPipelineStageCompleted([
+                    'skipped' => true,
+                    'reason' => 'credit_limit',
                     'error' => $e->getMessage(),
                 ]);
 
@@ -220,8 +253,66 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 'model' => $aiSettings->categorization_model ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
+            $this->markPipelineStageFailed($e->getMessage());
             throw $e;
         }
+    }
+
+    private function markPipelineStageRunning(): void
+    {
+        if (! $this->pipelineRunId) {
+            return;
+        }
+
+        $run = PipelineRun::query()->find($this->pipelineRunId);
+        if (! $run) {
+            return;
+        }
+
+        $run->markRunning('category_generation');
+        $run->upsertStage('category_generation', [
+            'status' => 'running',
+            'error_message' => null,
+            'started_at' => now(),
+        ]);
+    }
+
+    private function markPipelineStageCompleted(array $metrics = []): void
+    {
+        if (! $this->pipelineRunId) {
+            return;
+        }
+
+        $run = PipelineRun::query()->find($this->pipelineRunId);
+        if (! $run) {
+            return;
+        }
+
+        $run->upsertStage('category_generation', [
+            'status' => 'completed',
+            'metrics' => $metrics,
+            'finished_at' => now(),
+        ]);
+        $run->markQueued('call_categorization');
+    }
+
+    private function markPipelineStageFailed(string $message): void
+    {
+        if (! $this->pipelineRunId) {
+            return;
+        }
+
+        $run = PipelineRun::query()->find($this->pipelineRunId);
+        if (! $run) {
+            return;
+        }
+
+        $run->markFailed('category_generation', $message);
+        $run->upsertStage('category_generation', [
+            'status' => 'failed',
+            'error_message' => $message,
+            'finished_at' => now(),
+        ]);
     }
 
     private function callProvider(string $provider, string $apiKey, string $model, string $prompt): string
@@ -264,7 +355,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 ['role' => 'user', 'content' => $prompt],
             ],
             'temperature' => 0.2,
-            'max_tokens' => 1200,
+            // max_tokens intentionally omitted — let the model return a complete response
             'response_format' => ['type' => 'json_object'],
         ]);
 
@@ -288,7 +379,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             'anthropic-version' => '2023-06-01',
         ])->timeout(40)->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
-            'max_tokens' => 1200,
+            'max_tokens' => 4096,
             'temperature' => 0.2,
             'system' => 'Return STRICT JSON only.',
             'messages' => [
@@ -323,22 +414,12 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             ],
             'response_format' => ['type' => 'json_object'],
             'temperature' => 0.2,
-            'max_tokens' => 300,
+            // max_tokens intentionally omitted — let the model return a complete response
         ];
 
         $response = Http::withHeaders($headers)
             ->timeout(45)
             ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-
-        if ($response->status() === 402) {
-            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
-            if ($affordableTokens !== null) {
-                $payload['max_tokens'] = max(96, min($payload['max_tokens'], $affordableTokens - 16));
-                $response = Http::withHeaders($headers)
-                    ->timeout(45)
-                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-            }
-        }
 
         if (! $response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -374,6 +455,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
     {
         $response = trim($response);
 
+        // Strip markdown fences
         if (str_starts_with($response, '```json')) {
             $response = substr($response, 7);
         }
@@ -383,12 +465,34 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         if (str_ends_with($response, '```')) {
             $response = substr($response, 0, -3);
         }
+        $response = trim($response);
 
-        $parsed = json_decode(trim($response), true);
-        if (! is_array($parsed)) {
-            throw new \Exception('Failed to parse AI category JSON response');
+        $parsed = json_decode($response, true);
+        if (is_array($parsed)) {
+            return $parsed;
         }
 
-        return $parsed;
+        // Fallback: extract the JSON object between the first { and last } in case
+        // the model prepended/appended prose or the response was lightly truncated.
+        $first = strpos($response, '{');
+        $last  = strrpos($response, '}');
+        if ($first !== false && $last !== false && $last > $first) {
+            $extracted = substr($response, $first, $last - $first + 1);
+            $parsed = json_decode($extracted, true);
+            if (is_array($parsed)) {
+                Log::warning('GenerateAiCategoriesForCompanyJob: parsed JSON via extraction fallback', [
+                    'company_id' => $this->companyId,
+                    'raw_preview' => mb_substr($response, 0, 300),
+                ]);
+                return $parsed;
+            }
+        }
+
+        Log::error('GenerateAiCategoriesForCompanyJob: unparseable AI response', [
+            'company_id' => $this->companyId,
+            'raw_preview' => mb_substr($response, 0, 500),
+            'json_error'  => json_last_error_msg(),
+        ]);
+        throw new \Exception('Failed to parse AI category JSON response');
     }
 }

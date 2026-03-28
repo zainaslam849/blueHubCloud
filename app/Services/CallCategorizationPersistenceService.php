@@ -49,9 +49,30 @@ class CallCategorizationPersistenceService
                 ->where('name', $categoryName)
                 ->first();
 
-            // Fallback: If category not found → use "General"
-            if (!$category) {
-                return self::assignGeneralCategory($call, $confidence, "Category '{$categoryName}' not found");
+            // If AI returned a new category name, create it for this company.
+            if (! $category) {
+                $trimmedCategory = trim($categoryName);
+                if ($trimmedCategory === '') {
+                    return self::assignGeneralCategory($call, $confidence, 'Empty category name from AI');
+                }
+
+                $category = CallCategory::create([
+                    'company_id' => $call->company_id,
+                    'name' => $trimmedCategory,
+                    'description' => 'Auto-created by AI during call categorization',
+                    'source' => 'ai',
+                    'is_enabled' => true,
+                    'status' => 'active',
+                    'generated_at' => now(),
+                    'generated_by_model' => null,
+                ]);
+
+                Log::info('Created missing company category from AI categorization result', [
+                    'call_id' => $callId,
+                    'company_id' => $call->company_id,
+                    'category_name' => $trimmedCategory,
+                    'confidence' => $confidence,
+                ]);
             }
 
             // Find sub-category by name if provided
@@ -69,12 +90,29 @@ class CallCategorizationPersistenceService
                 if ($subCategory) {
                     $subCategoryId = $subCategory->id;
                 } else {
-                    // Store as label if sub-category doesn't exist
-                    $subCategoryLabel = $subCategoryName;
-                    Log::info("Sub-category '{$subCategoryName}' not found for category '{$categoryName}', storing as label", [
-                        'call_id' => $callId,
-                        'category_id' => $category->id,
-                    ]);
+                    $trimmedSubCategory = trim($subCategoryName);
+                    if ($trimmedSubCategory !== '') {
+                        $createdSubCategory = SubCategory::create([
+                            'category_id' => $category->id,
+                            'name' => $trimmedSubCategory,
+                            'description' => 'Auto-created by AI during call categorization',
+                            'is_enabled' => true,
+                            'source' => 'ai',
+                            'status' => 'active',
+                        ]);
+                        $subCategoryId = $createdSubCategory->id;
+
+                        Log::info('Created missing sub-category from AI categorization result', [
+                            'call_id' => $callId,
+                            'company_id' => $call->company_id,
+                            'category_id' => $category->id,
+                            'sub_category_name' => $trimmedSubCategory,
+                            'confidence' => $confidence,
+                        ]);
+                    } else {
+                        // Keep empty/invalid sub-category as null rather than storing noisy labels.
+                        $subCategoryLabel = null;
+                    }
                 }
             }
 
@@ -123,29 +161,24 @@ class CallCategorizationPersistenceService
             ->first();
 
         if (! $generalCategory) {
-            $call->update([
-                'category_id' => null,
-                'sub_category_id' => null,
-                'sub_category_label' => null,
-                'category_source' => 'ai',
-                'category_confidence' => $confidence,
-                'categorized_at' => now(),
+            $generalCategory = CallCategory::create([
+                'company_id' => $call->company_id,
+                'name' => 'General',
+                'description' => 'Auto-created fallback category during AI categorization',
+                'source' => 'ai',
+                'is_enabled' => true,
+                'status' => 'active',
+                'generated_at' => now(),
+                'generated_by_model' => null,
             ]);
 
-            DB::commit();
-
-            Log::warning('General category not found; skipping fallback assignment', [
+            Log::warning('General category was missing and has been auto-created for fallback assignment', [
                 'call_id' => $call->id,
+                'company_id' => $call->company_id,
+                'category_id' => $generalCategory->id,
                 'reason' => $reason,
                 'confidence' => $confidence,
             ]);
-
-            return [
-                'success' => true,
-                'call' => $call->fresh(['category']),
-                'fallback_used' => true,
-                'reason' => $reason,
-            ];
         }
 
         $call->update([
@@ -186,29 +219,24 @@ class CallCategorizationPersistenceService
             ->first();
 
         if (! $otherCategory) {
-            $call->update([
-                'category_id' => null,
-                'sub_category_id' => null,
-                'sub_category_label' => null,
-                'category_source' => 'ai',
-                'category_confidence' => $confidence,
-                'categorized_at' => now(),
+            $otherCategory = CallCategory::create([
+                'company_id' => $call->company_id,
+                'name' => 'Other',
+                'description' => 'Auto-created fallback category during AI categorization',
+                'source' => 'ai',
+                'is_enabled' => true,
+                'status' => 'active',
+                'generated_at' => now(),
+                'generated_by_model' => null,
             ]);
 
-            DB::commit();
-
-            Log::warning('Other category not found; skipping fallback assignment', [
+            Log::warning('Other category was missing and has been auto-created for fallback assignment', [
                 'call_id' => $call->id,
+                'company_id' => $call->company_id,
+                'category_id' => $otherCategory->id,
                 'reason' => $reason,
                 'confidence' => $confidence,
             ]);
-
-            return [
-                'success' => true,
-                'call' => $call->fresh(['category']),
-                'fallback_used' => true,
-                'reason' => $reason,
-            ];
         }
 
         $subCategoryId = null;

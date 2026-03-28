@@ -68,7 +68,7 @@ class SummarizeSingleCallJob implements ShouldQueue
             'user' => $this->buildUserPrompt($call),
             'model_parameters' => [
                 'temperature' => 0.3,
-                'max_tokens' => 250,
+                'max_tokens' => 2048, // kept for Anthropic (required); OpenAI/OpenRouter omit it
             ],
         ];
 
@@ -84,7 +84,6 @@ class SummarizeSingleCallJob implements ShouldQueue
                 'transcript_chars'  => strlen($call->transcript_text ?? ''),
                 'transcript_words'  => str_word_count($call->transcript_text ?? ''),
                 'duration_seconds'  => $call->duration_seconds,
-                'max_tokens'        => 250,
             ]);
 
             if ($aiSettings->provider === 'openrouter') {
@@ -163,7 +162,7 @@ PROMPT;
                 ['role' => 'user', 'content' => $prompt['user']],
             ],
             'temperature' => $prompt['model_parameters']['temperature'],
-            'max_tokens' => $prompt['model_parameters']['max_tokens'],
+            // max_tokens intentionally omitted — let the model return a complete response
         ]);
 
         if (! $response->successful()) {
@@ -226,17 +225,15 @@ PROMPT;
                 ['role' => 'user', 'content' => $prompt['user']],
             ],
             'temperature' => $prompt['model_parameters']['temperature'],
-            'max_tokens' => $prompt['model_parameters']['max_tokens'],
+            // max_tokens intentionally omitted — let the model return a complete response
         ];
 
         $systemPrompt = $prompt['system'];
         $userPrompt   = $prompt['user'];
-        $maxTokens    = $prompt['model_parameters']['max_tokens'];
 
         Log::info('SummarizeSingleCallJob: openrouter_request_start', [
             'call_id'              => $this->callId,
             'model'                => $model,
-            'max_tokens'           => $maxTokens,
             'temperature'          => $prompt['model_parameters']['temperature'],
             'system_prompt_chars'  => strlen($systemPrompt),
             'user_prompt_chars'    => strlen($userPrompt),
@@ -256,38 +253,13 @@ PROMPT;
         ]);
 
         if ($response->status() === 402) {
-            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
-            if ($affordableTokens !== null && $affordableTokens > 5) {
-                // Use nearly all available credit; old floor of 64 was wrong when account
-                // can only afford fewer tokens (e.g. 23), causing the retry to always fail too.
-                $adjustedTokens = max(1, $affordableTokens - 2);
-                Log::warning('SummarizeSingleCallJob: openrouter_402_retry', [
-                    'call_id'              => $this->callId,
-                    'model'                => $model,
-                    'original_max_tokens'  => $maxTokens,
-                    'affordable_tokens'    => $affordableTokens,
-                    'retry_max_tokens'     => $adjustedTokens,
-                    'reason'               => 'insufficient_credits_adjusting_max_tokens',
-                ]);
-                $payload['max_tokens'] = $adjustedTokens;
-                $response = Http::withHeaders($headers)
-                    ->timeout(30)
-                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-                Log::info('SummarizeSingleCallJob: openrouter_retry_response_raw', [
-                    'call_id'          => $this->callId,
-                    'model'            => $model,
-                    'retry_max_tokens' => $adjustedTokens,
-                    'http_status'      => $response->status(),
-                    'raw_body'         => $response->body(),
-                ]);
-            } else {
-                Log::warning('SummarizeSingleCallJob: openrouter_402_no_retry', [
-                    'call_id'           => $this->callId,
-                    'model'             => $model,
-                    'affordable_tokens' => $affordableTokens,
-                    'reason'            => 'affordable_token_count_too_low_for_useful_response',
-                ]);
-            }
+            // 402 means credit exhausted; no max_tokens cap to reduce, so log and let the outer
+            // handler mark the call as credit_exhausted.
+            Log::warning('SummarizeSingleCallJob: openrouter_402_credit_exhausted', [
+                'call_id'  => $this->callId,
+                'model'    => $model,
+                'raw_body' => $response->body(),
+            ]);
         }
 
         if (! $response->successful()) {
@@ -344,5 +316,17 @@ PROMPT;
     public function failed(\Throwable $exception): void
     {
         Log::error("Job permanently failed for call {$this->callId} after {$this->tries} attempts: {$exception->getMessage()}");
+
+        // Mark call as not_generated so it won't be requeued in normal pipeline
+        // Admin can manually regenerate via button/admin UI
+        $call = Call::find($this->callId);
+        if ($call) {
+            $call->ai_summary_status = 'not_generated';
+            $call->save();
+            Log::info("Marked call {$this->callId} with ai_summary_status='not_generated' for manual regeneration", [
+                'call_id' => $this->callId,
+                'exception' => get_class($exception),
+            ]);
+        }
     }
 }

@@ -343,13 +343,30 @@
                 </template>
 
                 <template #cell-actions="{ row }">
-                    <BaseButton
-                        variant="ghost"
-                        size="sm"
-                        @click.stop="viewRow(row)"
-                    >
-                        View
-                    </BaseButton>
+                    <div class="admin-callsActionStack">
+                        <div
+                            v-if="row.aiRecovery?.statusText && row.aiRecovery?.hasTranscript === false"
+                            class="admin-callsActionHint"
+                        >
+                            {{ row.aiRecovery.statusText }}
+                        </div>
+                        <BaseButton
+                            v-if="row.aiRecovery?.canRegenerate"
+                            variant="secondary"
+                            size="sm"
+                            :loading="regeneratingCallId === row.id"
+                            @click.stop="regenerateRow(row)"
+                        >
+                            {{ row.aiRecovery.actionLabel }}
+                        </BaseButton>
+                        <BaseButton
+                            variant="ghost"
+                            size="sm"
+                            @click.stop="viewRow(row)"
+                        >
+                            View
+                        </BaseButton>
+                    </div>
                 </template>
             </BaseTable>
 
@@ -504,6 +521,7 @@ import {
 
 const loading = ref(true);
 const error = ref("");
+const regeneratingCallId = ref(null);
 
 const router = useRouter();
 
@@ -568,6 +586,10 @@ function normalizeRow(item) {
         subCategory: item.subCategory,
         categorySource: item.categorySource,
         categoryConfidence: item.categoryConfidence,
+        aiSummaryStatus: item.aiSummaryStatus,
+        aiCategoryStatus: item.aiCategoryStatus,
+        hasAiSummary: item.hasAiSummary,
+        aiRecovery: item.aiRecovery,
     };
 }
 
@@ -742,6 +764,24 @@ function toggleFilters() {
 
 function refresh() {
     fetchCalls();
+}
+
+async function regenerateRow(row) {
+    if (!row?.id || regeneratingCallId.value !== null) return;
+
+    regeneratingCallId.value = row.id;
+    error.value = "";
+
+    try {
+        await adminApi.post(`/calls/${row.callId}/regenerate-ai`);
+        await fetchCalls();
+    } catch (e) {
+        error.value =
+            e?.response?.data?.message ||
+            "Failed to queue AI regeneration for this call.";
+    } finally {
+        regeneratingCallId.value = null;
+    }
 }
 
 function viewRow(row) {

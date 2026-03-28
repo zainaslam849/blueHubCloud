@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -68,17 +69,25 @@ class RegenerateAiJob implements ShouldQueue
 
         if (in_array('categories', $steps, true)) {
             $pendingCategories = $this->resetPendingCategoryStatuses($from, $to);
+            $rangeDays = max(1, $from->diffInDays($to) + 1);
 
-            QueueCallsForCategorizationJob::dispatch(
-                $this->companyId,
-                max(500, $pendingCategories + 25),
-                25,
-                false,
-                'default',
-                $from->toDateString(),
-                $to->toDateString(),
-                null,
-            )->onQueue('default')->delay(now()->addSeconds(5));
+            Bus::chain([
+                new GenerateAiCategoriesForCompanyJob(
+                    $this->companyId,
+                    $rangeDays,
+                    null,
+                ),
+                new QueueCallsForCategorizationJob(
+                    $this->companyId,
+                    max(500, $pendingCategories + 25),
+                    25,
+                    false,
+                    'default',
+                    $from->toDateString(),
+                    $to->toDateString(),
+                    null,
+                ),
+            ])->onQueue('default')->dispatch();
         }
     }
 

@@ -11,6 +11,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 
 class ContinuePipelineAfterSummariesJob implements ShouldQueue
@@ -97,19 +98,24 @@ class ContinuePipelineAfterSummariesJob implements ShouldQueue
             $pipelineRun->load('stages');
         }
 
-        GenerateAiCategoriesForCompanyJob::dispatch($this->companyId, $this->rangeDays)
-            ->onQueue($this->pipelineQueue);
-
-        QueueCallsForCategorizationJob::dispatch(
-            $this->companyId,
-            $this->categorizeLimit,
-            25,
-            false,
-            $this->pipelineQueue,
-            $this->fromDate,
-            $this->toDate,
-            $this->pipelineRunId
-        )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(10));
+        // Ensure category taxonomy generation completes before call categorization starts.
+        Bus::chain([
+            new GenerateAiCategoriesForCompanyJob(
+                $this->companyId,
+                $this->rangeDays,
+                $this->pipelineRunId,
+            ),
+            new QueueCallsForCategorizationJob(
+                $this->companyId,
+                $this->categorizeLimit,
+                25,
+                false,
+                $this->pipelineQueue,
+                $this->fromDate,
+                $this->toDate,
+                $this->pipelineRunId
+            ),
+        ])->onQueue($this->pipelineQueue)->dispatch();
 
         if ($pipelineRun) {
             $pipelineRun->upsertStage('category_generation', [

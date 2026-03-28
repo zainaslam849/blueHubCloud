@@ -96,6 +96,7 @@ Route::prefix('admin/api')->group(function () {
         
         Route::get('/calls', [AdminCallsController::class, 'index']);
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
+        Route::post('/calls/{idOrUid}/regenerate-ai', [AdminCallsController::class, 'regenerate']);
         Route::get('/transcriptions', [AdminTranscriptionsController::class, 'index']);
         Route::get('/transcriptions/{id}', [AdminTranscriptionsController::class, 'show']);
             Route::get('/ai-settings', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'index']);

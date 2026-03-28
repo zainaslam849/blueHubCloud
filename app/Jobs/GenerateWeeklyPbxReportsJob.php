@@ -79,6 +79,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         public ?string $fromDate = null,
         public ?string $toDate = null,
         public ?int $pipelineRunId = null,
+        public ?int $companyId = null,
         private ?ReportInsightsAiService $aiService = null,
     ) {
     }
@@ -95,6 +96,9 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
 
         $companyRows = DB::table('companies')
             ->select(['id', 'timezone'])
+            ->when($this->companyId !== null, function ($query) {
+                $query->where('id', $this->companyId);
+            })
             ->orderBy('id')
             ->get();
 
@@ -702,7 +706,7 @@ PROMPT;
 
             $modelParameters = [
                 'temperature' => 0.3,
-                'max_tokens' => 600,
+                // max_tokens intentionally omitted — let the model return a complete response
             ];
 
             return $this->callProvider(
@@ -892,7 +896,7 @@ PROMPT;
                 ['role' => 'user', 'content' => $prompt],
             ],
             'temperature' => $modelParameters['temperature'],
-            'max_tokens' => $modelParameters['max_tokens'],
+            // max_tokens intentionally omitted — let the model return a complete response
         ]);
 
         if (! $response->successful()) {
@@ -916,7 +920,7 @@ PROMPT;
             'anthropic-version' => '2023-06-01',
         ])->timeout(30)->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
-            'max_tokens' => $modelParameters['max_tokens'],
+            'max_tokens' => 4096, // Anthropic requires max_tokens; 4096 effectively means no cap
             'temperature' => $modelParameters['temperature'],
             'messages' => [
                 ['role' => 'user', 'content' => $prompt],
@@ -938,18 +942,22 @@ PROMPT;
 
     private function callOpenRouter(string $apiKey, string $model, string $prompt, array $modelParameters): string
     {
-        $response = Http::withHeaders([
-            'Authorization' => "Bearer {$apiKey}",
-            'HTTP-Referer' => config('app.url'),
-            'X-Title' => 'blueHubCloud Weekly Reports',
-        ])->timeout(30)->post('https://openrouter.ai/api/v1/chat/completions', [
+        $payload = [
             'model' => $model,
             'messages' => [
                 ['role' => 'user', 'content' => $prompt],
             ],
             'temperature' => $modelParameters['temperature'],
-            'max_tokens' => $modelParameters['max_tokens'],
-        ]);
+            // max_tokens intentionally omitted — let the model return a complete response
+        ];
+        if (isset($modelParameters['max_tokens'])) {
+            $payload['max_tokens'] = $modelParameters['max_tokens'];
+        }
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$apiKey}",
+            'HTTP-Referer' => config('app.url'),
+            'X-Title' => 'blueHubCloud Weekly Reports',
+        ])->timeout(30)->post('https://openrouter.ai/api/v1/chat/completions', $payload);
 
         if (! $response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());

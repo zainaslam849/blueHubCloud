@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Jobs\GenerateWeeklyPbxReportsJob;
 use App\Models\Call;
 use App\Models\PipelineRun;
+use Carbon\CarbonImmutable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -40,6 +41,16 @@ class QueueCallsForCategorizationJob implements ShouldQueue
 
         if (! $this->force) {
             $query->whereNull('category_id');
+        }
+
+        // Exclude calls marked as not_generated (awaiting manual regeneration)
+        $query->where('ai_category_status', '!=', 'not_generated');
+
+        if ($this->fromDate !== null && $this->toDate !== null) {
+            $query->whereBetween('started_at', [
+                CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay(),
+                CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay(),
+            ]);
         }
 
         $calls = $query->limit($this->limit)->get(['id']);

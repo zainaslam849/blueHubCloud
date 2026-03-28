@@ -99,36 +99,43 @@ class CategorizeSingleCallJob implements ShouldQueue
             );
 
             if (! $validation['valid']) {
-                Log::warning('AI categorization returned unknown category; skipping assignment', [
+                Log::warning('AI categorization invalid; applying General fallback assignment', [
                     'call_id' => $this->callId,
                     'company_id' => $call->company_id,
                     'category' => $result['category'] ?? null,
                     'sub_category' => $result['sub_category'] ?? null,
                     'error' => $validation['error'] ?? null,
                 ]);
-                return;
-            }
 
-            // Persist categorization to database
-            $persistResult = CallCategorizationPersistenceService::persistCategorization(
-                callId: $call->id,
-                categoryName: $validation['category_name'] ?? $result['category'],
-                subCategoryName: $validation['sub_category_name'] ?? ($result['sub_category'] ?? null),
-                confidence: (float) ($result['confidence'] ?? 0)
-            );
+                $persistResult = CallCategorizationPersistenceService::persistCategorization(
+                    callId: $call->id,
+                    categoryName: 'General',
+                    subCategoryName: null,
+                    confidence: 1.0
+                );
+            } else {
+                // Persist categorization to database
+                $persistResult = CallCategorizationPersistenceService::persistCategorization(
+                    callId: $call->id,
+                    categoryName: $validation['category_name'] ?? $result['category'],
+                    subCategoryName: $validation['sub_category_name'] ?? ($result['sub_category'] ?? null),
+                    confidence: (float) ($result['confidence'] ?? 0)
+                );
+            }
 
             if ($persistResult['success']) {
                 $call->ai_category_status = 'completed';
                 $call->save();
 
-                $logMsg = "✓ Categorized call {$this->callId} as '{$result['category']}' using {$aiSettings->categorization_model}";
+                $logCategory = $validation['category_name'] ?? ($result['category'] ?? 'General');
+                $logMsg = "✓ Categorized call {$this->callId} as '{$logCategory}' using {$aiSettings->categorization_model}";
                 if ($persistResult['fallback_used']) {
                     $logMsg .= " (fallback: {$persistResult['reason']})";
                 }
                 Log::info($logMsg, [
                     'call_id' => $this->callId,
-                    'category' => $result['category'],
-                    'confidence' => $result['confidence'],
+                    'category' => $logCategory,
+                    'confidence' => $result['confidence'] ?? null,
                     'model' => $aiSettings->categorization_model,
                     'fallback_used' => $persistResult['fallback_used'],
                 ]);
@@ -174,7 +181,7 @@ class CategorizeSingleCallJob implements ShouldQueue
                 ['role' => 'user', 'content' => $prompt['user']],
             ],
             'temperature' => $prompt['model_parameters']['temperature'],
-            'max_tokens' => $prompt['model_parameters']['max_tokens'],
+            // max_tokens intentionally omitted — let the model return a complete response
             'response_format' => ['type' => 'json_object'],
         ]);
 
@@ -208,7 +215,7 @@ class CategorizeSingleCallJob implements ShouldQueue
             'anthropic-version' => '2023-06-01',
         ])->timeout(25)->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
-            'max_tokens' => $prompt['model_parameters']['max_tokens'],
+            'max_tokens' => 4096,
             'temperature' => $prompt['model_parameters']['temperature'],
             'system' => $prompt['system'],
             'messages' => [
@@ -263,22 +270,12 @@ class CategorizeSingleCallJob implements ShouldQueue
             ],
             'response_format' => ['type' => 'json_object'],
             'temperature' => 0.3,
-            'max_tokens' => 220, // Categorization output is small JSON (~100-200 tokens)
+            // max_tokens intentionally omitted — let the model return a complete response
         ];
 
         $response = Http::withHeaders($headers)
             ->timeout(30)
             ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-
-        if ($response->status() === 402) {
-            $affordableTokens = $this->extractAffordableTokenLimit($response->body());
-            if ($affordableTokens !== null) {
-                $payload['max_tokens'] = max(96, min($payload['max_tokens'], $affordableTokens - 16));
-                $response = Http::withHeaders($headers)
-                    ->timeout(30)
-                    ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
-            }
-        }
 
         if (!$response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -323,6 +320,18 @@ class CategorizeSingleCallJob implements ShouldQueue
     public function failed(\Throwable $exception): void
     {
         Log::error("Job permanently failed for call {$this->callId} after {$this->tries} attempts: {$exception->getMessage()}");
+
+        // Mark call as not_generated so it won't be requeued in normal pipeline
+        // Admin can manually regenerate via button/admin UI
+        $call = Call::find($this->callId);
+        if ($call) {
+            $call->ai_category_status = 'not_generated';
+            $call->save();
+            Log::info("Marked call {$this->callId} with ai_category_status='not_generated' for manual regeneration", [
+                'call_id' => $this->callId,
+                'exception' => get_class($exception),
+            ]);
+        }
     }
 
     /**
