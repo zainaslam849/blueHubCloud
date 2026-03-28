@@ -334,12 +334,30 @@ class FetchTranscriptionsJob implements ShouldQueue
 
             if ($transcriptText === '') {
                 $explicitNotFound = $this->isExplicitNoTranscription($transcriptionData);
+
+                // If transcription explicitly doesn't exist on PBX, skip it and let
+                // the pipeline continue. No point retrying — it won't appear.
+                if ($explicitNotFound) {
+                    $this->markVerificationSkipped($call, 'explicit_no_transcription');
+
+                    Log::info('FetchTranscriptionsJob: skipped call (no transcription on PBX) — pipeline continues', [
+                        'call_id' => $call->id,
+                        'server_id' => $call->server_id,
+                        'pbx_unique_id' => $call->pbx_unique_id,
+                        'payload_keys' => array_keys($transcriptionData),
+                        'pipeline_run_id' => $this->pipelineRunId,
+                        'event' => 'transcription_skipped_not_found',
+                    ]);
+
+                    return 'skipped_no_transcription';
+                }
+
+                // Response came back but text was unusable (empty/garbled) — retry.
                 $attempt = $this->incrementRetryAttempts($call);
-                $shouldTerminate = $explicitNotFound || $this->shouldTerminateAfterRetry($call, $attempt);
-                $terminationReason = $explicitNotFound ? 'explicit_no_transcription' : 'unusable_text_max_retries';
+                $shouldTerminate = $this->shouldTerminateAfterRetry($call, $attempt);
 
                 if ($shouldTerminate) {
-                    $this->markVerificationTerminal($call, 'terminal_no_transcription', $terminationReason);
+                    $this->markVerificationTerminal($call, 'terminal_no_transcription', 'unusable_text_max_retries');
                 } else {
                     $this->markVerificationPending($call, 'unusable_text_retry');
                 }
@@ -351,16 +369,16 @@ class FetchTranscriptionsJob implements ShouldQueue
                     'payload_keys' => array_keys($transcriptionData),
                     'pipeline_run_id' => $this->pipelineRunId,
                     'preview' => $this->extractPreview($transcriptionData),
-                    'explicit_not_found' => $explicitNotFound,
+                    'explicit_not_found' => false,
                     'retry_after_seconds' => $shouldTerminate ? null : self::RETRY_COOLDOWN_SECONDS,
                     'retry_attempt' => $attempt,
                     'max_retry_attempts' => self::MAX_RETRY_ATTEMPTS,
                     'is_terminal' => $shouldTerminate,
-                    'termination_reason' => $terminationReason,
+                    'termination_reason' => 'unusable_text_max_retries',
                     'event' => 'terminal_state_set',
                 ]);
 
-                return $shouldTerminate ? ($explicitNotFound ? 'explicit_not_found' : 'terminal_max_retries') : 'pending_retry';
+                return $shouldTerminate ? 'terminal_max_retries' : 'pending_retry';
             }
 
             $normalized['transcript_text'] = $transcriptText;
@@ -538,6 +556,24 @@ class FetchTranscriptionsJob implements ShouldQueue
         $meta['transcription_last_decision'] = $reason;
         $meta['transcription_last_decision_at'] = now()->toIso8601String();
         $call->transcription_status = 'saved';
+        $call->pbx_metadata = $meta;
+        $call->save();
+    }
+
+    /**
+     * Mark the call transcription as skipped (no transcription exists on PBX).
+     * Unlike terminal, this allows the pipeline to continue to the next stage
+     * (AI summarization / categorization) without a transcript.
+     */
+    private function markVerificationSkipped(Call $call, string $reason): void
+    {
+        $meta = is_array($call->pbx_metadata) ? $call->pbx_metadata : [];
+        $meta['transcription_verification_status'] = 'skipped';
+        $meta['transcription_last_decision'] = $reason;
+        $meta['transcription_last_decision_at'] = now()->toIso8601String();
+        $call->has_transcription = false;
+        $call->transcription_status = 'skipped';
+        $call->transcription_checked_at = now();
         $call->pbx_metadata = $meta;
         $call->save();
     }

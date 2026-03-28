@@ -239,7 +239,7 @@
                 :loading="loading"
                 :skeleton-rows="10"
                 :virtualized="isDesktop"
-                height="lg"
+                :height="tableHeight"
                 :row-height="48"
                 :overscan="8"
                 empty-title="No calls"
@@ -345,7 +345,10 @@
                 <template #cell-actions="{ row }">
                     <div class="admin-callsActionStack">
                         <div
-                            v-if="row.aiRecovery?.statusText && row.aiRecovery?.hasTranscript === false"
+                            v-if="
+                                row.aiRecovery?.statusText &&
+                                row.aiRecovery?.hasTranscript === false
+                            "
                             class="admin-callsActionHint"
                         >
                             {{ row.aiRecovery.statusText }}
@@ -365,6 +368,14 @@
                             @click.stop="viewRow(row)"
                         >
                             View
+                        </BaseButton>
+                        <BaseButton
+                            variant="ghost"
+                            size="sm"
+                            class="admin-btn--danger-text"
+                            @click.stop="openDeleteConfirm(row)"
+                        >
+                            Delete
                         </BaseButton>
                     </div>
                 </template>
@@ -502,6 +513,17 @@
                 </div>
             </Transition>
         </Teleport>
+
+        <Teleport to="body">
+            <DeletionConfirmDialog
+                :is-open="deleteConfirmOpen"
+                :call-id="deleteConfirmCallId"
+                :company="deleteConfirmCompany"
+                :loading="deletingCallId !== null"
+                @close="deleteConfirmOpen = false"
+                @confirm="confirmDelete"
+            />
+        </Teleport>
     </div>
 </template>
 
@@ -518,10 +540,16 @@ import {
     BasePagination,
     BaseTable,
 } from "../../components/admin/base";
+import DeletionConfirmDialog from "../../components/admin/base/DeletionConfirmDialog.vue";
 
 const loading = ref(true);
 const error = ref("");
 const regeneratingCallId = ref(null);
+const deleteConfirmOpen = ref(false);
+const deleteConfirmCallId = ref("");
+const deleteConfirmCompany = ref("");
+const deletingCallId = ref(null);
+const deleteConfirmRow = ref(null);
 
 const router = useRouter();
 
@@ -557,6 +585,7 @@ const meta = ref({
 });
 
 const isDesktop = ref(true);
+const tableHeight = ref("lg");
 
 const columns = ref([
     { key: "callId", label: "Call ID" },
@@ -790,10 +819,46 @@ function viewRow(row) {
     router.push({ name: "admin.calls.detail", params: { callId } });
 }
 
+function openDeleteConfirm(row) {
+    deleteConfirmCallId.value = row?.callId || "Unknown";
+    deleteConfirmCompany.value = row?.company || "Unknown";
+    deleteConfirmRow.value = row;
+    deleteConfirmOpen.value = true;
+}
+
+async function confirmDelete() {
+    if (!deleteConfirmRow.value?.id) return;
+
+    deletingCallId.value = deleteConfirmRow.value.id;
+    error.value = "";
+
+    try {
+        await adminApi.delete(`/calls/${deleteConfirmRow.value.callId}`);
+        deleteConfirmOpen.value = false;
+        await fetchCalls();
+    } catch (e) {
+        error.value =
+            e?.response?.data?.message || "Failed to delete the call.";
+    } finally {
+        deletingCallId.value = null;
+        deleteConfirmRow.value = null;
+    }
+}
+
 let searchTimer = 0;
 
 function updateViewport() {
-    isDesktop.value = window.innerWidth >= 1024;
+    const w = window.innerWidth;
+    isDesktop.value = w >= 1024;
+
+    // Adjust table height based on viewport
+    if (w < 640) {
+        tableHeight.value = "sm"; // Small screens
+    } else if (w < 1024) {
+        tableHeight.value = "md"; // Tablets
+    } else {
+        tableHeight.value = "lg"; // Desktop
+    }
 }
 watch(
     () => search.value,

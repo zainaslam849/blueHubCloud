@@ -3197,16 +3197,21 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 @media (max-width: 1023px) {
     .admin-callsToolbar {
         align-items: stretch;
+        flex-direction: column;
     }
     .admin-callsToolbar__left,
     .admin-callsToolbar__right {
         width: 100%;
+        justify-content: flex-start;
+    }
+    .admin-callsToolbar__left {
+        flex-direction: column;
     }
     .admin-callsToolbar__search {
         min-width: 100%;
     }
     .admin-callsToolbar__right {
-        justify-content: flex-start;
+        justify-content: space-between;
     }
 }
 
@@ -3379,6 +3384,37 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
 .admin-callsFooter {
     margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+    .admin-callsActionStack {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    .admin-callsActionStack .admin-btn {
+        width: 100%;
+    }
+
+    .admin-callsCategory__main {
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .admin-callsActionHint {
+        display: none;
+    }
+}
+
+.admin-btn--danger-text {
+    color: #dc2626 !important;
+}
+
+.admin-btn--danger-text:hover {
+    background: rgba(220, 38, 38, 0.1) !important;
 }
 
 /* Companies module */

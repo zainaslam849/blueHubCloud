@@ -392,6 +392,44 @@ class AdminCallsController extends Controller
         ], 202);
     }
 
+    /**
+     * Delete a call (soft delete).
+     */
+    public function destroy(Request $request, string $idOrUid): JsonResponse
+    {
+        $call = $this->resolveCall($idOrUid, [
+            'company:id,name',
+        ]);
+
+        if (! $call) {
+            return response()->json([
+                'message' => 'Call not found.',
+            ], 404);
+        }
+
+        // Log the deletion for audit purposes
+        \Illuminate\Support\Facades\Log::info('Call deleted via admin panel', [
+            'call_id' => $call->id,
+            'call_uid' => $call->pbx_unique_id,
+            'company_id' => $call->company_id,
+            'company_name' => $call->company?->name,
+            'deleted_by' => $request->user()?->id,
+            'deleted_at' => now(),
+        ]);
+
+        // Perform soft delete
+        $call->delete();
+
+        return response()->json([
+            'message' => 'Call deleted successfully.',
+            'data' => [
+                'id' => $call->id,
+                'callId' => $call->pbx_unique_id,
+                'deletedAt' => $call->deleted_at?->toISOString(),
+            ],
+        ], 200);
+    }
+
     private function resolveCall(string $idOrUid, array $with = []): ?Call
     {
         $query = Call::query()->with($with);

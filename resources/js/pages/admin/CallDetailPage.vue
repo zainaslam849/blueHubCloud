@@ -481,24 +481,31 @@
                 <div v-else-if="!call?.category" class="admin-empty">
                     <div class="admin-empty__title">No category yet</div>
                     <div class="admin-empty__desc">
-                        This call will show its AI category after categorization completes.
+                        This call will show its AI category after categorization
+                        completes.
                     </div>
                 </div>
 
                 <div v-else class="admin-kvGrid">
                     <div class="admin-kv">
                         <div class="admin-kv__k">Category</div>
-                        <div class="admin-kv__v">{{ call?.category || "—" }}</div>
+                        <div class="admin-kv__v">
+                            {{ call?.category || "—" }}
+                        </div>
                     </div>
 
                     <div class="admin-kv">
                         <div class="admin-kv__k">Sub-category</div>
-                        <div class="admin-kv__v">{{ call?.subCategory || "—" }}</div>
+                        <div class="admin-kv__v">
+                            {{ call?.subCategory || "—" }}
+                        </div>
                     </div>
 
                     <div class="admin-kv">
                         <div class="admin-kv__k">Confidence</div>
-                        <div class="admin-kv__v">{{ formatConfidence(call?.categoryConfidence) }}</div>
+                        <div class="admin-kv__v">
+                            {{ formatConfidence(call?.categoryConfidence) }}
+                        </div>
                     </div>
                 </div>
             </BaseCard>
