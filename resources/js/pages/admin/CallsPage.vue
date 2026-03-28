@@ -342,26 +342,127 @@
                     <span class="admin-callsMono">{{ formatDate(value) }}</span>
                 </template>
 
+                <template #cell-aiPipeline="{ row }">
+                    <div class="admin-callsPipeline">
+                        <div class="admin-callsPipeline__step">
+                            <span class="admin-callsPipeline__label"
+                                >Transcript</span
+                            >
+                            <span
+                                v-if="row.aiRecovery?.hasTranscript"
+                                class="admin-callsPipeline__ok"
+                                >✓</span
+                            >
+                            <template v-else>
+                                <span class="admin-callsPipeline__missing"
+                                    >Not available</span
+                                >
+                                <BaseButton
+                                    variant="ghost"
+                                    size="sm"
+                                    class="admin-callsPipeline__btn"
+                                    :loading="
+                                        checkingTranscriptCallId === row.id
+                                    "
+                                    @click.stop="checkTranscriptRow(row)"
+                                >
+                                    Check again
+                                </BaseButton>
+                            </template>
+                        </div>
+
+                        <div class="admin-callsPipeline__step">
+                            <span class="admin-callsPipeline__label"
+                                >Summary</span
+                            >
+                            <span
+                                v-if="row.hasAiSummary"
+                                class="admin-callsPipeline__ok"
+                                >✓</span
+                            >
+                            <span
+                                v-else-if="
+                                    row.aiSummaryStatus === 'queued' ||
+                                    row.aiSummaryStatus === 'running'
+                                "
+                                class="admin-callsPipeline__badge"
+                            >
+                                Generating...
+                            </span>
+                            <template
+                                v-else-if="
+                                    row.aiRecovery?.canRegenerate &&
+                                    row.aiRecovery?.action ===
+                                        'summary_and_category'
+                                "
+                            >
+                                <span class="admin-callsPipeline__missing"
+                                    >Not generated</span
+                                >
+                                <BaseButton
+                                    variant="ghost"
+                                    size="sm"
+                                    class="admin-callsPipeline__btn"
+                                    :loading="regeneratingCallId === row.id"
+                                    @click.stop="regenerateRow(row)"
+                                >
+                                    Generate again
+                                </BaseButton>
+                            </template>
+                            <span v-else class="admin-callsPipeline__dash"
+                                >—</span
+                            >
+                        </div>
+
+                        <div class="admin-callsPipeline__step">
+                            <span class="admin-callsPipeline__label"
+                                >Category</span
+                            >
+                            <span
+                                v-if="row.category"
+                                class="admin-callsPipeline__ok"
+                                >✓
+                                <span class="admin-callsPipeline__catName">{{
+                                    row.category
+                                }}</span></span
+                            >
+                            <span
+                                v-else-if="
+                                    row.aiCategoryStatus === 'queued' ||
+                                    row.aiCategoryStatus === 'running'
+                                "
+                                class="admin-callsPipeline__badge"
+                            >
+                                Generating...
+                            </span>
+                            <template
+                                v-else-if="
+                                    row.aiRecovery?.canRegenerate &&
+                                    row.aiRecovery?.action === 'category_only'
+                                "
+                            >
+                                <span class="admin-callsPipeline__missing"
+                                    >Not generated</span
+                                >
+                                <BaseButton
+                                    variant="ghost"
+                                    size="sm"
+                                    class="admin-callsPipeline__btn"
+                                    :loading="regeneratingCallId === row.id"
+                                    @click.stop="regenerateRow(row)"
+                                >
+                                    Generate again
+                                </BaseButton>
+                            </template>
+                            <span v-else class="admin-callsPipeline__dash"
+                                >—</span
+                            >
+                        </div>
+                    </div>
+                </template>
+
                 <template #cell-actions="{ row }">
                     <div class="admin-callsActionStack">
-                        <div
-                            v-if="
-                                row.aiRecovery?.statusText &&
-                                row.aiRecovery?.hasTranscript === false
-                            "
-                            class="admin-callsActionHint"
-                        >
-                            {{ row.aiRecovery.statusText }}
-                        </div>
-                        <BaseButton
-                            v-if="row.aiRecovery?.canRegenerate"
-                            variant="secondary"
-                            size="sm"
-                            :loading="regeneratingCallId === row.id"
-                            @click.stop="regenerateRow(row)"
-                        >
-                            {{ row.aiRecovery.actionLabel }}
-                        </BaseButton>
                         <BaseButton
                             variant="ghost"
                             size="sm"
@@ -545,6 +646,7 @@ import DeletionConfirmDialog from "../../components/admin/base/DeletionConfirmDi
 const loading = ref(true);
 const error = ref("");
 const regeneratingCallId = ref(null);
+const checkingTranscriptCallId = ref(null);
 const deleteConfirmOpen = ref(false);
 const deleteConfirmCallId = ref("");
 const deleteConfirmCompany = ref("");
@@ -598,6 +700,7 @@ const columns = ref([
     { key: "status", label: "Status" },
     { key: "category", label: "Category" },
     { key: "createdAt", label: "Created" },
+    { key: "aiPipeline", label: "AI Pipeline" },
     { key: "actions", label: "Actions", cellClass: "admin-callsCol--right" },
 ]);
 
@@ -618,6 +721,8 @@ function normalizeRow(item) {
         aiSummaryStatus: item.aiSummaryStatus,
         aiCategoryStatus: item.aiCategoryStatus,
         hasAiSummary: item.hasAiSummary,
+        hasTranscription: item.hasTranscription,
+        transcriptionStatus: item.transcriptionStatus,
         aiRecovery: item.aiRecovery,
     };
 }
@@ -810,6 +915,34 @@ async function regenerateRow(row) {
             "Failed to queue AI regeneration for this call.";
     } finally {
         regeneratingCallId.value = null;
+    }
+}
+
+async function checkTranscriptRow(row) {
+    if (!row?.id || checkingTranscriptCallId.value !== null) return;
+
+    checkingTranscriptCallId.value = row.id;
+    error.value = "";
+
+    try {
+        const res = await adminApi.post(
+            `/calls/${row.callId}/check-transcript`,
+        );
+        const found = Boolean(res?.data?.found);
+
+        if (!found) {
+            error.value =
+                res?.data?.message ||
+                "Transcript is still not available for this call.";
+        }
+
+        await fetchCalls();
+    } catch (e) {
+        error.value =
+            e?.response?.data?.message ||
+            "Failed to check transcript for this call.";
+    } finally {
+        checkingTranscriptCallId.value = null;
     }
 }
 

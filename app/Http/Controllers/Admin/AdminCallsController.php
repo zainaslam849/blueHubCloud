@@ -7,11 +7,15 @@ use App\Jobs\CategorizeSingleCallJob;
 use App\Jobs\GenerateWeeklyPbxReportsJob;
 use App\Jobs\SummarizeSingleCallJob;
 use App\Models\Call;
+use App\Models\CallTranscription;
+use App\Services\Normalization\PbxPayloadNormalizer;
+use App\Services\Providers\PbxwareAdapter;
 use Carbon\CarbonImmutable;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Log;
 
 class AdminCallsController extends Controller
 {
@@ -152,6 +156,7 @@ class AdminCallsController extends Controller
                     'durationSeconds' => (int) ($call->duration_seconds ?? 0),
                     'status' => $this->normalizeOperationalStatus($call->status),
                     'hasTranscription' => (bool) ($call->has_transcription ?? false),
+                    'transcriptionStatus' => $call->transcription_status,
                     'transcriptSnippet' => $call->transcript_text ? mb_substr($call->transcript_text, 0, 160) : null,
                     'createdAt' => optional($call->created_at)->toISOString(),
                     'category' => $call->category?->name,
@@ -393,6 +398,158 @@ class AdminCallsController extends Controller
     }
 
     /**
+     * Check whether transcript is now available for a call and, if found,
+     * restart AI pipeline from transcript -> summary -> category -> report refresh.
+     */
+    public function checkTranscript(Request $request, string $idOrUid): JsonResponse
+    {
+        $call = $this->resolveCall($idOrUid, [
+            'company:id,timezone',
+        ]);
+
+        if (! $call) {
+            return response()->json([
+                'message' => 'Call not found.',
+            ], 404);
+        }
+
+        if ($this->hasUsableTranscript($call)) {
+            return response()->json([
+                'found' => true,
+                'message' => 'Transcript already available for this call.',
+                'data' => [
+                    'call_id' => $call->id,
+                ],
+            ], 200);
+        }
+
+        if (! $call->server_id || ! $call->pbx_unique_id) {
+            return response()->json([
+                'found' => false,
+                'message' => 'Call is missing PBX identifiers.',
+                'data' => [
+                    'call_id' => $call->id,
+                ],
+            ], 422);
+        }
+
+        $adapter = app(PbxwareAdapter::class);
+
+        try {
+            $transcriptionData = $adapter->fetchTranscription(
+                serverId: (string) $call->server_id,
+                externalCallId: (string) $call->pbx_unique_id,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('AdminCallsController: checkTranscript fetch failed', [
+                'call_id' => $call->id,
+                'server_id' => $call->server_id,
+                'pbx_unique_id' => $call->pbx_unique_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'found' => false,
+                'message' => 'Failed to contact PBX server. Please try again later.',
+                'data' => [
+                    'call_id' => $call->id,
+                ],
+            ], 502);
+        }
+
+        if (empty($transcriptionData) || $this->isExplicitNoTranscription($transcriptionData)) {
+            $call->has_transcription = false;
+            $call->transcription_status = 'skipped';
+            $call->transcription_checked_at = now();
+            $call->save();
+
+            return response()->json([
+                'found' => false,
+                'message' => 'Transcript is not available on the PBX server for this call.',
+                'data' => [
+                    'call_id' => $call->id,
+                ],
+            ], 200);
+        }
+
+        $normalized = PbxPayloadNormalizer::normalizeTranscription($transcriptionData, $call);
+
+        $transcriptText = is_string($normalized['transcript_text'] ?? null)
+            ? trim($normalized['transcript_text'])
+            : '';
+
+        if ($transcriptText === '') {
+            $call->has_transcription = false;
+            $call->transcription_status = 'skipped';
+            $call->transcription_checked_at = now();
+            $call->save();
+
+            return response()->json([
+                'found' => false,
+                'message' => 'Transcript data was returned but no usable text could be extracted.',
+                'data' => [
+                    'call_id' => $call->id,
+                ],
+            ], 200);
+        }
+
+        $normalized['transcript_text'] = $transcriptText;
+
+        CallTranscription::query()->updateOrCreate(
+            ['call_id' => $call->id],
+            $normalized
+        );
+
+        // Reset downstream AI state so the chain restarts from summary.
+        $call->transcript_text = $transcriptText;
+        $call->has_transcription = true;
+        $call->transcription_status = 'saved';
+        $call->transcription_checked_at = now();
+        $call->ai_summary = null;
+        $call->ai_summary_status = 'queued';
+        $call->category_id = null;
+        $call->sub_category_id = null;
+        $call->sub_category_label = null;
+        $call->category_source = null;
+        $call->category_confidence = null;
+        $call->categorized_at = null;
+        $call->ai_category_status = 'queued';
+        $call->save();
+
+        $refreshRange = $this->resolveRefreshRange($call);
+
+        Bus::chain([
+            new SummarizeSingleCallJob($call->id),
+            new CategorizeSingleCallJob($call->id),
+            new GenerateWeeklyPbxReportsJob(
+                $refreshRange['from_date'],
+                $refreshRange['to_date'],
+                null,
+                (int) $call->company_id,
+            ),
+        ])
+            ->onQueue('default')
+            ->dispatch();
+
+        Log::info('AdminCallsController: transcript found, AI pipeline queued', [
+            'call_id' => $call->id,
+            'server_id' => $call->server_id,
+            'pbx_unique_id' => $call->pbx_unique_id,
+            'transcript_length' => mb_strlen($transcriptText),
+        ]);
+
+        return response()->json([
+            'found' => true,
+            'message' => 'Transcript found. AI summary and categorization have been queued.',
+            'data' => [
+                'call_id' => $call->id,
+                'from_date' => $refreshRange['from_date'],
+                'to_date' => $refreshRange['to_date'],
+            ],
+        ], 202);
+    }
+
+    /**
      * Delete a call (soft delete).
      */
     public function destroy(Request $request, string $idOrUid): JsonResponse
@@ -565,6 +722,38 @@ class AdminCallsController extends Controller
             'completed' => 'Completed',
             default => 'Pending',
         };
+    }
+
+    private function isExplicitNoTranscription(array $payload): bool
+    {
+        $candidates = [
+            $payload['message'] ?? null,
+            $payload['error'] ?? null,
+            $payload['status'] ?? null,
+            data_get($payload, 'result.message'),
+            data_get($payload, 'result.error'),
+            data_get($payload, 'data.message'),
+            data_get($payload, 'data.error'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! is_string($candidate)) {
+                continue;
+            }
+
+            $value = strtolower(trim($candidate));
+            if ($value === '') {
+                continue;
+            }
+
+            if (str_contains($value, 'no transcription')
+                || str_contains($value, 'transcription not found')
+                || str_contains($value, 'not found')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function resolveRefreshRange(Call $call): array

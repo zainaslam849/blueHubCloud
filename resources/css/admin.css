@@ -3386,6 +3386,65 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     margin-top: 12px;
 }
 
+/* AI pipeline status column */
+.admin-callsPipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 210px;
+}
+
+.admin-callsPipeline__step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.admin-callsPipeline__label {
+    color: #6b7280;
+    font-size: 11px;
+    min-width: 62px;
+    flex-shrink: 0;
+}
+
+.admin-callsPipeline__ok {
+    color: #16a34a;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.admin-callsPipeline__catName {
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.admin-callsPipeline__badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #fef3c7;
+    color: #92400e;
+    white-space: nowrap;
+}
+
+.admin-callsPipeline__missing {
+    color: #9ca3af;
+    font-size: 11px;
+}
+
+.admin-callsPipeline__dash {
+    color: #d1d5db;
+    font-size: 12px;
+}
+
+.admin-callsPipeline__btn.admin-btn {
+    font-size: 11px;
+    padding: 1px 8px;
+    min-height: 20px;
+}
+
 @media (max-width: 640px) {
     .admin-callsActionStack {
         flex-direction: column;
