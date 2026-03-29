@@ -115,7 +115,18 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             $categories = $parsed['categories'] ?? null;
 
             if (! is_array($categories)) {
-                throw new \Exception('AI category generation response missing categories array');
+                Log::warning('GenerateAiCategoriesForCompanyJob: AI response missing categories array; skipping category refresh', [
+                    'company_id' => $this->companyId,
+                    'model' => $aiSettings->categorization_model,
+                ]);
+
+                $this->markPipelineStageCompleted([
+                    'skipped' => true,
+                    'reason' => 'missing_categories_array',
+                    'summary_count' => (int) ($promptPayload['summary_count'] ?? 0),
+                ]);
+
+                return;
             }
 
             $normalizedCategories = $this->normalizeCategoriesPayload($categories);
@@ -128,8 +139,8 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 ->map(fn ($name) => trim((string) $name))
                 ->values();
 
-            if ($this->isDegenerateCategorySet($normalizedCategories) && $this->hasSpecificCategories($existingActiveNames->all())) {
-                Log::warning('GenerateAiCategoriesForCompanyJob: skipped destructive category refresh (degenerate AI output)', [
+            if (empty($normalizedCategories) || $this->isDegenerateCategorySet($normalizedCategories)) {
+                Log::warning('GenerateAiCategoriesForCompanyJob: skipped category refresh due to unusable AI output', [
                     'company_id' => $this->companyId,
                     'existing_active_categories' => $existingActiveNames->all(),
                     'generated_categories' => array_column($normalizedCategories, 'name'),
@@ -137,7 +148,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
 
                 $this->markPipelineStageCompleted([
                     'skipped' => true,
-                    'reason' => 'degenerate_category_set',
+                    'reason' => empty($normalizedCategories) ? 'empty_category_set' : 'degenerate_category_set',
                     'generated_count' => count($normalizedCategories),
                     'summary_count' => (int) ($promptPayload['summary_count'] ?? 0),
                 ]);
@@ -259,6 +270,22 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 'summary_count' => (int) ($promptPayload['summary_count'] ?? 0),
             ]);
         } catch (\Exception $e) {
+            if (str_contains($e->getMessage(), 'Failed to parse AI category JSON response')) {
+                Log::warning('GenerateAiCategoriesForCompanyJob: unparseable AI output; skipping category refresh', [
+                    'company_id' => $this->companyId,
+                    'model' => $aiSettings->categorization_model ?? 'unknown',
+                    'error' => $e->getMessage(),
+                ]);
+
+                $this->markPipelineStageCompleted([
+                    'skipped' => true,
+                    'reason' => 'unparseable_ai_output',
+                    'error' => $e->getMessage(),
+                ]);
+
+                return;
+            }
+
             if ($this->isOpenRouterCreditLimitError($e)) {
                 Log::warning('Skipping AI category generation due to OpenRouter credit/token limit', [
                     'company_id' => $this->companyId,
@@ -592,20 +619,6 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         }
 
         return $this->isGenericCategoryName($categories[0]['name'] ?? '');
-    }
-
-    /**
-     * @param  array<int, string>  $names
-     */
-    private function hasSpecificCategories(array $names): bool
-    {
-        foreach ($names as $name) {
-            if (! $this->isGenericCategoryName($name)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function isGenericCategoryName(string $name): bool

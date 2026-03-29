@@ -183,7 +183,7 @@ PROMPT;
     private static function buildCategoriesSection($categories): string
     {
         if ($categories->isEmpty()) {
-            return '- General';
+            return '- (no active categories configured)';
         }
 
         $lines = [];
