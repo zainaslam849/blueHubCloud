@@ -53,7 +53,7 @@ class CallCategorizationPersistenceService
             if (! $category) {
                 $trimmedCategory = trim($categoryName);
                 if ($trimmedCategory === '') {
-                    return self::assignGeneralCategory($call, $confidence, 'Empty category name from AI');
+                    return self::leaveUncategorized($call, 'Empty category name from AI');
                 }
 
                 $category = CallCategory::create([
@@ -149,53 +149,24 @@ class CallCategorizationPersistenceService
     }
 
     /**
-     * Assign "General" category as fallback.
+     * Keep call uncategorized when AI did not provide a usable category.
      */
-    private static function assignGeneralCategory(Call $call, float $confidence, string $reason): array
+    private static function leaveUncategorized(Call $call, string $reason): array
     {
-        $generalCategory = CallCategory::query()
-            ->where('is_enabled', true)
-            ->where('status', 'active')
-            ->where('company_id', $call->company_id)
-            ->where('name', 'General')
-            ->first();
-
-        if (! $generalCategory) {
-            $generalCategory = CallCategory::create([
-                'company_id' => $call->company_id,
-                'name' => 'General',
-                'description' => 'Auto-created fallback category during AI categorization',
-                'source' => 'ai',
-                'is_enabled' => true,
-                'status' => 'active',
-                'generated_at' => now(),
-                'generated_by_model' => null,
-            ]);
-
-            Log::warning('General category was missing and has been auto-created for fallback assignment', [
-                'call_id' => $call->id,
-                'company_id' => $call->company_id,
-                'category_id' => $generalCategory->id,
-                'reason' => $reason,
-                'confidence' => $confidence,
-            ]);
-        }
-
         $call->update([
-            'category_id' => $generalCategory->id,
+            'category_id' => null,
             'sub_category_id' => null,
             'sub_category_label' => null,
-            'category_source' => 'ai',
-            'category_confidence' => $confidence,
-            'categorized_at' => now(),
+            'category_source' => null,
+            'category_confidence' => null,
+            'categorized_at' => null,
         ]);
 
         DB::commit();
 
-        Log::warning('Used "General" category fallback', [
+        Log::warning('Left call uncategorized because AI category output was not usable', [
             'call_id' => $call->id,
             'reason' => $reason,
-            'confidence' => $confidence,
         ]);
 
         return [

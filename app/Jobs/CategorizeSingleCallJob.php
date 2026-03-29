@@ -99,7 +99,16 @@ class CategorizeSingleCallJob implements ShouldQueue
             );
 
             if (! $validation['valid']) {
-                Log::warning('AI categorization invalid; applying General fallback assignment', [
+                $call->category_id = null;
+                $call->sub_category_id = null;
+                $call->sub_category_label = null;
+                $call->category_source = null;
+                $call->category_confidence = null;
+                $call->categorized_at = null;
+                $call->ai_category_status = 'not_generated';
+                $call->save();
+
+                Log::warning('AI categorization invalid; leaving call uncategorized for manual retry', [
                     'call_id' => $this->callId,
                     'company_id' => $call->company_id,
                     'category' => $result['category'] ?? null,
@@ -107,12 +116,7 @@ class CategorizeSingleCallJob implements ShouldQueue
                     'error' => $validation['error'] ?? null,
                 ]);
 
-                $persistResult = CallCategorizationPersistenceService::persistCategorization(
-                    callId: $call->id,
-                    categoryName: 'General',
-                    subCategoryName: null,
-                    confidence: 1.0
-                );
+                return;
             } else {
                 // Persist categorization to database
                 $persistResult = CallCategorizationPersistenceService::persistCategorization(
@@ -124,10 +128,11 @@ class CategorizeSingleCallJob implements ShouldQueue
             }
 
             if ($persistResult['success']) {
-                $call->ai_category_status = 'completed';
+                $persistedCall = $persistResult['call'] ?? $call->fresh();
+                $call->ai_category_status = $persistedCall?->category_id ? 'completed' : 'not_generated';
                 $call->save();
 
-                $logCategory = $validation['category_name'] ?? ($result['category'] ?? 'General');
+                $logCategory = $validation['category_name'] ?? ($result['category'] ?? 'Unknown');
                 $logMsg = "✓ Categorized call {$this->callId} as '{$logCategory}' using {$aiSettings->categorization_model}";
                 if ($persistResult['fallback_used']) {
                     $logMsg .= " (fallback: {$persistResult['reason']})";
@@ -325,6 +330,12 @@ class CategorizeSingleCallJob implements ShouldQueue
         // Admin can manually regenerate via button/admin UI
         $call = Call::find($this->callId);
         if ($call) {
+            $call->category_id = null;
+            $call->sub_category_id = null;
+            $call->sub_category_label = null;
+            $call->category_source = null;
+            $call->category_confidence = null;
+            $call->categorized_at = null;
             $call->ai_category_status = 'not_generated';
             $call->save();
             Log::info("Marked call {$this->callId} with ai_category_status='not_generated' for manual regeneration", [

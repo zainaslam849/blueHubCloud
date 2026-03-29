@@ -257,9 +257,23 @@ PROMPT;
             ];
         }
 
-        $categoryName = $aiResponse['category'] ?? null;
+        $categoryName = trim((string) ($aiResponse['category'] ?? ''));
         $subCategoryName = $aiResponse['sub_category'] ?? null;
         $confidence = $aiResponse['confidence'] ?? 0;
+
+        if ($categoryName === '') {
+            return [
+                'valid' => false,
+                'error' => 'Empty category field',
+            ];
+        }
+
+        if (is_string($subCategoryName)) {
+            $subCategoryName = trim($subCategoryName);
+            if ($subCategoryName === '') {
+                $subCategoryName = null;
+            }
+        }
 
         if ((float) $confidence < self::CONFIDENCE_THRESHOLD) {
             $categoryName = 'Other';

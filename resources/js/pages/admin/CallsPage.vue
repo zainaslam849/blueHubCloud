@@ -232,6 +232,10 @@
                 {{ error }}
             </div>
 
+            <div v-if="pipelineAlert" class="admin-alert admin-alert--error">
+                {{ pipelineAlert }}
+            </div>
+
             <BaseTable
                 :columns="columns"
                 :rows="rows"
@@ -644,6 +648,7 @@ import DeletionConfirmDialog from "../../components/admin/base/DeletionConfirmDi
 
 const loading = ref(true);
 const error = ref("");
+const pipelineAlert = ref("");
 const regeneratingCallId = ref(null);
 const checkingTranscriptCallId = ref(null);
 const deleteConfirmOpen = ref(false);
@@ -678,6 +683,7 @@ const companies = ref([]);
 const categories = ref([]);
 
 const rows = ref([]);
+const pendingRegenerationRowIds = new Set();
 const meta = ref({
     currentPage: 1,
     lastPage: 1,
@@ -826,6 +832,7 @@ async function fetchCalls() {
         rows.value = Array.isArray(payload?.data)
             ? payload.data.map(normalizeRow)
             : [];
+        syncRegenerationAlerts();
         meta.value = payload?.meta ?? meta.value;
     } catch (e) {
         rows.value = [];
@@ -833,6 +840,30 @@ async function fetchCalls() {
     } finally {
         loading.value = false;
         syncProcessingPoller();
+    }
+}
+
+function syncRegenerationAlerts() {
+    if (!pendingRegenerationRowIds.size) return;
+
+    for (const rowId of Array.from(pendingRegenerationRowIds)) {
+        const row = rows.value.find((item) => Number(item?.id) === Number(rowId));
+        if (!row) {
+            continue;
+        }
+
+        const categoryStatus = String(row?.aiCategoryStatus || "").toLowerCase();
+
+        if (categoryStatus === "queued" || categoryStatus === "running") {
+            continue;
+        }
+
+        if (categoryStatus === "not_generated" && !row?.categoryId) {
+            pipelineAlert.value =
+                `AI output was not generated for call ${row.callId}. Category remains empty. Please try Generate again.`;
+        }
+
+        pendingRegenerationRowIds.delete(rowId);
     }
 }
 
@@ -949,11 +980,14 @@ async function regenerateRow(row) {
 
     regeneratingCallId.value = row.id;
     error.value = "";
+    pipelineAlert.value = "";
+    pendingRegenerationRowIds.add(row.id);
 
     try {
         await adminApi.post(`/calls/${row.callId}/regenerate-ai`);
         await fetchCalls();
     } catch (e) {
+        pendingRegenerationRowIds.delete(row.id);
         error.value =
             e?.response?.data?.message ||
             "Failed to queue AI regeneration for this call.";
