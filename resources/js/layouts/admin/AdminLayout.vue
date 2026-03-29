@@ -101,6 +101,7 @@ const pageTitle = computed(() => {
 const appName = ref("BlueHubCloud");
 const logoUrl = ref("");
 const faviconUrl = ref("");
+let brandingRequestId = 0;
 
 function normalizeAssetUrl(value) {
     if (!value || typeof value !== "string") {
@@ -128,36 +129,77 @@ function applyBranding() {
     const name = appName.value || "BlueHubCloud";
     document.title = `${name} — Admin`;
 
+    let link = document.querySelector("link[rel~='icon']");
     if (faviconUrl.value) {
-        let link = document.querySelector("link[rel~='icon']");
         if (!link) {
             link = document.createElement("link");
             link.setAttribute("rel", "icon");
             document.head.appendChild(link);
         }
         link.setAttribute("href", faviconUrl.value);
+    } else if (link) {
+        link.parentNode?.removeChild(link);
     }
+}
+
+async function verifyAssetUrl(url) {
+    if (!url) {
+        return "";
+    }
+
+    // Validate only local storage assets to avoid unnecessary requests.
+    const isStorageAsset = /\/storage\/app-settings\//i.test(url);
+    if (!isStorageAsset) {
+        return url;
+    }
+
+    try {
+        const res = await fetch(url, {
+            method: "HEAD",
+            cache: "no-store",
+            credentials: "same-origin",
+        });
+        return res.ok ? url : "";
+    } catch (e) {
+        return "";
+    }
+}
+
+async function applyBrandingSettings(data) {
+    const requestId = ++brandingRequestId;
+
+    appName.value = data.site_name || appName.value || "BlueHubCloud";
+
+    const normalizedLogo = normalizeAssetUrl(data.admin_logo_url);
+    const normalizedFavicon = normalizeAssetUrl(data.admin_favicon_url);
+
+    const [safeLogoUrl, safeFaviconUrl] = await Promise.all([
+        verifyAssetUrl(normalizedLogo),
+        verifyAssetUrl(normalizedFavicon),
+    ]);
+
+    if (requestId !== brandingRequestId) {
+        return;
+    }
+
+    logoUrl.value = safeLogoUrl;
+    faviconUrl.value = safeFaviconUrl;
+    applyBranding();
 }
 
 async function loadSettings() {
     try {
         const res = await adminApi.get("/settings");
         const data = res?.data?.data || {};
-        appName.value = data.site_name || "BlueHubCloud";
-        logoUrl.value = normalizeAssetUrl(data.admin_logo_url);
-        faviconUrl.value = normalizeAssetUrl(data.admin_favicon_url);
-        applyBranding();
+        await applyBrandingSettings(data);
     } catch (e) {
         // ignore
     }
 }
 
-function handleSettingsUpdated(event) {
+async function handleSettingsUpdated(event) {
     const detail = event?.detail || {};
-    appName.value = detail.site_name || appName.value || "BlueHubCloud";
-    logoUrl.value = normalizeAssetUrl(detail.admin_logo_url);
-    faviconUrl.value = normalizeAssetUrl(detail.admin_favicon_url);
-    applyBranding();
+    await applyBrandingSettings(detail);
 }
 
 onMounted(() => {
