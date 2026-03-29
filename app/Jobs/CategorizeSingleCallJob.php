@@ -78,6 +78,25 @@ class CategorizeSingleCallJob implements ShouldQueue
             companyId: $call->company_id
         );
 
+        $normalizedTranscript = preg_replace('/\s+/', ' ', trim((string) $call->transcript_text));
+        $transcriptPreview = mb_substr((string) $normalizedTranscript, 0, 220);
+
+        Log::info('CategorizeSingleCallJob: prompt built with transcript payload', [
+            'call_id' => $this->callId,
+            'company_id' => $call->company_id,
+            'provider' => $aiSettings->provider ?? null,
+            'model' => $aiSettings->categorization_model ?? null,
+            'direction' => $call->direction ?? 'inbound',
+            'status' => $call->status ?? 'completed',
+            'duration_seconds' => (int) ($call->duration_seconds ?? 0),
+            'transcript_chars' => mb_strlen((string) $call->transcript_text),
+            'transcript_words' => str_word_count((string) $call->transcript_text),
+            'transcript_sha1' => sha1((string) $call->transcript_text),
+            'transcript_preview' => $transcriptPreview,
+            'prompt_system_chars' => mb_strlen((string) ($prompt['system'] ?? '')),
+            'prompt_user_chars' => mb_strlen((string) ($prompt['user'] ?? '')),
+        ]);
+
         try {
             // Parse provider and model from categorization_model (format: "openai/gpt-4o-mini")
             [$provider, $model] = explode('/', $aiSettings->categorization_model, 2);
@@ -93,10 +112,29 @@ class CategorizeSingleCallJob implements ShouldQueue
                 throw new \Exception("Unsupported AI provider: {$aiSettings->provider}");
             }
 
+            Log::info('CategorizeSingleCallJob: raw AI categorization response', [
+                'call_id' => $this->callId,
+                'company_id' => $call->company_id,
+                'category_raw' => $result['category'] ?? null,
+                'sub_category_raw' => $result['sub_category'] ?? null,
+                'confidence_raw' => $result['confidence'] ?? null,
+                'response_keys' => array_keys($result),
+            ]);
+
             $validation = CallCategorizationPromptService::validateCategorization(
                 $result,
                 $call->company_id
             );
+
+            Log::info('CategorizeSingleCallJob: validation outcome', [
+                'call_id' => $this->callId,
+                'company_id' => $call->company_id,
+                'valid' => $validation['valid'] ?? false,
+                'validation_error' => $validation['error'] ?? null,
+                'category_validated' => $validation['category_name'] ?? null,
+                'sub_category_validated' => $validation['sub_category_name'] ?? null,
+                'confidence_validated' => $validation['confidence'] ?? null,
+            ]);
 
             if (! $validation['valid']) {
                 $call->category_id = null;
@@ -143,7 +181,21 @@ class CategorizeSingleCallJob implements ShouldQueue
                     'confidence' => $result['confidence'] ?? null,
                     'model' => $aiSettings->categorization_model,
                     'fallback_used' => $persistResult['fallback_used'],
+                    'persisted_category_id' => $persistedCall?->category_id,
+                    'persisted_sub_category_id' => $persistedCall?->sub_category_id,
+                    'ai_category_status' => $call->ai_category_status,
                 ]);
+
+                if (strcasecmp((string) $logCategory, 'General') === 0) {
+                    Log::warning('CategorizeSingleCallJob: AI assigned General category', [
+                        'call_id' => $this->callId,
+                        'company_id' => $call->company_id,
+                        'category_raw' => $result['category'] ?? null,
+                        'confidence_raw' => $result['confidence'] ?? null,
+                        'transcript_sha1' => sha1((string) $call->transcript_text),
+                        'transcript_preview' => $transcriptPreview,
+                    ]);
+                }
             } else {
                 throw new \Exception("Failed to persist categorization");
             }
