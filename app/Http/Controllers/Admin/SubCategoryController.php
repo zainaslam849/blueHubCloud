@@ -10,19 +10,27 @@ use Illuminate\Validation\Rule;
 
 class SubCategoryController extends Controller
 {
+    private function resolveCategory(int $categoryId, ?int $companyId = null): CallCategory
+    {
+        $category = CallCategory::findOrFail($categoryId);
+
+        if ($companyId !== null && (int) $category->company_id !== (int) $companyId) {
+            abort(403, 'Category does not belong to this company.');
+        }
+
+        return $category;
+    }
+
     /**
      * Get all sub-categories for a category
      */
     public function index(Request $request, $categoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to this company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
 
         $subCategories = $category->subCategories()
             ->withTrashed()
@@ -40,7 +48,7 @@ class SubCategoryController extends Controller
     public function store(Request $request, $categoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'name' => [
                 'required',
                 'string',
@@ -51,10 +59,7 @@ class SubCategoryController extends Controller
             'is_enabled' => 'boolean',
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to this company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
 
         $validated['source'] = 'admin';
         $validated['status'] = 'active';
@@ -73,7 +78,7 @@ class SubCategoryController extends Controller
     public function update(Request $request, $categoryId, $subCategoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
             'name' => [
                 'sometimes',
                 'required',
@@ -85,10 +90,7 @@ class SubCategoryController extends Controller
             'is_enabled' => 'boolean',
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to this company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
         // Manual edits override AI-generated values
@@ -109,13 +111,10 @@ class SubCategoryController extends Controller
     public function toggle(Request $request, $categoryId, $subCategoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to this company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
         $subCategory = $category->subCategories()->findOrFail($subCategoryId);
 
         $subCategory->update([
@@ -134,13 +133,10 @@ class SubCategoryController extends Controller
     public function destroy(Request $request, $categoryId, $subCategoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to this company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
         $subCategory = $category->subCategories()->findOrFail($subCategoryId);
 
         $subCategory->delete();
@@ -156,13 +152,10 @@ class SubCategoryController extends Controller
     public function restore(Request $request, $categoryId, $subCategoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to this company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
         if (!$subCategory->deleted_at) {
@@ -185,13 +178,10 @@ class SubCategoryController extends Controller
     public function forceDelete(Request $request, $categoryId, $subCategoryId)
     {
         $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
         ]);
 
-        $category = CallCategory::findOrFail($categoryId);
-        if ($category->company_id !== $validated['company_id']) {
-            abort(403, 'Category does not belong to your company.');
-        }
+        $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);
 
         $subCategory->forceDelete();

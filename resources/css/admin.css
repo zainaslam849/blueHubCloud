@@ -858,7 +858,10 @@ body.admin-body {
     min-width: 0;
     display: grid;
     grid-template-rows: auto 1fr;
+    width: calc(100% - var(--admin-sidebar-width));
+    max-width: calc(100vw - var(--admin-sidebar-width));
     margin-left: var(--admin-sidebar-width);
+    overflow-x: hidden;
     transition: margin-left 220ms ease;
 }
 
@@ -889,6 +892,8 @@ body.admin-body {
     }
 
     .admin-main {
+        width: 100%;
+        max-width: 100%;
         margin-left: 0;
     }
 
@@ -3063,6 +3068,10 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     gap: 14px;
 }
 
+.admin-page > * {
+    min-width: 0;
+}
+
 .admin-page__header {
     display: flex;
     align-items: flex-end;
@@ -4539,6 +4548,10 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+}
+
+.admin-dashboard__grid > * {
+    min-width: 0;
 }
 
 .admin-panel {
