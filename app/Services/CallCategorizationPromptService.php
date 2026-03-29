@@ -8,6 +8,7 @@ use App\Repositories\AiSettingsRepository;
 class CallCategorizationPromptService
 {
     private const CONFIDENCE_THRESHOLD = 0.6;
+    private const GENERAL_ALLOWED_MAX_WORDS = 24;
 
     /**
      * System prompt for AI categorization
@@ -52,7 +53,11 @@ CATEGORIZATION STRATEGY:
 4. CONFIDENCE SCORING:
    - High confidence (0.8-1.0): Clear topic, obvious category
    - Medium confidence (0.6-0.79): Reasonable match but ambiguous
-   - Low confidence (<0.6): Very unclear → use "Other" or "General"
+    - Low confidence (<0.6): Very unclear → use "Other"
+
+6. IMPORTANT RULE FOR "GENERAL":
+    - Do NOT use "General" for real conversations with clear business intent.
+    - Use "General" only for very short/unclear interactions where there is no clear topic.
 
 5. INDUSTRY AWARENESS: Consider the company's industry context:
    - Telecom companies: Technical support, billing, service inquiries, sales
@@ -131,9 +136,11 @@ ANALYSIS INSTRUCTIONS:
 4. CONFIDENCE SCORING:
    - 0.8-1.0: Very clear topic and category match
    - 0.6-0.79: Reasonable match but some ambiguity
-   - Below {$threshold}: Very unclear → use "Other" or "General"
+    - Below {$threshold}: Very unclear → use "Other"
 
 5. CONSISTENCY: Similar calls should receive the same category name.
+
+6. STRICT RULE: Avoid returning "General" when transcript has clear intent (sales, support, billing, booking, complaint, technical issue, etc.). Use a specific category or propose a new one.
 
 OUTPUT FORMAT (JSON ONLY, NO EXPLANATION):
 {
@@ -243,7 +250,7 @@ PROMPT;
     /**
      * Parse AI response and validate categorization
      */
-    public static function validateCategorization(array $aiResponse, ?int $companyId = null): array
+    public static function validateCategorization(array $aiResponse, ?int $companyId = null, ?string $transcriptText = null): array
     {
         if (! $companyId) {
             throw new \InvalidArgumentException('Company ID is required for categorization validation.');
@@ -278,6 +285,28 @@ PROMPT;
         if ((float) $confidence < self::CONFIDENCE_THRESHOLD) {
             $categoryName = 'Other';
             $subCategoryName = 'Unclear';
+        }
+
+        $normalizedTranscript = preg_replace('/\s+/', ' ', trim((string) $transcriptText));
+        $transcriptWordCount = str_word_count((string) $normalizedTranscript);
+
+        if (strcasecmp($categoryName, 'General') === 0) {
+            $allowGeneral = $transcriptWordCount <= self::GENERAL_ALLOWED_MAX_WORDS
+                || self::looksLikeNoResponseInteraction((string) $normalizedTranscript);
+
+            if (! $allowGeneral) {
+                \Illuminate\Support\Facades\Log::warning('Rejecting AI General category for substantive transcript', [
+                    'company_id' => $companyId,
+                    'confidence' => $confidence,
+                    'transcript_words' => $transcriptWordCount,
+                    'transcript_preview' => mb_substr((string) $normalizedTranscript, 0, 220),
+                ]);
+
+                return [
+                    'valid' => false,
+                    'error' => 'General category rejected for substantive transcript',
+                ];
+            }
         }
 
         // Verify category exists and is active, or create it if AI suggested a new one
@@ -371,5 +400,31 @@ PROMPT;
                     ->where('status', 'active');
             }])
             ->get();
+    }
+
+    private static function looksLikeNoResponseInteraction(string $transcript): bool
+    {
+        if ($transcript === '') {
+            return true;
+        }
+
+        $value = strtolower($transcript);
+
+        $signals = [
+            'no response',
+            'no answer',
+            'voicemail',
+            'please leave a message',
+            'call ended',
+            'wrong number',
+        ];
+
+        foreach ($signals as $signal) {
+            if (str_contains($value, $signal)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

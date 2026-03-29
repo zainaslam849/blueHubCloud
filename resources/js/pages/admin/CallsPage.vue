@@ -847,20 +847,23 @@ function syncRegenerationAlerts() {
     if (!pendingRegenerationRowIds.size) return;
 
     for (const rowId of Array.from(pendingRegenerationRowIds)) {
-        const row = rows.value.find((item) => Number(item?.id) === Number(rowId));
+        const row = rows.value.find(
+            (item) => Number(item?.id) === Number(rowId),
+        );
         if (!row) {
             continue;
         }
 
-        const categoryStatus = String(row?.aiCategoryStatus || "").toLowerCase();
+        const categoryStatus = String(
+            row?.aiCategoryStatus || "",
+        ).toLowerCase();
 
         if (categoryStatus === "queued" || categoryStatus === "running") {
             continue;
         }
 
         if (categoryStatus === "not_generated" && !row?.categoryId) {
-            pipelineAlert.value =
-                `AI output was not generated for call ${row.callId}. Category remains empty. Please try Generate again.`;
+            pipelineAlert.value = `AI output was not generated for call ${row.callId}. Category remains empty. Please try Generate again.`;
         }
 
         pendingRegenerationRowIds.delete(rowId);
@@ -872,7 +875,9 @@ let processingPoller = 0;
 function hasActivePipelineWork() {
     return rows.value.some((row) => {
         const summaryStatus = String(row?.aiSummaryStatus || "").toLowerCase();
-        const categoryStatus = String(row?.aiCategoryStatus || "").toLowerCase();
+        const categoryStatus = String(
+            row?.aiCategoryStatus || "",
+        ).toLowerCase();
 
         return (
             summaryStatus === "queued" ||

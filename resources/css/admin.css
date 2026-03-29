@@ -3397,11 +3397,7 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     max-width: 420px;
     padding: 10px 12px;
     border-radius: 10px;
-    background: linear-gradient(
-        160deg,
-        var(--bg-surface),
-        var(--bg-faint)
-    );
+    background: linear-gradient(160deg, var(--bg-surface), var(--bg-faint));
     border: 1px solid var(--border-soft);
     box-shadow: var(--shadow-elev-1);
 }
