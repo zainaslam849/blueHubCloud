@@ -434,9 +434,8 @@ async function saveSettings() {
         faviconFile.value = null;
         revokePreview(logoPreviewUrl.value);
         revokePreview(faviconPreviewUrl.value);
-        logoPreviewUrl.value = data.admin_logo_url ?? logoPreviewUrl.value;
-        faviconPreviewUrl.value =
-            data.admin_favicon_url ?? faviconPreviewUrl.value;
+        logoPreviewUrl.value = data.admin_logo_url || "";
+        faviconPreviewUrl.value = data.admin_favicon_url || "";
         logoClear.value = false;
         faviconClear.value = false;
         settingsSuccess.value = true;

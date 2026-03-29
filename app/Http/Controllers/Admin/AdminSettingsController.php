@@ -95,11 +95,14 @@ class AdminSettingsController extends Controller
 
         $settings->save();
 
+        $adminLogoUrl = $this->sanitizeAssetUrl($settings->admin_logo_url);
+        $adminFaviconUrl = $this->sanitizeAssetUrl($settings->admin_favicon_url);
+
         return response()->json([
             'data' => [
                 'site_name' => $settings->site_name,
-                'admin_logo_url' => $settings->admin_logo_url,
-                'admin_favicon_url' => $settings->admin_favicon_url,
+                'admin_logo_url' => $adminLogoUrl,
+                'admin_favicon_url' => $adminFaviconUrl,
             ],
         ]);
     }

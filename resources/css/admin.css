@@ -3097,6 +3097,18 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     color: var(--text-muted);
 }
 
+.admin-routeError {
+    display: grid;
+    gap: 12px;
+}
+
+.admin-routeError__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 @media (max-width: 768px) {
     .admin-page__header {
         flex-direction: column;

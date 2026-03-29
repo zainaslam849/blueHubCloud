@@ -33,8 +33,26 @@
             />
 
             <main class="admin-content">
-                <RouterView v-slot="{ Component }">
-                    <Transition name="admin-route" mode="out-in">
+                <section
+                    v-if="routeRenderError"
+                    class="admin-card admin-card--glass admin-routeError"
+                    role="alert"
+                >
+                    <h2 class="admin-card__headline">This page failed to render</h2>
+                    <p class="admin-card__hint" style="margin-top: 8px">
+                        {{ routeRenderError }}
+                    </p>
+                    <div class="admin-routeError__actions">
+                        <BaseButton variant="primary" size="sm" @click="retryCurrentRoute">
+                            Retry
+                        </BaseButton>
+                        <BaseButton variant="secondary" size="sm" @click="hardReloadCurrentRoute">
+                            Hard reload
+                        </BaseButton>
+                    </div>
+                </section>
+                <RouterView v-else v-slot="{ Component }">
+                    <Transition name="admin-route">
                         <component :is="Component" />
                     </Transition>
                 </RouterView>
@@ -44,15 +62,24 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+    computed,
+    onBeforeUnmount,
+    onErrorCaptured,
+    onMounted,
+    ref,
+    watch,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+import { BaseButton } from "../../components/admin/base";
 import SidebarNav from "../../components/admin/SidebarNav.vue";
 import TopBar from "../../components/admin/TopBar.vue";
 import adminApi from "../../router/admin/api";
 
 const route = useRoute();
 const router = useRouter();
+const routeRenderError = ref("");
 
 const isLoading = ref(false);
 let loadingTimeout = null;
@@ -64,6 +91,40 @@ const isAuthShell = computed(() => {
     if (!route.name) return true;
     return route.name === "admin.login" || route.meta?.public === true;
 });
+
+watch(
+    () => route.fullPath,
+    () => {
+        routeRenderError.value = "";
+    },
+);
+
+onErrorCaptured((error, instance, info) => {
+    const message = String(error?.message || "Unexpected page error");
+    routeRenderError.value = message;
+
+    if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        loadingTimeout = null;
+    }
+    isLoading.value = false;
+
+    console.error("[AdminLayout] Route render error:", { message, info });
+    return false;
+});
+
+function retryCurrentRoute() {
+    routeRenderError.value = "";
+    router.replace({
+        path: route.path,
+        query: route.query,
+        hash: route.hash,
+    });
+}
+
+function hardReloadCurrentRoute() {
+    window.location.assign(route.fullPath || window.location.pathname);
+}
 
 const SIDEBAR_KEY = "admin_sidebar_collapsed";
 const sidebarCollapsed = ref(false);
