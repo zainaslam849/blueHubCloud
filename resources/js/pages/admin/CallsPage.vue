@@ -242,10 +242,7 @@
                 row-key="id"
                 :loading="loading"
                 :skeleton-rows="10"
-                :virtualized="isDesktop"
-                :height="tableHeight"
-                :row-height="48"
-                :overscan="8"
+                :virtualized="false"
                 empty-title="No calls"
                 empty-description="No calls match the current filters."
             >

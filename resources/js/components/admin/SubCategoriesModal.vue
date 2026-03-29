@@ -444,6 +444,41 @@ const togglingId = ref(null);
 const restoringId = ref(null);
 const formData = ref({ name: "", description: "", is_enabled: true });
 
+const categoryCompanyId = computed(() => {
+    const raw = props.category?.company_id;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+});
+
+function withCompanyParams(config = {}) {
+    if (!categoryCompanyId.value) {
+        return config;
+    }
+
+    return {
+        ...config,
+        params: {
+            ...(config.params || {}),
+            company_id: categoryCompanyId.value,
+        },
+    };
+}
+
+function withCompanyPayload(payload = {}) {
+    return {
+        ...payload,
+        company_id: categoryCompanyId.value,
+    };
+}
+
+function extractApiError(err, fallback) {
+    return (
+        err?.response?.data?.message ||
+        err?.message ||
+        fallback
+    );
+}
+
 const sortedSubCategories = computed(() => {
     return subCategories.value.slice().sort((a, b) => {
         if ((a.deleted_at === null) !== (b.deleted_at === null))
@@ -457,15 +492,21 @@ const isFormValid = computed(() => formData.value.name.trim().length > 0);
 
 const fetchSubCategories = async () => {
     if (!props.category) return;
+    if (!categoryCompanyId.value) {
+        error.value = "Missing company context for this category.";
+        return;
+    }
+
     try {
         loadingSubCats.value = true;
         error.value = null;
         const response = await adminApi.get(
             `/categories/${props.category.id}/sub-categories`,
+            withCompanyParams(),
         );
         subCategories.value = response.data.data;
     } catch (err) {
-        error.value = err.message || "Failed to load sub-categories";
+        error.value = extractApiError(err, "Failed to load sub-categories");
     } finally {
         loadingSubCats.value = false;
     }
@@ -504,20 +545,20 @@ const submitForm = async () => {
         if (isEditing.value && formData.value.id) {
             await adminApi.put(
                 `/categories/${props.category.id}/sub-categories/${formData.value.id}`,
-                {
+                withCompanyPayload({
                     name: formData.value.name,
                     description: formData.value.description || null,
                     is_enabled: formData.value.is_enabled,
-                },
+                }),
             );
         } else {
             await adminApi.post(
                 `/categories/${props.category.id}/sub-categories`,
-                {
+                withCompanyPayload({
                     name: formData.value.name,
                     description: formData.value.description || null,
                     is_enabled: formData.value.is_enabled,
-                },
+                }),
             );
         }
         await fetchSubCategories();
@@ -541,6 +582,7 @@ const toggleSubCategory = async (subCat) => {
         togglingId.value = subCat.id;
         await adminApi.patch(
             `/categories/${props.category.id}/sub-categories/${subCat.id}/toggle`,
+            withCompanyPayload(),
         );
         await fetchSubCategories();
     } catch (err) {
@@ -571,6 +613,9 @@ const confirmDelete = async () => {
         deleting.value = true;
         await adminApi.delete(
             `/categories/${props.category.id}/sub-categories/${deleteTarget.value.id}`,
+            {
+                data: withCompanyPayload(),
+            },
         );
         await fetchSubCategories();
         cancelDelete();
@@ -591,13 +636,11 @@ const restoreSubCategory = async (subCat) => {
         restoringId.value = subCat.id;
         await adminApi.post(
             `/categories/${props.category.id}/sub-categories/${subCat.id}/restore`,
+            withCompanyPayload(),
         );
         await fetchSubCategories();
     } catch (err) {
-        error.value =
-            err instanceof Error
-                ? err.message
-                : "Failed to restore sub-category";
+        error.value = extractApiError(err, "Failed to restore sub-category");
     } finally {
         restoringId.value = null;
     }

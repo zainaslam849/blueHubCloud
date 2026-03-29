@@ -545,6 +545,8 @@ async function startWorkers() {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .horizon-status {
@@ -645,6 +647,8 @@ async function startWorkers() {
     margin-top: 4px;
     font-size: 12px;
     color: #7c2d12;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .pipeline-diagnostics-grid {
@@ -688,5 +692,16 @@ async function startWorkers() {
 
 .pipeline-diagnostic-value.is-risk {
     color: #b45309;
+}
+
+@media (max-width: 1024px) {
+    .pipeline-diagnostic-item--wide {
+        grid-column: span 1;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
 }
 </style>

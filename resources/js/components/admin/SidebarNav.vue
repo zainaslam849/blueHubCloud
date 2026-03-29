@@ -12,10 +12,11 @@
                 aria-hidden="true"
             >
                 <img
-                    v-if="logoUrl"
+                    v-if="logoUrl && !logoLoadFailed"
                     class="admin-sidebar__logoImg"
                     :src="logoUrl"
                     alt=""
+                    @error="handleLogoError"
                 />
                 <span v-else class="admin-sidebar__logoInitial">
                     {{ logoInitial }}
@@ -187,7 +188,7 @@
 </template>
 
 <script setup>
-import { computed, h, ref, toRefs, watchEffect } from "vue";
+import { computed, h, ref, toRefs, watch, watchEffect } from "vue";
 import { useRoute } from "vue-router";
 
 defineEmits(["toggle-collapsed"]);
@@ -224,6 +225,12 @@ const logoInitial = computed(() => {
     return initials.join("") || "B";
 });
 
+const logoLoadFailed = ref(false);
+
+function handleLogoError() {
+    logoLoadFailed.value = true;
+}
+
 const route = useRoute();
 const openSections = ref({});
 const hoverGroup = ref(null);
@@ -257,6 +264,14 @@ const onGroupEnter = (item) => {
 const onGroupLeave = () => {
     hoverGroup.value = null;
 };
+
+watch(
+    () => props.logoUrl,
+    () => {
+        logoLoadFailed.value = false;
+    },
+    { immediate: true },
+);
 
 watchEffect(() => {
     items.value.forEach((item) => {

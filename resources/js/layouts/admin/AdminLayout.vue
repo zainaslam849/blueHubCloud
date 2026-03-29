@@ -56,6 +56,9 @@ const router = useRouter();
 
 const isLoading = ref(false);
 let loadingTimeout = null;
+let removeBeforeGuard = null;
+let removeAfterHook = null;
+let removeErrorHook = null;
 
 const isAuthShell = computed(() => {
     if (!route.name) return true;
@@ -99,6 +102,28 @@ const appName = ref("BlueHubCloud");
 const logoUrl = ref("");
 const faviconUrl = ref("");
 
+function normalizeAssetUrl(value) {
+    if (!value || typeof value !== "string") {
+        return "";
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+
+    // Keep protocol-relative URLs untouched.
+    if (trimmed.startsWith("//") && !trimmed.startsWith("///")) {
+        return trimmed;
+    }
+
+    if (/^https?:\/\//i.test(trimmed)) {
+        return trimmed.replace(/^(https?:\/\/[^/]+)\/+/, "$1/");
+    }
+
+    return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
 function applyBranding() {
     const name = appName.value || "BlueHubCloud";
     document.title = `${name} — Admin`;
@@ -119,8 +144,8 @@ async function loadSettings() {
         const res = await adminApi.get("/settings");
         const data = res?.data?.data || {};
         appName.value = data.site_name || "BlueHubCloud";
-        logoUrl.value = data.admin_logo_url || "";
-        faviconUrl.value = data.admin_favicon_url || "";
+        logoUrl.value = normalizeAssetUrl(data.admin_logo_url);
+        faviconUrl.value = normalizeAssetUrl(data.admin_favicon_url);
         applyBranding();
     } catch (e) {
         // ignore
@@ -130,8 +155,8 @@ async function loadSettings() {
 function handleSettingsUpdated(event) {
     const detail = event?.detail || {};
     appName.value = detail.site_name || appName.value || "BlueHubCloud";
-    logoUrl.value = detail.admin_logo_url || "";
-    faviconUrl.value = detail.admin_favicon_url || "";
+    logoUrl.value = normalizeAssetUrl(detail.admin_logo_url);
+    faviconUrl.value = normalizeAssetUrl(detail.admin_favicon_url);
     applyBranding();
 }
 
@@ -140,7 +165,7 @@ onMounted(() => {
     window.addEventListener("admin-settings-updated", handleSettingsUpdated);
 
     // Router loading bar
-    router.beforeEach((to, from) => {
+    removeBeforeGuard = router.beforeEach((to, from) => {
         // Show loading bar only if navigating between different routes
         if (to.path !== from.path) {
             // Small delay to avoid flashing for instant navigations
@@ -148,15 +173,25 @@ onMounted(() => {
                 isLoading.value = true;
             }, 100);
         }
+
+        return true;
     });
 
-    router.afterEach(() => {
+    removeAfterHook = router.afterEach(() => {
         // Clear timeout if navigation completed quickly
         if (loadingTimeout) {
             clearTimeout(loadingTimeout);
             loadingTimeout = null;
         }
         // Hide loading bar
+        isLoading.value = false;
+    });
+
+    removeErrorHook = router.onError(() => {
+        if (loadingTimeout) {
+            clearTimeout(loadingTimeout);
+            loadingTimeout = null;
+        }
         isLoading.value = false;
     });
 });
@@ -166,6 +201,21 @@ onBeforeUnmount(() => {
     if (loadingTimeout) {
         clearTimeout(loadingTimeout);
         loadingTimeout = null;
+    }
+
+    if (typeof removeBeforeGuard === "function") {
+        removeBeforeGuard();
+        removeBeforeGuard = null;
+    }
+
+    if (typeof removeAfterHook === "function") {
+        removeAfterHook();
+        removeAfterHook = null;
+    }
+
+    if (typeof removeErrorHook === "function") {
+        removeErrorHook();
+        removeErrorHook = null;
     }
 });
 

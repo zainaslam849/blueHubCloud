@@ -127,7 +127,10 @@ router.beforeEach(async (to) => {
         return true;
     }
 
-    const user = await getAdminUser(true);
+    // Only force a server check when access state is unknown; do not block
+    // every navigation on network round-trips.
+    const shouldForceCheck = getAdminAccess() === "unknown";
+    const user = await getAdminUser(shouldForceCheck);
     const access = getAdminAccess();
 
     if (access === "forbidden") {
@@ -145,6 +148,19 @@ router.beforeEach(async (to) => {
     }
 
     return true;
+});
+
+router.onError((error, to) => {
+    const message = String(error?.message || "");
+    const isChunkLoadError =
+        /Failed to fetch dynamically imported module/i.test(message) ||
+        /Importing a module script failed/i.test(message) ||
+        /Loading chunk [\w-]+ failed/i.test(message);
+
+    if (isChunkLoadError && to?.fullPath) {
+        // Recover from stale/missing lazy chunks by reloading the target URL.
+        window.location.assign(to.fullPath);
+    }
 });
 
 export default router;
