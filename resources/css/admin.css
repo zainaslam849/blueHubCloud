@@ -3478,8 +3478,10 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 }
 
 .admin-callsCol--actions {
-    min-width: 150px;
+    min-width: 160px;
     white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
 }
 
 .admin-callsActionStack {
