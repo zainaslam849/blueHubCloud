@@ -27,13 +27,13 @@ use Illuminate\Support\Facades\Log;
  */
 class SyncPbxTenantsCommand extends Command
 {
-    protected $signature = 'pbx:sync-tenants 
+    protected $signature = 'pbx:sync-tenants-legacy 
                             {--company-id= : Company ID to link new tenants to (default: 1)}
                             {--activate : Activate synced tenants}
                             {--deactivate= : Deactivate specific tenant by server_id}
                             {--verbose : Show detailed sync information}';
 
-    protected $description = 'Sync all PBXware tenants from API to database automatically';
+    protected $description = 'Legacy: sync all PBXware tenants from API to database automatically';
 
     private ?PbxwareAdapter $adapter = null;
 

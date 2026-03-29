@@ -275,8 +275,10 @@ class PbxwareClient
 
         // Determine timeout: secret-provided timeout (seconds) or default 30s
         $timeout = (int) ($this->credentials['timeout'] ?? $options['timeout'] ?? 30);
-        // Connection timeout: how long to wait for initial connection (default: same as request timeout)
-        $connect_timeout = (int) ($this->credentials['connect_timeout'] ?? $options['connect_timeout'] ?? $timeout);
+        // Connection timeout: fail fast on unreachable hosts while allowing
+        // longer read timeout for large successful responses.
+        $defaultConnectTimeout = min(max($timeout, 5), 10);
+        $connect_timeout = (int) ($this->credentials['connect_timeout'] ?? $options['connect_timeout'] ?? $defaultConnectTimeout);
         try {
             $start = microtime(true);
             $requestOptions = array_merge($options['guzzle'] ?? [], [
@@ -326,8 +328,8 @@ class PbxwareClient
         } catch (PbxwareClientException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $this->redactUrl($url ?? ''), 'base_url' => $this->baseUrl, 'timeout' => $timeout, 'error' => $e->getMessage()]);
-            throw new PbxwareClientException('PBX request exception: ' . $e->getMessage() . ' (base_url=' . ($this->baseUrl ?? '[not set]') . ', timeout=' . $timeout . 's)', 0, $e);
+            Log::error('PbxwareClient: exception during request', ['method' => $method, 'url' => $this->redactUrl($url ?? ''), 'base_url' => $this->baseUrl, 'timeout' => $timeout, 'connect_timeout' => $connect_timeout, 'error' => $e->getMessage()]);
+            throw new PbxwareClientException('PBX request exception: ' . $e->getMessage() . ' (base_url=' . ($this->baseUrl ?? '[not set]') . ', timeout=' . $timeout . 's, connect_timeout=' . $connect_timeout . 's)', 0, $e);
         }
     }
 

@@ -415,8 +415,10 @@ const saveSettings = async (providerId: number) => {
         // Refresh to get updated data
         await loadSettings();
     } catch (err) {
+        const apiMessage = (err as any)?.response?.data?.message;
         error.value =
-            err instanceof Error ? err.message : "Failed to save settings";
+            apiMessage ||
+            (err instanceof Error ? err.message : "Failed to save settings");
     } finally {
         saving.value = null;
     }
@@ -439,8 +441,10 @@ const triggerSync = async (providerId: number) => {
         // Refresh to get updated data
         await loadSettings();
     } catch (err) {
+        const apiMessage = (err as any)?.response?.data?.message;
         error.value =
-            err instanceof Error ? err.message : "Failed to trigger sync";
+            apiMessage ||
+            (err instanceof Error ? err.message : "Failed to trigger sync");
     } finally {
         syncing.value = null;
     }

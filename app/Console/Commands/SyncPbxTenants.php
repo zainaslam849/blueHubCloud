@@ -25,6 +25,8 @@ class SyncPbxTenants extends Command
     public function handle()
     {
         $this->info('Starting PBXware tenant sync...');
+        $hadFailures = false;
+        $requestedProviderId = $this->option('provider-id');
 
         // Get providers to sync
         if ($this->option('provider-id')) {
@@ -94,13 +96,17 @@ class SyncPbxTenants extends Command
                     ]
                 );
             } catch (\Exception $e) {
+                $hadFailures = true;
+                $friendlyError = $this->buildFriendlySyncError($e->getMessage());
+
                 $this->error(
-                    "❌ Failed to sync {$setting->pbxProvider->name}: {$e->getMessage()}"
+                    "❌ Failed to sync {$setting->pbxProvider->name}: {$friendlyError}"
                 );
 
                 $setting->update([
                     'last_sync_log' => json_encode([
-                        'error' => $e->getMessage(),
+                        'error' => $friendlyError,
+                        'raw_error' => $e->getMessage(),
                         'timestamp' => now(),
                     ]),
                 ]);
@@ -116,7 +122,30 @@ class SyncPbxTenants extends Command
         }
 
         $this->info("✨ Sync complete. Total companies synced: {$totalSynced}");
+
+        // For manual provider-specific trigger from admin UI, report failure
+        // with a non-zero exit so API can surface a clear message.
+        if ($requestedProviderId && $hadFailures) {
+            return Command::FAILURE;
+        }
+
         return Command::SUCCESS;
+    }
+
+    private function buildFriendlySyncError(string $rawMessage): string
+    {
+        $message = trim($rawMessage);
+        $lower = strtolower($message);
+
+        $isConnectTimeout = str_contains($lower, 'curl error 28') ||
+            str_contains($lower, 'failed to connect') ||
+            str_contains($lower, "couldn't connect to server");
+
+        if ($isConnectTimeout) {
+            return 'PBX host is unreachable from this server. Check PBX base URL, DNS/firewall/VPN rules, and ensure outbound HTTPS to the PBX host is allowed.';
+        }
+
+        return $message;
     }
 
     /**

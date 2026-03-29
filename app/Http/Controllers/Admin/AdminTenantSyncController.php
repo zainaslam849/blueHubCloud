@@ -190,15 +190,21 @@ class AdminTenantSyncController extends Controller
         $exitCode = \Illuminate\Support\Facades\Artisan::call('pbx:sync-tenants', [
             '--provider-id' => $providerId,
         ]);
+        $commandOutput = trim((string) \Illuminate\Support\Facades\Artisan::output());
 
         if ($exitCode === 0) {
             return response()->json([
                 'message' => 'Tenant sync triggered successfully for ' . $pbxProvider->name,
+                'output' => $commandOutput,
             ]);
         } else {
+            $message = $commandOutput !== ''
+                ? $commandOutput
+                : 'Failed to trigger tenant sync';
+
             return response()->json([
-                'message' => 'Failed to trigger tenant sync',
-            ], 500);
+                'message' => $message,
+            ], 502);
         }
     }
 }
