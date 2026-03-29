@@ -15,14 +15,41 @@ class AdminSettingsController extends Controller
     public function show(): JsonResponse
     {
         $settings = AppSetting::query()->first();
+        $adminLogoUrl = $this->sanitizeAssetUrl($settings?->admin_logo_url);
+        $adminFaviconUrl = $this->sanitizeAssetUrl($settings?->admin_favicon_url);
 
         return response()->json([
             'data' => [
                 'site_name' => $settings?->site_name,
-                'admin_logo_url' => $settings?->admin_logo_url,
-                'admin_favicon_url' => $settings?->admin_favicon_url,
+                'admin_logo_url' => $adminLogoUrl,
+                'admin_favicon_url' => $adminFaviconUrl,
             ],
         ]);
+    }
+
+    private function sanitizeAssetUrl(?string $url): ?string
+    {
+        if (! is_string($url) || trim($url) === '') {
+            return null;
+        }
+
+        $trimmed = trim($url);
+        $path = parse_url($trimmed, PHP_URL_PATH);
+
+        if (! is_string($path) || $path === '') {
+            return $trimmed;
+        }
+
+        $normalizedPath = ltrim($path, '/');
+
+        if (str_starts_with($normalizedPath, 'storage/')) {
+            $relativePublicPath = ltrim(substr($normalizedPath, strlen('storage/')), '/');
+            if ($relativePublicPath === '' || ! Storage::disk('public')->exists($relativePublicPath)) {
+                return null;
+            }
+        }
+
+        return $trimmed;
     }
 
     public function update(Request $request): JsonResponse

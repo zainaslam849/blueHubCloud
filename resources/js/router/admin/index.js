@@ -154,8 +154,11 @@ router.onError((error, to) => {
     const message = String(error?.message || "");
     const isChunkLoadError =
         /Failed to fetch dynamically imported module/i.test(message) ||
+        /Failed to load module script/i.test(message) ||
         /Importing a module script failed/i.test(message) ||
-        /Loading chunk [\w-]+ failed/i.test(message);
+        /Loading chunk [\w-]+ failed/i.test(message) ||
+        /ChunkLoadError/i.test(message) ||
+        /dynamically imported module/i.test(message);
 
     if (isChunkLoadError && to?.fullPath) {
         // Recover from stale/missing lazy chunks by reloading the target URL.
