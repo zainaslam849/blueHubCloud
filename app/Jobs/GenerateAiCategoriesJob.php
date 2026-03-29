@@ -90,7 +90,27 @@ class GenerateAiCategoriesJob implements ShouldQueue
                 throw new \Exception('AI category generation response missing categories array');
             }
 
-            DB::transaction(function () use ($categories) {
+            $normalizedCategories = $this->normalizeCategoriesPayload($categories);
+            $existingActiveNames = CallCategory::query()
+                ->where('company_id', $this->companyId)
+                ->where('is_enabled', true)
+                ->where('status', 'active')
+                ->pluck('name')
+                ->filter(fn ($name) => is_string($name) && trim($name) !== '')
+                ->map(fn ($name) => trim((string) $name))
+                ->values();
+
+            if ($this->isDegenerateCategorySet($normalizedCategories) && $this->hasSpecificCategories($existingActiveNames->all())) {
+                Log::warning('GenerateAiCategoriesJob: skipped destructive category refresh (degenerate AI output)', [
+                    'company_id' => $this->companyId,
+                    'existing_active_categories' => $existingActiveNames->all(),
+                    'generated_categories' => array_column($normalizedCategories, 'name'),
+                ]);
+
+                return;
+            }
+
+            DB::transaction(function () use ($normalizedCategories) {
                 $aiCategoryIds = CallCategory::query()
                     ->where('company_id', $this->companyId)
                     ->where('source', 'ai')
@@ -115,7 +135,7 @@ class GenerateAiCategoriesJob implements ShouldQueue
                         ]);
                 }
 
-                foreach ($categories as $categoryData) {
+                foreach ($normalizedCategories as $categoryData) {
                     $categoryName = trim((string) ($categoryData['name'] ?? ''));
                     if ($categoryName === '') {
                         continue;
@@ -402,5 +422,97 @@ class GenerateAiCategoriesJob implements ShouldQueue
             'json_error'  => json_last_error_msg(),
         ]);
         throw new \Exception('Failed to parse AI category JSON response');
+    }
+
+    /**
+     * @param  array<int, mixed>  $categories
+     * @return array<int, array{name:string, sub_categories:array<int, string>}>
+     */
+    private function normalizeCategoriesPayload(array $categories): array
+    {
+        $normalized = [];
+        $seen = [];
+
+        foreach ($categories as $categoryData) {
+            if (!is_array($categoryData)) {
+                continue;
+            }
+
+            $name = trim((string) ($categoryData['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $key = strtolower($name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $rawSubcategories = $categoryData['subcategories'] ?? $categoryData['sub_categories'] ?? [];
+            $subcategories = [];
+            $subSeen = [];
+
+            if (is_array($rawSubcategories)) {
+                foreach ($rawSubcategories as $subNameRaw) {
+                    $subName = trim((string) $subNameRaw);
+                    if ($subName === '') {
+                        continue;
+                    }
+
+                    $subKey = strtolower($subName);
+                    if (isset($subSeen[$subKey])) {
+                        continue;
+                    }
+
+                    $subSeen[$subKey] = true;
+                    $subcategories[] = $subName;
+                }
+            }
+
+            $normalized[] = [
+                'name' => $name,
+                'sub_categories' => $subcategories,
+            ];
+            $seen[$key] = true;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param  array<int, array{name:string, sub_categories:array<int, string>}>  $categories
+     */
+    private function isDegenerateCategorySet(array $categories): bool
+    {
+        if (empty($categories)) {
+            return true;
+        }
+
+        if (count($categories) !== 1) {
+            return false;
+        }
+
+        return $this->isGenericCategoryName($categories[0]['name'] ?? '');
+    }
+
+    /**
+     * @param  array<int, string>  $names
+     */
+    private function hasSpecificCategories(array $names): bool
+    {
+        foreach ($names as $name) {
+            if (!$this->isGenericCategoryName($name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isGenericCategoryName(string $name): bool
+    {
+        $value = strtolower(trim($name));
+
+        return in_array($value, ['general', 'other', 'misc', 'miscellaneous', 'uncategorized', 'unknown'], true);
     }
 }

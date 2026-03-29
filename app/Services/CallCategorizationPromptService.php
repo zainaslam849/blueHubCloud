@@ -27,7 +27,12 @@ class CallCategorizationPromptService
         }
 
         if (! empty($override)) {
-            return $override;
+            return $override . "\n\n" . <<<'PROMPT'
+NON-NEGOTIABLE SAFETY RULES:
+- Do NOT default to "General" for substantive conversations with clear intent.
+- If the available categories are too generic, you MAY propose a specific new category.
+- Return JSON only with keys: category, sub_category, confidence.
+PROMPT;
         }
 
         return <<<'PROMPT'
@@ -97,9 +102,14 @@ PROMPT;
 
         // Fetch active categories with their active sub-categories
         $categories = self::getActiveCategories($companyId);
+        $onlyGeneralCategory = self::hasOnlyGeneralCategory($categories);
 
         // Build categories section
         $categoriesSection = self::buildCategoriesSection($categories);
+        $afterHours = self::boolToYesNo($isAfterHours);
+        $categoryListQualityInstruction = $onlyGeneralCategory
+            ? '7. CATEGORY LIST QUALITY: The current list only contains "General". For substantive calls, you MUST propose a specific new category and must not return "General" unless it is a greeting-only/no-response/unclear interaction.'
+            : '7. CATEGORY LIST QUALITY: Use existing categories first, and only propose a new category when no existing category fits.';
 
         // Format duration
         $durationStr = self::formatDuration($duration);
@@ -112,7 +122,7 @@ CALL CONTEXT:
 - Direction: {$direction}
 - Status: {$status}
 - Duration: {$durationStr}
-- After hours: {self::boolToYesNo($isAfterHours)}
+- After hours: {$afterHours}
 
 TRANSCRIPT:
 """
@@ -142,6 +152,8 @@ ANALYSIS INSTRUCTIONS:
 
 6. STRICT RULE: Avoid returning "General" when transcript has clear intent (sales, support, billing, booking, complaint, technical issue, etc.). Use a specific category or propose a new one.
 
+{$categoryListQualityInstruction}
+
 OUTPUT FORMAT (JSON ONLY, NO EXPLANATION):
 {
   "category": "<exact category name from list above, or new category name>",
@@ -149,6 +161,20 @@ OUTPUT FORMAT (JSON ONLY, NO EXPLANATION):
   "confidence": 0.85
 }
 PROMPT;
+    }
+
+    /**
+     * Detect whether the company currently has only a "General" category active.
+     */
+    private static function hasOnlyGeneralCategory($categories): bool
+    {
+        if ($categories->count() !== 1) {
+            return false;
+        }
+
+        $name = trim((string) ($categories->first()->name ?? ''));
+
+        return strcasecmp($name, 'General') === 0;
     }
 
     /**
