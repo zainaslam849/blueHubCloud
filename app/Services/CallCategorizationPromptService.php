@@ -9,6 +9,7 @@ class CallCategorizationPromptService
 {
     private const CONFIDENCE_THRESHOLD = 0.6;
     private const GENERAL_ALLOWED_MAX_WORDS = 24;
+    private const NO_RESPONSE_MAX_WORDS = 80;
 
     /**
      * System prompt for AI categorization
@@ -317,14 +318,19 @@ PROMPT;
         $transcriptWordCount = str_word_count((string) $normalizedTranscript);
 
         if (strcasecmp($categoryName, 'General') === 0) {
-            $allowGeneral = $transcriptWordCount <= self::GENERAL_ALLOWED_MAX_WORDS
-                || self::looksLikeNoResponseInteraction((string) $normalizedTranscript);
+            $containsSubstantiveIntent = self::hasSubstantiveIntent((string) $normalizedTranscript);
+            $looksLikeNoResponse = self::looksLikeNoResponseInteraction((string) $normalizedTranscript);
+
+            $allowGeneral = (! $containsSubstantiveIntent && $transcriptWordCount <= self::GENERAL_ALLOWED_MAX_WORDS)
+                || $looksLikeNoResponse;
 
             if (! $allowGeneral) {
                 \Illuminate\Support\Facades\Log::warning('Rejecting AI General category for substantive transcript', [
                     'company_id' => $companyId,
                     'confidence' => $confidence,
                     'transcript_words' => $transcriptWordCount,
+                    'contains_substantive_intent' => $containsSubstantiveIntent,
+                    'looks_like_no_response' => $looksLikeNoResponse,
                     'transcript_preview' => mb_substr((string) $normalizedTranscript, 0, 220),
                 ]);
 
@@ -435,17 +441,78 @@ PROMPT;
         }
 
         $value = strtolower($transcript);
+        $wordCount = str_word_count($value);
+
+        if ($wordCount > self::NO_RESPONSE_MAX_WORDS) {
+            return false;
+        }
+
+        if (self::hasSubstantiveIntent($value)) {
+            return false;
+        }
 
         $signals = [
             'no response',
             'no answer',
             'voicemail',
             'please leave a message',
+            'please record your message',
+            'at the tone',
+            'mailbox',
+            'is not available',
             'call ended',
             'wrong number',
         ];
 
         foreach ($signals as $signal) {
+            if (str_contains($value, $signal)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function hasSubstantiveIntent(string $transcript): bool
+    {
+        if ($transcript === '') {
+            return false;
+        }
+
+        $value = strtolower($transcript);
+
+        $intentSignals = [
+            'interested in',
+            'want to',
+            'would like to',
+            'need',
+            'help with',
+            'support',
+            'issue',
+            'problem',
+            'billing',
+            'invoice',
+            'payment',
+            'price',
+            'quote',
+            'booking',
+            'appointment',
+            'schedule',
+            'demo',
+            'trial',
+            'order',
+            'service',
+            'complaint',
+            'follow up',
+            'website',
+            'development',
+            'technical',
+            'integration',
+            'feature',
+            'request',
+        ];
+
+        foreach ($intentSignals as $signal) {
             if (str_contains($value, $signal)) {
                 return true;
             }
