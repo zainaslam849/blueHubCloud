@@ -99,13 +99,20 @@
                                     >
                                         Company
                                     </label>
-                                    <BaseSearchSelect
+                                    <select
                                         id="filter-company"
                                         v-model="draftFilterCompany"
-                                        :options="companyFilterOptions"
-                                        placeholder="All Companies"
-                                        search-placeholder="Search company"
-                                    />
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Companies</option>
+                                        <option
+                                            v-for="company in companies"
+                                            :key="company.id"
+                                            :value="company.id"
+                                        >
+                                            {{ company.name }}
+                                        </option>
+                                    </select>
                                 </div>
 
                                 <div class="admin-field">
@@ -115,13 +122,20 @@
                                     >
                                         Category
                                     </label>
-                                    <BaseSearchSelect
+                                    <select
                                         id="filter-category"
                                         v-model="draftFilterCategory"
-                                        :options="categoryFilterOptions"
-                                        placeholder="All Categories"
-                                        search-placeholder="Search category"
-                                    />
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Categories</option>
+                                        <option
+                                            v-for="cat in categories"
+                                            :key="cat.id"
+                                            :value="cat.id"
+                                        >
+                                            {{ cat.name }}
+                                        </option>
+                                    </select>
                                 </div>
 
                                 <div class="admin-field">
@@ -509,13 +523,20 @@
                                     >
                                         Company
                                     </label>
-                                    <BaseSearchSelect
-                                        id="filter-company-mobile"
+                                    <select
+                                        id="filter-company"
                                         v-model="draftFilterCompany"
-                                        :options="companyFilterOptions"
-                                        placeholder="All Companies"
-                                        search-placeholder="Search company"
-                                    />
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Companies</option>
+                                        <option
+                                            v-for="company in companies"
+                                            :key="company.id"
+                                            :value="company.id"
+                                        >
+                                            {{ company.name }}
+                                        </option>
+                                    </select>
                                 </div>
 
                                 <div class="admin-field">
@@ -525,13 +546,20 @@
                                     >
                                         Category
                                     </label>
-                                    <BaseSearchSelect
-                                        id="filter-category-mobile"
+                                    <select
+                                        id="filter-category"
                                         v-model="draftFilterCategory"
-                                        :options="categoryFilterOptions"
-                                        placeholder="All Categories"
-                                        search-placeholder="Search category"
-                                    />
+                                        class="admin-input admin-input--select"
+                                    >
+                                        <option value="">All Categories</option>
+                                        <option
+                                            v-for="cat in categories"
+                                            :key="cat.id"
+                                            :value="cat.id"
+                                        >
+                                            {{ cat.name }}
+                                        </option>
+                                    </select>
                                 </div>
 
                                 <div class="admin-field">
@@ -601,7 +629,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
@@ -611,7 +639,6 @@ import {
     BaseBadge,
     BaseButton,
     BasePagination,
-    BaseSearchSelect,
     BaseTable,
 } from "../../components/admin/base";
 import DeletionConfirmDialog from "../../components/admin/base/DeletionConfirmDialog.vue";
@@ -651,22 +678,6 @@ const filtersOpen = ref(false);
 const filterWrap = ref(null);
 const companies = ref([]);
 const categories = ref([]);
-
-const companyFilterOptions = computed(() => [
-    { value: "", label: "All Companies" },
-    ...companies.value.map((company) => ({
-        value: String(company.id),
-        label: company.name,
-    })),
-]);
-
-const categoryFilterOptions = computed(() => [
-    { value: "", label: "All Categories" },
-    ...categories.value.map((category) => ({
-        value: String(category.id),
-        label: category.name,
-    })),
-]);
 
 const rows = ref([]);
 const pendingRegenerationRowIds = new Set();
@@ -896,7 +907,7 @@ function syncProcessingPoller() {
 
 async function loadCompanies() {
     try {
-        const res = await adminApi.get("/companies/dropdown");
+        const res = await adminApi.get("/companies");
         companies.value = res?.data?.data || [];
     } catch (e) {
         console.error("Failed to load companies", e);

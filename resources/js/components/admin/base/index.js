@@ -6,7 +6,6 @@ export { default as BaseDropdown } from "./BaseDropdown.vue";
 export { default as BaseModal } from "./BaseModal.vue";
 export { default as BaseSkeletonLoader } from "./BaseSkeletonLoader.vue";
 export { default as BasePagination } from "./BasePagination.vue";
-export { default as BaseSearchSelect } from "./BaseSearchSelect.vue";
 export { default as BaseTable } from "./BaseTable.vue";
 export { default as BaseTimeline } from "./BaseTimeline.vue";
 export { default as BaseVirtualTable } from "./BaseVirtualTable.vue";
