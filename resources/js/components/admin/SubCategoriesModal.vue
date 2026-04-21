@@ -103,9 +103,7 @@
                                     :disabled="!isFormValid || formSubmitting"
                                     :loading="formSubmitting"
                                 >
-                                    {{
-                                        isEditing ? "Update" : "Add"
-                                    }}
+                                    {{ isEditing ? "Update" : "Add" }}
                                     Sub-Category
                                 </BaseButton>
                             </div>
@@ -145,9 +143,7 @@
                                             Description
                                         </th>
                                         <th class="admin-table__th">Status</th>
-                                        <th class="admin-table__th">
-                                            Actions
-                                        </th>
+                                        <th class="admin-table__th">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="admin-table__body">

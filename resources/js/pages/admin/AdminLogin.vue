@@ -144,7 +144,8 @@ function normalizeAdminRedirect(rawRedirect) {
                 return "/dashboard";
             }
 
-            const inAppPath = url.pathname.slice(adminBase.length) || "/dashboard";
+            const inAppPath =
+                url.pathname.slice(adminBase.length) || "/dashboard";
             return `${inAppPath}${url.search || ""}${url.hash || ""}`;
         } catch {
             return "/dashboard";

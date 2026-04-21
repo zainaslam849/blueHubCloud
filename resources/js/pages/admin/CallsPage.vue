@@ -353,11 +353,15 @@
                     <div class="admin-callsParties">
                         <div class="admin-callsParties__line">
                             <span class="admin-callsParties__label">From</span>
-                            <span class="admin-callsMono">{{ row.fromNumber || "—" }}</span>
+                            <span class="admin-callsMono">{{
+                                row.fromNumber || "—"
+                            }}</span>
                         </div>
                         <div class="admin-callsParties__line">
                             <span class="admin-callsParties__label">To</span>
-                            <span class="admin-callsMono">{{ row.toNumber || "—" }}</span>
+                            <span class="admin-callsMono">{{
+                                row.toNumber || "—"
+                            }}</span>
                         </div>
                     </div>
                 </template>

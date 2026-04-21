@@ -285,10 +285,13 @@
                         <div class="admin-kv">
                             <div class="admin-kv__k">Status</div>
                             <div class="admin-kv__v">
-                                <BaseBadge :variant="badgeVariant(call?.status)">
+                                <BaseBadge
+                                    :variant="badgeVariant(call?.status)"
+                                >
                                     {{
-                                        String(call?.status || "").toUpperCase() ||
-                                        "—"
+                                        String(
+                                            call?.status || "",
+                                        ).toUpperCase() || "—"
                                     }}
                                 </BaseBadge>
                             </div>
@@ -340,8 +343,8 @@
                     <div v-else-if="!call?.category" class="admin-empty">
                         <div class="admin-empty__title">No category yet</div>
                         <div class="admin-empty__desc">
-                            This call will show its AI category after categorization
-                            completes.
+                            This call will show its AI category after
+                            categorization completes.
                         </div>
                     </div>
 
@@ -436,7 +439,10 @@
                         <div class="admin-skeleton admin-skeleton--line" />
                     </div>
 
-                    <div v-else-if="jobHistory.length === 0" class="admin-empty">
+                    <div
+                        v-else-if="jobHistory.length === 0"
+                        class="admin-empty"
+                    >
                         <div class="admin-empty__title">No job history</div>
                         <div class="admin-empty__desc">
                             No jobs have been recorded for this call.
@@ -449,7 +455,10 @@
                             :key="ev.key"
                             class="admin-timeline__item"
                         >
-                            <div class="admin-timeline__rail" aria-hidden="true">
+                            <div
+                                class="admin-timeline__rail"
+                                aria-hidden="true"
+                            >
                                 <div class="admin-timeline__dot" />
                             </div>
                             <div class="admin-timeline__content">
@@ -457,13 +466,23 @@
                                     <div class="admin-timeline__title">
                                         {{ ev.label }}
                                     </div>
-                                    <BaseBadge :variant="badgeVariant(ev.status)">
-                                        {{ String(ev.status || "").toUpperCase() }}
+                                    <BaseBadge
+                                        :variant="badgeVariant(ev.status)"
+                                    >
+                                        {{
+                                            String(
+                                                ev.status || "",
+                                            ).toUpperCase()
+                                        }}
                                     </BaseBadge>
                                 </div>
-                                <div class="admin-timeline__meta admin-callsMono">
+                                <div
+                                    class="admin-timeline__meta admin-callsMono"
+                                >
                                     {{ formatDate(ev.occurredAt) }}
-                                    <span v-if="ev.detail">• {{ ev.detail }}</span>
+                                    <span v-if="ev.detail"
+                                        >• {{ ev.detail }}</span
+                                    >
                                 </div>
                             </div>
                         </li>
@@ -494,7 +513,9 @@
                         <div class="admin-kv">
                             <div class="admin-kv__k">Status</div>
                             <div class="admin-kv__v">
-                                <BaseBadge variant="active">COMPLETED</BaseBadge>
+                                <BaseBadge variant="active"
+                                    >COMPLETED</BaseBadge
+                                >
                             </div>
                         </div>
 
@@ -528,7 +549,11 @@
                     </div>
 
                     <div v-else class="admin-kvGrid">
-                        <div v-for="row in metadataRows" :key="row.key" class="admin-kv">
+                        <div
+                            v-for="row in metadataRows"
+                            :key="row.key"
+                            class="admin-kv"
+                        >
                             <div class="admin-kv__k">{{ row.label }}</div>
                             <div class="admin-kv__v admin-callsMono">
                                 {{ row.value }}
