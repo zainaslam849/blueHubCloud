@@ -116,7 +116,7 @@
                             </div>
                         </div>
 
-                        <div v-else class="admin-tableWrap admin-tableWrap--subCategories">
+                        <div v-else class="admin-tableWrap">
                             <div class="admin-drawer__toolbar">
                                 <BaseButton
                                     @click="openAddForm"
@@ -689,15 +689,12 @@ watch(
     min-height: 0;
     overflow-y: auto;
     padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-soft) transparent;
 }
 
 .admin-tableWrap {
     overflow-x: auto;
-}
-
-.admin-tableWrap--subCategories {
-    max-height: calc(100dvh - 240px);
-    overflow-y: auto;
 }
 
 .admin-drawer__kicker {
@@ -817,10 +814,6 @@ watch(
         border-radius: 0;
     }
 
-    .admin-tableWrap--subCategories {
-        max-height: calc(100dvh - 220px);
-    }
-
     .admin-drawer__toolbar {
         justify-content: stretch;
     }
@@ -849,5 +842,36 @@ watch(
 .admin-drawer-leave-to .admin-modal--drawer {
     transform: translateX(28px);
     opacity: 0;
+}
+
+.admin-subCatListBody::-webkit-scrollbar {
+    width: 7px;
+}
+
+.admin-subCatListBody::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.admin-subCatListBody::-webkit-scrollbar-thumb {
+    background: var(--border-soft);
+    border-radius: 999px;
+}
+
+.admin-subCatListBody::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+    .admin-subCatListBody {
+        scrollbar-color: color-mix(in srgb, var(--text-muted) 65%, transparent) transparent;
+    }
+
+    .admin-subCatListBody::-webkit-scrollbar-thumb {
+        background: color-mix(in srgb, var(--text-muted) 65%, transparent);
+    }
+
+    .admin-subCatListBody::-webkit-scrollbar-thumb:hover {
+        background: color-mix(in srgb, var(--text-primary) 55%, transparent);
+    }
 }
 </style>
