@@ -40,7 +40,11 @@
 
                         <div v-if="showForm" class="admin-subCatFormPanel">
                             <h3 class="admin-subCatForm__title">
-                                {{ isEditing ? "Edit Sub-Category" : "Add Sub-Category" }}
+                                {{
+                                    isEditing
+                                        ? "Edit Sub-Category"
+                                        : "Add Sub-Category"
+                                }}
                             </h3>
 
                             <div class="admin-formGroup">
@@ -50,7 +54,8 @@
                                     type="text"
                                     class="admin-input"
                                     :class="{
-                                        'admin-input--error': validationErrors.name,
+                                        'admin-input--error':
+                                            validationErrors.name,
                                     }"
                                     placeholder="Enter sub-category name"
                                 />
@@ -63,7 +68,9 @@
                             </div>
 
                             <div class="admin-formGroup">
-                                <label class="admin-formLabel">Description</label>
+                                <label class="admin-formLabel"
+                                    >Description</label
+                                >
                                 <textarea
                                     v-model="formData.description"
                                     class="admin-textarea"
@@ -96,7 +103,10 @@
                                     :disabled="!isFormValid || formSubmitting"
                                     :loading="formSubmitting"
                                 >
-                                    {{ isEditing ? "Update" : "Add" }} Sub-Category
+                                    {{
+                                        isEditing ? "Update" : "Add"
+                                    }}
+                                    Sub-Category
                                 </BaseButton>
                             </div>
                         </div>
@@ -343,7 +353,6 @@
                                 </tbody>
                             </table>
                         </div>
-
                     </div>
 
                     <div class="admin-modal__footer">
@@ -355,10 +364,7 @@
                         >
                             Back to List
                         </BaseButton>
-                        <BaseButton
-                            @click="close"
-                            variant="secondary"
-                            size="md"
+                        <BaseButton @click="close" variant="secondary" size="md"
                             >Close</BaseButton
                         >
                     </div>
@@ -725,6 +731,23 @@ watch(
     background: var(--surface-muted, #f8fafc);
 }
 
+html[data-theme="dark"] .admin-subCatFormPanel {
+    background: var(--bg-surface);
+    border-color: var(--border-soft);
+}
+
+html[data-theme="dark"] .admin-input,
+html[data-theme="dark"] .admin-textarea {
+    background: var(--bg-faint);
+    border-color: var(--border-soft);
+    color: var(--text-primary);
+}
+
+html[data-theme="dark"] .admin-input::placeholder,
+html[data-theme="dark"] .admin-textarea::placeholder {
+    color: var(--text-muted);
+}
+
 .admin-subCatForm__title {
     margin: 0 0 14px;
     font-size: 15px;
@@ -850,7 +873,9 @@ watch(
 
 .admin-drawer-enter-active .admin-modal--drawer,
 .admin-drawer-leave-active .admin-modal--drawer {
-    transition: transform 0.28s ease, opacity 0.2s ease;
+    transition:
+        transform 0.28s ease,
+        opacity 0.2s ease;
 }
 
 .admin-drawer-enter-from,
@@ -883,7 +908,8 @@ watch(
 
 @media (prefers-color-scheme: dark) {
     .admin-subCatListBody {
-        scrollbar-color: color-mix(in srgb, var(--text-muted) 65%, transparent) transparent;
+        scrollbar-color: color-mix(in srgb, var(--text-muted) 65%, transparent)
+            transparent;
     }
 
     .admin-subCatListBody::-webkit-scrollbar-thumb {
