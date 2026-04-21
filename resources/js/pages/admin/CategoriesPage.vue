@@ -903,6 +903,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { BaseButton, BaseBadge } from "../../components/admin/base";
 import SubCategoriesModal from "../../components/admin/SubCategoriesModal.vue";
 import adminApi from "../../router/admin/api";
+import { showAdminToast } from "../../admin/toast";
 
 // Interfaces/types
 const categories = ref([]);
@@ -1088,58 +1089,7 @@ function resolveCompanyName(category) {
 }
 
 function showToast(message, type = "success") {
-    try {
-        let container = document.getElementById("__category_toast_container");
-        if (!container) {
-            container = document.createElement("div");
-            container.id = "__category_toast_container";
-            Object.assign(container.style, {
-                position: "fixed",
-                top: "16px",
-                right: "16px",
-                zIndex: 9999,
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-            });
-            document.body.appendChild(container);
-        }
-
-        const el = document.createElement("div");
-        el.textContent = message;
-        const bgColor = type === "error" ? "#dc3545" : "#0f5132";
-        Object.assign(el.style, {
-            background: bgColor,
-            color: "white",
-            padding: "10px 14px",
-            borderRadius: "8px",
-            boxShadow: "0 6px 18px rgba(16,24,40,0.12)",
-            opacity: "0",
-            transition: "opacity 200ms ease, transform 200ms ease",
-            transform: "translateY(-6px)",
-            fontSize: "14px",
-            lineHeight: "20px",
-        });
-
-        container.appendChild(el);
-
-        // animate in
-        requestAnimationFrame(() => {
-            el.style.opacity = "1";
-            el.style.transform = "translateY(0)";
-        });
-
-        setTimeout(() => {
-            // animate out
-            el.style.opacity = "0";
-            el.style.transform = "translateY(-6px)";
-            setTimeout(() => el.remove(), 220);
-        }, 3000);
-    } catch (e) {
-        // fallback
-        // eslint-disable-next-line no-alert
-        alert(message);
-    }
+    showAdminToast(message, type);
 }
 
 const openAddForm = () => {
