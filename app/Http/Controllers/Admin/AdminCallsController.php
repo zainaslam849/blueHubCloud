@@ -151,6 +151,9 @@ class AdminCallsController extends Controller
                 return [
                     'id' => $call->id,
                     'callId' => $call->pbx_unique_id,
+                    'callTime' => optional($call->started_at ?? $call->created_at)->toISOString(),
+                    'fromNumber' => $call->from,
+                    'toNumber' => $call->to,
                     'company' => $call->company?->name ?? '—',
                     'provider' => $providerName,
                     'durationSeconds' => (int) ($call->duration_seconds ?? 0),

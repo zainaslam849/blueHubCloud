@@ -272,6 +272,45 @@
                     </button>
                 </template>
 
+                <template #header-callTime>
+                    <button
+                        type="button"
+                        class="admin-callsSortBtn"
+                        @click="toggleSort('started_at')"
+                    >
+                        Call Time
+                        <span class="admin-callsSortBtn__chev">{{
+                            sortGlyph("started_at")
+                        }}</span>
+                    </button>
+                </template>
+
+                <template #header-fromNumber>
+                    <button
+                        type="button"
+                        class="admin-callsSortBtn"
+                        @click="toggleSort('from')"
+                    >
+                        From Number
+                        <span class="admin-callsSortBtn__chev">{{
+                            sortGlyph("from")
+                        }}</span>
+                    </button>
+                </template>
+
+                <template #header-toNumber>
+                    <button
+                        type="button"
+                        class="admin-callsSortBtn"
+                        @click="toggleSort('to')"
+                    >
+                        To Number
+                        <span class="admin-callsSortBtn__chev">{{
+                            sortGlyph("to")
+                        }}</span>
+                    </button>
+                </template>
+
                 <template #header-durationSeconds>
                     <button
                         type="button"
@@ -317,6 +356,18 @@
                     <span class="admin-callsMono">{{
                         formatDuration(value)
                     }}</span>
+                </template>
+
+                <template #cell-callTime="{ value }">
+                    <span class="admin-callsMono">{{ formatDate(value) }}</span>
+                </template>
+
+                <template #cell-fromNumber="{ value }">
+                    <span class="admin-callsMono">{{ value || "—" }}</span>
+                </template>
+
+                <template #cell-toNumber="{ value }">
+                    <span class="admin-callsMono">{{ value || "—" }}</span>
                 </template>
 
                 <template #cell-status="{ value }">
@@ -693,6 +744,9 @@ const tableHeight = ref("lg");
 
 const columns = ref([
     { key: "callId", label: "Call ID" },
+    { key: "callTime", label: "Call Time" },
+    { key: "fromNumber", label: "From Number" },
+    { key: "toNumber", label: "To Number" },
     { key: "company", label: "Company" },
     {
         key: "durationSeconds",
@@ -718,6 +772,9 @@ function normalizeRow(item) {
     return {
         id: item.id,
         callId: item.callId,
+        callTime: item.callTime,
+        fromNumber: item.fromNumber,
+        toNumber: item.toNumber,
         company: item.company,
         provider: item.provider,
         durationSeconds: item.durationSeconds,
