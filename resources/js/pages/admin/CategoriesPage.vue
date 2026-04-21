@@ -1026,7 +1026,7 @@ const fetchCategories = async () => {
 
 const fetchCompanies = async () => {
     try {
-        const response = await adminApi.get("/companies");
+        const response = await adminApi.get("/companies/dropdown");
         companies.value = response?.data?.data || [];
     } catch (err) {
         companies.value = [];
@@ -1236,9 +1236,24 @@ const openEditForm = (category) => {
         name: category.name,
         description: category.description || "",
         is_enabled: category.is_enabled,
-        company_id: category.company_id,
+        company_id: category.company_id ? Number(category.company_id) : "",
     };
     validationErrors.value = {};
+
+    // Ensure the category's company appears in the dropdown (e.g., if it's inactive
+    // and therefore excluded from /companies/dropdown)
+    if (category.company_id && category.company) {
+        const companyId = Number(category.company_id);
+        const alreadyInList = companies.value.some(
+            (c) => Number(c.id) === companyId,
+        );
+        if (!alreadyInList) {
+            companies.value = [
+                { id: companyId, name: category.company.name },
+                ...companies.value,
+            ];
+        }
+    }
 };
 
 const closeForm = () => {

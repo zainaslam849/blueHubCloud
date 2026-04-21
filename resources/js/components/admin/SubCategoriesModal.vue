@@ -330,9 +330,7 @@
                                     :disabled="!isFormValid || formSubmitting"
                                     :loading="formSubmitting"
                                 >
-                                    {{
-                                        isEditing ? "Update" : "Add"
-                                    }}
+                                    {{ isEditing ? "Update" : "Add" }}
                                     Sub-Category
                                 </BaseButton>
                             </div>
@@ -472,11 +470,7 @@ function withCompanyPayload(payload = {}) {
 }
 
 function extractApiError(err, fallback) {
-    return (
-        err?.response?.data?.message ||
-        err?.message ||
-        fallback
-    );
+    return err?.response?.data?.message || err?.message || fallback;
 }
 
 const sortedSubCategories = computed(() => {

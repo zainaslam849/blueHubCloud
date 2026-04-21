@@ -38,15 +38,25 @@
                     class="admin-card admin-card--glass admin-routeError"
                     role="alert"
                 >
-                    <h2 class="admin-card__headline">This page failed to render</h2>
+                    <h2 class="admin-card__headline">
+                        This page failed to render
+                    </h2>
                     <p class="admin-card__hint" style="margin-top: 8px">
                         {{ routeRenderError }}
                     </p>
                     <div class="admin-routeError__actions">
-                        <BaseButton variant="primary" size="sm" @click="retryCurrentRoute">
+                        <BaseButton
+                            variant="primary"
+                            size="sm"
+                            @click="retryCurrentRoute"
+                        >
                             Retry
                         </BaseButton>
-                        <BaseButton variant="secondary" size="sm" @click="hardReloadCurrentRoute">
+                        <BaseButton
+                            variant="secondary"
+                            size="sm"
+                            @click="hardReloadCurrentRoute"
+                        >
                             Hard reload
                         </BaseButton>
                     </div>
