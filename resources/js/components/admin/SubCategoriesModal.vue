@@ -145,10 +145,7 @@
                                             Description
                                         </th>
                                         <th class="admin-table__th">Status</th>
-                                        <th
-                                            class="admin-table__th"
-                                            style="text-align: right"
-                                        >
+                                        <th class="admin-table__th">
                                             Actions
                                         </th>
                                     </tr>
@@ -829,10 +826,10 @@ html[data-theme="dark"] .admin-textarea::placeholder {
 }
 
 .admin-actionBtn__icon {
-    width: 14px;
-    height: 14px;
-    flex: 0 0 14px;
-    font-size: 12px;
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+    font-size: 13px;
     line-height: 1;
     display: inline-flex;
     align-items: center;

@@ -203,12 +203,7 @@
                             <th class="admin-table__th">Source</th>
                             <th class="admin-table__th">Status</th>
                             <th class="admin-table__th">Created</th>
-                            <th
-                                class="admin-table__th"
-                                style="text-align: right"
-                            >
-                                Actions
-                            </th>
+                            <th class="admin-table__th">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="admin-table__body">
