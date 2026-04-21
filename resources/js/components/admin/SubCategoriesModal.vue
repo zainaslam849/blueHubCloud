@@ -116,7 +116,7 @@
                             </div>
                         </div>
 
-                        <div v-else class="admin-tableWrap">
+                        <div v-else class="admin-tableWrap admin-tableWrap--subCategories">
                             <div class="admin-drawer__toolbar">
                                 <BaseButton
                                     @click="openAddForm"
@@ -667,15 +667,17 @@ watch(
 
 <style scoped>
 .admin-modalOverlay {
+    padding: 0 !important;
     justify-content: flex-end;
+    align-items: stretch;
 }
 
 .admin-modal--drawer {
-    width: min(720px, 96vw);
-    height: 100vh;
-    max-height: 100vh;
+    width: min(700px, 100vw);
+    height: 100dvh;
+    max-height: 100dvh;
     margin: 0;
-    border-radius: 18px 0 0 18px;
+    border-radius: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -683,12 +685,19 @@ watch(
 }
 
 .admin-subCatListBody {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding-right: 6px;
 }
 
 .admin-tableWrap {
     overflow-x: auto;
+}
+
+.admin-tableWrap--subCategories {
+    max-height: calc(100dvh - 250px);
+    overflow-y: auto;
 }
 
 .admin-drawer__kicker {
@@ -777,11 +786,39 @@ watch(
     flex: 1;
 }
 
+.admin-table__actions {
+    gap: 6px;
+}
+
+.admin-actionBtn {
+    font-size: 12px;
+    line-height: 1.1;
+}
+
+.admin-actionBtn :deep(button),
+.admin-actionBtn:deep(button) {
+    min-height: 30px;
+    padding: 6px 10px;
+    border-radius: 8px;
+}
+
+.admin-actionBtn__icon {
+    font-size: 11px;
+}
+
+.admin-actionBtn__text {
+    font-size: 12px;
+}
+
 @media (max-width: 900px) {
     .admin-modal--drawer {
         width: 100vw;
-        max-height: 100vh;
+        max-height: 100dvh;
         border-radius: 0;
+    }
+
+    .admin-tableWrap--subCategories {
+        max-height: calc(100dvh - 230px);
     }
 
     .admin-drawer__toolbar {
