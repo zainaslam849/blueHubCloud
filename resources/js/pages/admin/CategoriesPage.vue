@@ -103,20 +103,13 @@
                                     >
                                         Company
                                     </label>
-                                    <select
+                                    <BaseSearchSelect
                                         id="filter-company"
                                         v-model="draftFilterCompany"
-                                        class="admin-input admin-input--select"
-                                    >
-                                        <option value="">All Companies</option>
-                                        <option
-                                            v-for="company in companies"
-                                            :key="company.id"
-                                            :value="company.id"
-                                        >
-                                            {{ company.name }}
-                                        </option>
-                                    </select>
+                                        :options="companyFilterOptions"
+                                        placeholder="All Companies"
+                                        search-placeholder="Search company"
+                                    />
                                 </div>
 
                                 <div class="admin-field">
@@ -126,17 +119,13 @@
                                     >
                                         Status
                                     </label>
-                                    <select
+                                    <BaseSearchSelect
                                         id="filter-status"
                                         v-model="draftFilterStatus"
-                                        class="admin-input admin-input--select"
-                                    >
-                                        <option value="all">All</option>
-                                        <option value="active">Active</option>
-                                        <option value="archived">
-                                            Archived
-                                        </option>
-                                    </select>
+                                        :options="statusFilterOptions"
+                                        placeholder="All"
+                                        :searchable="false"
+                                    />
                                 </div>
 
                                 <div class="admin-field">
@@ -146,15 +135,13 @@
                                     >
                                         Source
                                     </label>
-                                    <select
+                                    <BaseSearchSelect
                                         id="filter-source"
                                         v-model="draftFilterSource"
-                                        class="admin-input admin-input--select"
-                                    >
-                                        <option value="all">All</option>
-                                        <option value="ai">AI Generated</option>
-                                        <option value="admin">Manual</option>
-                                    </select>
+                                        :options="sourceFilterOptions"
+                                        placeholder="All"
+                                        :searchable="false"
+                                    />
                                 </div>
                             </div>
 
@@ -475,23 +462,14 @@
                                 >
                                     Company *
                                 </label>
-                                <select
+                                <BaseSearchSelect
                                     id="company_id"
-                                    v-model.number="formData.company_id"
-                                    class="admin-input admin-input--select"
+                                    v-model="formData.company_id"
+                                    :options="companyFormOptions"
+                                    placeholder="Select Company"
+                                    search-placeholder="Search company"
                                     :disabled="isEditing"
-                                >
-                                    <option value="" disabled>
-                                        Select Company
-                                    </option>
-                                    <option
-                                        v-for="company in companies"
-                                        :key="company.id"
-                                        :value="company.id"
-                                    >
-                                        {{ company.name }}
-                                    </option>
-                                </select>
+                                />
                                 <div
                                     v-if="validationErrors.company_id"
                                     class="admin-field__error"
@@ -828,20 +806,13 @@
                                 >
                                     Company
                                 </label>
-                                <select
+                                <BaseSearchSelect
                                     id="filter-company-mobile"
                                     v-model="draftFilterCompany"
-                                    class="admin-input admin-input--select"
-                                >
-                                    <option value="">All Companies</option>
-                                    <option
-                                        v-for="company in companies"
-                                        :key="company.id"
-                                        :value="company.id"
-                                    >
-                                        {{ company.name }}
-                                    </option>
-                                </select>
+                                    :options="companyFilterOptions"
+                                    placeholder="All Companies"
+                                    search-placeholder="Search company"
+                                />
                             </div>
 
                             <div class="admin-field">
@@ -851,15 +822,13 @@
                                 >
                                     Status
                                 </label>
-                                <select
+                                <BaseSearchSelect
                                     id="filter-status-mobile"
                                     v-model="draftFilterStatus"
-                                    class="admin-input admin-input--select"
-                                >
-                                    <option value="all">All</option>
-                                    <option value="active">Active</option>
-                                    <option value="archived">Archived</option>
-                                </select>
+                                    :options="statusFilterOptions"
+                                    placeholder="All"
+                                    :searchable="false"
+                                />
                             </div>
 
                             <div class="admin-field">
@@ -869,15 +838,13 @@
                                 >
                                     Source
                                 </label>
-                                <select
+                                <BaseSearchSelect
                                     id="filter-source-mobile"
                                     v-model="draftFilterSource"
-                                    class="admin-input admin-input--select"
-                                >
-                                    <option value="all">All</option>
-                                    <option value="ai">AI Generated</option>
-                                    <option value="admin">Manual</option>
-                                </select>
+                                    :options="sourceFilterOptions"
+                                    placeholder="All"
+                                    :searchable="false"
+                                />
                             </div>
                         </div>
                     </div>
@@ -900,7 +867,11 @@
 </template>
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
-import { BaseButton, BaseBadge } from "../../components/admin/base";
+import {
+    BaseButton,
+    BaseBadge,
+    BaseSearchSelect,
+} from "../../components/admin/base";
 import SubCategoriesModal from "../../components/admin/SubCategoriesModal.vue";
 import adminApi from "../../router/admin/api";
 import { showAdminToast } from "../../admin/toast";
@@ -991,6 +962,33 @@ const isFormValid = computed(() => {
     const hasCompany = isEditing.value || formData.value.company_id !== "";
     return hasName && hasCompany;
 });
+
+const companyFilterOptions = computed(() => [
+    { value: "", label: "All Companies" },
+    ...companies.value.map((company) => ({
+        value: String(company.id),
+        label: company.name,
+    })),
+]);
+
+const companyFormOptions = computed(() =>
+    companies.value.map((company) => ({
+        value: String(company.id),
+        label: company.name,
+    })),
+);
+
+const statusFilterOptions = [
+    { value: "all", label: "All" },
+    { value: "active", label: "Active" },
+    { value: "archived", label: "Archived" },
+];
+
+const sourceFilterOptions = [
+    { value: "all", label: "All" },
+    { value: "ai", label: "AI Generated" },
+    { value: "admin", label: "Manual" },
+];
 
 // Methods
 const fetchCategories = async () => {

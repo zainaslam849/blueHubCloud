@@ -107,20 +107,13 @@
                                     >
                                         Company
                                     </label>
-                                    <select
+                                    <BaseSearchSelect
                                         id="filter-company"
                                         v-model="draftFilterCompany"
-                                        class="admin-input admin-input--select"
-                                    >
-                                        <option value="">All Companies</option>
-                                        <option
-                                            v-for="company in companies"
-                                            :key="company.id"
-                                            :value="company.id"
-                                        >
-                                            {{ company.name }}
-                                        </option>
-                                    </select>
+                                        :options="companyFilterOptions"
+                                        placeholder="All Companies"
+                                        search-placeholder="Search company"
+                                    />
                                 </div>
 
                                 <div class="admin-field">
@@ -349,20 +342,13 @@
                                     >
                                         Company
                                     </label>
-                                    <select
-                                        id="filter-company"
+                                    <BaseSearchSelect
+                                        id="filter-company-mobile"
                                         v-model="draftFilterCompany"
-                                        class="admin-input admin-input--select"
-                                    >
-                                        <option value="">All Companies</option>
-                                        <option
-                                            v-for="company in companies"
-                                            :key="company.id"
-                                            :value="company.id"
-                                        >
-                                            {{ company.name }}
-                                        </option>
-                                    </select>
+                                        :options="companyFilterOptions"
+                                        placeholder="All Companies"
+                                        search-placeholder="Search company"
+                                    />
                                 </div>
 
                                 <div class="admin-field">
@@ -421,7 +407,7 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 
@@ -430,6 +416,7 @@ import {
     BaseBadge,
     BaseButton,
     BasePagination,
+    BaseSearchSelect,
     BaseTable,
 } from "../../components/admin/base";
 
@@ -454,6 +441,14 @@ const draftFilterEndDate = ref("");
 const filtersOpen = ref(false);
 const filterWrap = ref(null);
 const companies = ref([]);
+
+const companyFilterOptions = computed(() => [
+    { value: "", label: "All Companies" },
+    ...companies.value.map((company) => ({
+        value: String(company.id),
+        label: company.name,
+    })),
+]);
 
 const rows = ref([]);
 const meta = ref({
@@ -584,7 +579,7 @@ async function fetchTranscriptions() {
 
 async function loadCompanies() {
     try {
-        const res = await adminApi.get("/companies");
+        const res = await adminApi.get("/companies/dropdown");
         companies.value = res?.data?.data || [];
     } catch (e) {
         console.error("Failed to load companies", e);
