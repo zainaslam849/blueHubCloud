@@ -369,7 +369,7 @@
         <Transition name="admin-modal">
             <div
                 v-if="showDeleteConfirm"
-                class="admin-modalOverlay"
+                class="admin-modalOverlay admin-modalOverlay--centered"
                 @click="showDeleteConfirm = false"
             >
                 <div class="admin-modal admin-modal--confirm" @click.stop>
@@ -672,6 +672,12 @@ watch(
     align-items: stretch;
 }
 
+.admin-modalOverlay--centered {
+    justify-content: center;
+    align-items: center;
+    padding: 20px !important;
+}
+
 .admin-modal--drawer {
     width: min(640px, 100vw);
     height: 100dvh;
@@ -789,7 +795,7 @@ watch(
 
 .admin-actionBtn {
     font-size: 12px;
-    line-height: 1.1;
+    line-height: 1;
 }
 
 .admin-actionBtn :deep(button),
@@ -800,11 +806,21 @@ watch(
 }
 
 .admin-actionBtn__icon {
-    font-size: 11px;
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    font-size: 12px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .admin-actionBtn__text {
     font-size: 12px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
 }
 
 @media (max-width: 900px) {
@@ -812,6 +828,10 @@ watch(
         width: 100vw;
         max-height: 100dvh;
         border-radius: 0;
+    }
+
+    .admin-modalOverlay--centered {
+        padding: 12px !important;
     }
 
     .admin-drawer__toolbar {
