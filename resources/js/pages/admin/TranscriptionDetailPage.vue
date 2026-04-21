@@ -169,7 +169,7 @@
                         size="sm"
                         :to="{
                             name: 'admin.calls.detail',
-                            params: { id: call.callId },
+                            params: { callId: call.callId },
                         }"
                     >
                         View Call
