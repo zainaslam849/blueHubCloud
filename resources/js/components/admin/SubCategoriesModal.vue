@@ -673,7 +673,7 @@ watch(
 }
 
 .admin-modal--drawer {
-    width: min(700px, 100vw);
+    width: min(640px, 100vw);
     height: 100dvh;
     max-height: 100dvh;
     margin: 0;
@@ -688,7 +688,7 @@ watch(
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding-right: 6px;
+    padding-right: 4px;
 }
 
 .admin-tableWrap {
@@ -696,7 +696,7 @@ watch(
 }
 
 .admin-tableWrap--subCategories {
-    max-height: calc(100dvh - 250px);
+    max-height: calc(100dvh - 240px);
     overflow-y: auto;
 }
 
@@ -818,7 +818,7 @@ watch(
     }
 
     .admin-tableWrap--subCategories {
-        max-height: calc(100dvh - 230px);
+        max-height: calc(100dvh - 220px);
     }
 
     .admin-drawer__toolbar {
