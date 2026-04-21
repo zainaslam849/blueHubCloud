@@ -285,28 +285,15 @@
                     </button>
                 </template>
 
-                <template #header-fromNumber>
+                <template #header-partyNumbers>
                     <button
                         type="button"
                         class="admin-callsSortBtn"
                         @click="toggleSort('from')"
                     >
-                        From Number
+                        Parties
                         <span class="admin-callsSortBtn__chev">{{
                             sortGlyph("from")
-                        }}</span>
-                    </button>
-                </template>
-
-                <template #header-toNumber>
-                    <button
-                        type="button"
-                        class="admin-callsSortBtn"
-                        @click="toggleSort('to')"
-                    >
-                        To Number
-                        <span class="admin-callsSortBtn__chev">{{
-                            sortGlyph("to")
                         }}</span>
                     </button>
                 </template>
@@ -362,12 +349,17 @@
                     <span class="admin-callsMono">{{ formatDate(value) }}</span>
                 </template>
 
-                <template #cell-fromNumber="{ value }">
-                    <span class="admin-callsMono">{{ value || "—" }}</span>
-                </template>
-
-                <template #cell-toNumber="{ value }">
-                    <span class="admin-callsMono">{{ value || "—" }}</span>
+                <template #cell-partyNumbers="{ row }">
+                    <div class="admin-callsParties">
+                        <div class="admin-callsParties__line">
+                            <span class="admin-callsParties__label">From</span>
+                            <span class="admin-callsMono">{{ row.fromNumber || "—" }}</span>
+                        </div>
+                        <div class="admin-callsParties__line">
+                            <span class="admin-callsParties__label">To</span>
+                            <span class="admin-callsMono">{{ row.toNumber || "—" }}</span>
+                        </div>
+                    </div>
                 </template>
 
                 <template #cell-status="{ value }">
@@ -745,8 +737,7 @@ const tableHeight = ref("lg");
 const columns = ref([
     { key: "callId", label: "Call ID" },
     { key: "callTime", label: "Call Time" },
-    { key: "fromNumber", label: "From Number" },
-    { key: "toNumber", label: "To Number" },
+    { key: "partyNumbers", label: "Parties" },
     { key: "company", label: "Company" },
     {
         key: "durationSeconds",

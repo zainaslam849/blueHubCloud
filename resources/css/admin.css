@@ -3383,6 +3383,31 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     font-variant-numeric: tabular-nums;
 }
 
+.admin-callsParties {
+    display: grid;
+    gap: 6px;
+    min-width: 170px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border-soft);
+    background: linear-gradient(170deg, var(--bg-surface), var(--bg-faint));
+}
+
+.admin-callsParties__line {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-callsParties__label {
+    color: var(--text-faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
 .admin-callsCategory {
     display: inline-flex;
     flex-direction: column;
