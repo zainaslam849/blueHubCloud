@@ -4327,17 +4327,24 @@ html[data-theme="dark"] .admin-actionBtn--restore {
     align-items: center;
     justify-content: center;
     border-radius: 10px;
-    background: linear-gradient(
-        135deg,
-        var(--accent-primary),
-        var(--accent-primary-hover)
-    );
-    color: white;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    color: var(--accent-primary);
 }
 
 .admin-callDetailStat__icon svg {
     width: 20px;
     height: 20px;
+}
+
+html[data-theme="dark"] .admin-callDetailStat__icon {
+    background: linear-gradient(
+        135deg,
+        var(--accent-primary),
+        var(--accent-primary-hover)
+    );
+    border-color: transparent;
+    color: white;
 }
 
 .admin-callDetailStat__content {
