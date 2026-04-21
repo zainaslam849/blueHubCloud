@@ -238,307 +238,304 @@
             </BaseCard>
 
             <div class="admin-callsDetailColumns">
-                <div class="admin-callsDetailColumn admin-callsDetailColumn--main">
-                    <!-- Call Information Card -->
-                    <BaseCard title="Call Information" variant="glass">
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
+                <!-- 1. Call Info -->
+                <BaseCard title="Call Information" variant="glass">
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
+
+                    <div v-else class="admin-kvGrid">
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Call ID</div>
+                            <div class="admin-kv__v admin-callsMono">
+                                {{ call?.callId ?? "—" }}
+                            </div>
                         </div>
 
-                        <div v-else class="admin-kvGrid">
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Call ID</div>
-                                <div class="admin-kv__v admin-callsMono">
-                                    {{ call?.callId ?? "—" }}
-                                </div>
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">From Number</div>
+                            <div class="admin-kv__v admin-callsMono">
+                                {{ call?.from ?? "—" }}
                             </div>
+                        </div>
 
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">From Number</div>
-                                <div class="admin-kv__v admin-callsMono">
-                                    {{ call?.from ?? "—" }}
-                                </div>
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">To Number</div>
+                            <div class="admin-kv__v admin-callsMono">
+                                {{ call?.to ?? "—" }}
                             </div>
+                        </div>
 
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">To Number</div>
-                                <div class="admin-kv__v admin-callsMono">
-                                    {{ call?.to ?? "—" }}
-                                </div>
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Started At</div>
+                            <div class="admin-kv__v admin-callsMono">
+                                {{ formatDate(call?.startedAt) }}
                             </div>
+                        </div>
 
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Started At</div>
-                                <div class="admin-kv__v admin-callsMono">
-                                    {{ formatDate(call?.startedAt) }}
-                                </div>
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Created At</div>
+                            <div class="admin-kv__v admin-callsMono">
+                                {{ formatDate(call?.createdAt) }}
                             </div>
+                        </div>
 
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Created At</div>
-                                <div class="admin-kv__v admin-callsMono">
-                                    {{ formatDate(call?.createdAt) }}
-                                </div>
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Status</div>
+                            <div class="admin-kv__v">
+                                <BaseBadge :variant="badgeVariant(call?.status)">
+                                    {{
+                                        String(call?.status || "").toUpperCase() ||
+                                        "—"
+                                    }}
+                                </BaseBadge>
                             </div>
+                        </div>
+                    </div>
+                </BaseCard>
 
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Status</div>
-                                <div class="admin-kv__v">
-                                    <BaseBadge :variant="badgeVariant(call?.status)">
-                                        {{
-                                            String(call?.status || "").toUpperCase() ||
-                                            "—"
-                                        }}
+                <!-- 2. Summary -->
+                <BaseCard
+                    title="Call Summary"
+                    description="AI-generated summary"
+                    variant="glass"
+                >
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
+
+                    <div v-else-if="!call?.aiSummary" class="admin-empty">
+                        <div class="admin-empty__title">No summary yet</div>
+                        <div class="admin-empty__desc">
+                            Summary will appear after AI processing completes.
+                        </div>
+                    </div>
+
+                    <div v-else class="admin-kvGrid">
+                        <div class="admin-kv" style="grid-column: 1 / -1">
+                            <div class="admin-kv__k">Summary</div>
+                            <div class="admin-kv__v">
+                                <pre class="admin-transcriptText">{{
+                                    call?.aiSummary || ""
+                                }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </BaseCard>
+
+                <!-- 3. Categorization -->
+                <BaseCard
+                    title="Categorization"
+                    description="AI-generated category assignment"
+                    variant="glass"
+                >
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
+
+                    <div v-else-if="!call?.category" class="admin-empty">
+                        <div class="admin-empty__title">No category yet</div>
+                        <div class="admin-empty__desc">
+                            This call will show its AI category after categorization
+                            completes.
+                        </div>
+                    </div>
+
+                    <div v-else class="admin-kvGrid">
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Category</div>
+                            <div class="admin-kv__v">
+                                {{ call?.category || "—" }}
+                            </div>
+                        </div>
+
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Sub-category</div>
+                            <div class="admin-kv__v">
+                                {{ call?.subCategory || "—" }}
+                            </div>
+                        </div>
+
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Confidence</div>
+                            <div class="admin-kv__v">
+                                {{ formatConfidence(call?.categoryConfidence) }}
+                            </div>
+                        </div>
+                    </div>
+                </BaseCard>
+
+                <!-- 4. AI Processing -->
+                <BaseCard
+                    title="AI Processing"
+                    description="Transcript, summary, and categorization recovery"
+                    variant="glass"
+                >
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
+
+                    <div v-else class="admin-kvGrid">
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Transcript</div>
+                            <div class="admin-kv__v">
+                                {{
+                                    transcription?.hasTranscription
+                                        ? "Available"
+                                        : "Transcript is not available for that call."
+                                }}
+                            </div>
+                        </div>
+
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">AI Summary</div>
+                            <div class="admin-kv__v">
+                                {{ summaryStatusLabel }}
+                            </div>
+                        </div>
+
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">AI Category</div>
+                            <div class="admin-kv__v">
+                                {{ categoryStatusLabel }}
+                            </div>
+                        </div>
+
+                        <div class="admin-kv" style="grid-column: 1 / -1">
+                            <div class="admin-kv__k">Recovery</div>
+                            <div class="admin-kv__v admin-callDetailRecovery">
+                                <span>{{ aiRecovery?.statusText || "—" }}</span>
+                                <BaseButton
+                                    v-if="aiRecovery?.canRegenerate"
+                                    variant="secondary"
+                                    size="sm"
+                                    :loading="regenerating"
+                                    @click="regenerateAi"
+                                >
+                                    {{ aiRecovery.actionLabel }}
+                                </BaseButton>
+                            </div>
+                        </div>
+                    </div>
+                </BaseCard>
+
+                <!-- 5. Job History -->
+                <BaseCard
+                    title="Job History"
+                    description="Ingestion and transcription events"
+                    variant="glass"
+                >
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
+
+                    <div v-else-if="jobHistory.length === 0" class="admin-empty">
+                        <div class="admin-empty__title">No job history</div>
+                        <div class="admin-empty__desc">
+                            No jobs have been recorded for this call.
+                        </div>
+                    </div>
+
+                    <ol v-else class="admin-timeline">
+                        <li
+                            v-for="ev in jobHistory"
+                            :key="ev.key"
+                            class="admin-timeline__item"
+                        >
+                            <div class="admin-timeline__rail" aria-hidden="true">
+                                <div class="admin-timeline__dot" />
+                            </div>
+                            <div class="admin-timeline__content">
+                                <div class="admin-timeline__top">
+                                    <div class="admin-timeline__title">
+                                        {{ ev.label }}
+                                    </div>
+                                    <BaseBadge :variant="badgeVariant(ev.status)">
+                                        {{ String(ev.status || "").toUpperCase() }}
                                     </BaseBadge>
                                 </div>
+                                <div class="admin-timeline__meta admin-callsMono">
+                                    {{ formatDate(ev.occurredAt) }}
+                                    <span v-if="ev.detail">• {{ ev.detail }}</span>
+                                </div>
                             </div>
-                        </div>
-                    </BaseCard>
+                        </li>
+                    </ol>
+                </BaseCard>
 
-                    <BaseCard
-                        title="AI Processing"
-                        description="Transcript, summary, and categorization recovery"
-                        variant="glass"
+                <!-- 6. Transcript -->
+                <BaseCard
+                    title="Transcription"
+                    description="PBX-provided transcript"
+                    variant="glass"
+                >
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
+
+                    <div
+                        v-else-if="!transcription?.hasTranscription"
+                        class="admin-empty"
                     >
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-empty__title">No transcription</div>
+                        <div class="admin-empty__desc">
+                            This call does not have a PBX-provided transcript.
                         </div>
+                    </div>
 
-                        <div v-else class="admin-kvGrid">
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Transcript</div>
-                                <div class="admin-kv__v">
-                                    {{
-                                        transcription?.hasTranscription
-                                            ? "Available"
-                                            : "Transcript is not available for that call."
-                                    }}
-                                </div>
-                            </div>
-
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">AI Summary</div>
-                                <div class="admin-kv__v">
-                                    {{ summaryStatusLabel }}
-                                </div>
-                            </div>
-
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">AI Category</div>
-                                <div class="admin-kv__v">
-                                    {{ categoryStatusLabel }}
-                                </div>
-                            </div>
-
-                            <div class="admin-kv" style="grid-column: 1 / -1">
-                                <div class="admin-kv__k">Recovery</div>
-                                <div class="admin-kv__v admin-callDetailRecovery">
-                                    <span>{{ aiRecovery?.statusText || "—" }}</span>
-                                    <BaseButton
-                                        v-if="aiRecovery?.canRegenerate"
-                                        variant="secondary"
-                                        size="sm"
-                                        :loading="regenerating"
-                                        @click="regenerateAi"
-                                    >
-                                        {{ aiRecovery.actionLabel }}
-                                    </BaseButton>
-                                </div>
-                            </div>
-                        </div>
-                    </BaseCard>
-
-                    <BaseCard
-                        title="Call Summary"
-                        description="AI-generated summary"
-                        variant="glass"
-                    >
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                        </div>
-
-                        <div v-else-if="!call?.aiSummary" class="admin-empty">
-                            <div class="admin-empty__title">No summary yet</div>
-                            <div class="admin-empty__desc">
-                                Summary will appear after AI processing completes.
+                    <div v-else class="admin-kvGrid">
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Status</div>
+                            <div class="admin-kv__v">
+                                <BaseBadge variant="active">COMPLETED</BaseBadge>
                             </div>
                         </div>
 
-                        <div v-else class="admin-kvGrid">
-                            <div class="admin-kv" style="grid-column: 1 / -1">
-                                <div class="admin-kv__k">Summary</div>
-                                <div class="admin-kv__v">
-                                    <pre class="admin-transcriptText">{{
-                                        call?.aiSummary || ""
-                                    }}</pre>
-                                </div>
-                            </div>
-                        </div>
-                    </BaseCard>
-
-                    <BaseCard
-                        title="Metadata"
-                        description="Identifiers and raw fields"
-                        variant="glass"
-                    >
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                        </div>
-
-                        <div v-else class="admin-kvGrid">
-                            <div
-                                v-for="row in metadataRows"
-                                :key="row.key"
-                                class="admin-kv"
-                            >
-                                <div class="admin-kv__k">{{ row.label }}</div>
-                                <div class="admin-kv__v admin-callsMono">
-                                    {{ row.value }}
-                                </div>
-                            </div>
-                        </div>
-                    </BaseCard>
-                </div>
-
-                <div class="admin-callsDetailColumn admin-callsDetailColumn--side">
-                    <BaseCard
-                        title="Job History"
-                        description="Ingestion and transcription events"
-                        variant="glass"
-                    >
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                        </div>
-
-                        <div v-else-if="jobHistory.length === 0" class="admin-empty">
-                            <div class="admin-empty__title">No job history</div>
-                            <div class="admin-empty__desc">
-                                No jobs have been recorded for this call.
+                        <div class="admin-kv">
+                            <div class="admin-kv__k">Provider</div>
+                            <div class="admin-kv__v">
+                                {{ transcription?.provider ?? "pbxware" }}
                             </div>
                         </div>
 
-                        <ol v-else class="admin-timeline">
-                            <li
-                                v-for="ev in jobHistory"
-                                :key="ev.key"
-                                class="admin-timeline__item"
-                            >
-                                <div class="admin-timeline__rail" aria-hidden="true">
-                                    <div class="admin-timeline__dot" />
-                                </div>
-                                <div class="admin-timeline__content">
-                                    <div class="admin-timeline__top">
-                                        <div class="admin-timeline__title">
-                                            {{ ev.label }}
-                                        </div>
-                                        <BaseBadge :variant="badgeVariant(ev.status)">
-                                            {{ String(ev.status || "").toUpperCase() }}
-                                        </BaseBadge>
-                                    </div>
-                                    <div class="admin-timeline__meta admin-callsMono">
-                                        {{ formatDate(ev.occurredAt) }}
-                                        <span v-if="ev.detail">• {{ ev.detail }}</span>
-                                    </div>
-                                </div>
-                            </li>
-                        </ol>
-                    </BaseCard>
-
-                    <BaseCard
-                        title="Transcription"
-                        description="PBX-provided transcript"
-                        variant="glass"
-                    >
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                        </div>
-
-                        <div
-                            v-else-if="!transcription?.hasTranscription"
-                            class="admin-empty"
-                        >
-                            <div class="admin-empty__title">No transcription</div>
-                            <div class="admin-empty__desc">
-                                This call does not have a PBX-provided transcript.
+                        <div class="admin-kv" style="grid-column: 1 / -1">
+                            <div class="admin-kv__k">Text</div>
+                            <div class="admin-kv__v">
+                                <pre class="admin-transcriptText">{{
+                                    transcription?.text || ""
+                                }}</pre>
                             </div>
                         </div>
+                    </div>
+                </BaseCard>
 
-                        <div v-else class="admin-kvGrid">
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Status</div>
-                                <div class="admin-kv__v">
-                                    <BaseBadge variant="active">COMPLETED</BaseBadge>
-                                </div>
-                            </div>
+                <BaseCard
+                    title="Metadata"
+                    description="Identifiers and raw fields"
+                    variant="glass"
+                >
+                    <div v-if="loading" class="admin-skeletonLines">
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                        <div class="admin-skeleton admin-skeleton--line" />
+                    </div>
 
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Provider</div>
-                                <div class="admin-kv__v">
-                                    {{ transcription?.provider ?? "pbxware" }}
-                                </div>
-                            </div>
-
-                            <div class="admin-kv" style="grid-column: 1 / -1">
-                                <div class="admin-kv__k">Text</div>
-                                <div class="admin-kv__v">
-                                    <pre class="admin-transcriptText">{{
-                                        transcription?.text || ""
-                                    }}</pre>
-                                </div>
+                    <div v-else class="admin-kvGrid">
+                        <div v-for="row in metadataRows" :key="row.key" class="admin-kv">
+                            <div class="admin-kv__k">{{ row.label }}</div>
+                            <div class="admin-kv__v admin-callsMono">
+                                {{ row.value }}
                             </div>
                         </div>
-                    </BaseCard>
-
-                    <BaseCard
-                        title="Categorization"
-                        description="AI-generated category assignment"
-                        variant="glass"
-                    >
-                        <div v-if="loading" class="admin-skeletonLines">
-                            <div class="admin-skeleton admin-skeleton--line" />
-                            <div class="admin-skeleton admin-skeleton--line" />
-                        </div>
-
-                        <div v-else-if="!call?.category" class="admin-empty">
-                            <div class="admin-empty__title">No category yet</div>
-                            <div class="admin-empty__desc">
-                                This call will show its AI category after categorization
-                                completes.
-                            </div>
-                        </div>
-
-                        <div v-else class="admin-kvGrid">
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Category</div>
-                                <div class="admin-kv__v">
-                                    {{ call?.category || "—" }}
-                                </div>
-                            </div>
-
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Sub-category</div>
-                                <div class="admin-kv__v">
-                                    {{ call?.subCategory || "—" }}
-                                </div>
-                            </div>
-
-                            <div class="admin-kv">
-                                <div class="admin-kv__k">Confidence</div>
-                                <div class="admin-kv__v">
-                                    {{ formatConfidence(call?.categoryConfidence) }}
-                                </div>
-                            </div>
-                        </div>
-                    </BaseCard>
-                </div>
+                    </div>
+                </BaseCard>
             </div>
         </div>
     </div>
