@@ -1,13 +1,15 @@
 <template>
     <Teleport to="body">
-        <Transition name="admin-modal">
+        <Transition name="admin-drawer">
             <div v-if="isOpen" class="admin-modalOverlay" @click="close">
-                <div class="admin-modal admin-modal--lg" @click.stop>
+                <div class="admin-modal admin-modal--drawer" @click.stop>
                     <div class="admin-modal__header">
-                        <h2 class="admin-modal__title">
-                            Sub-Categories:
-                            <strong>{{ category?.name }}</strong>
-                        </h2>
+                        <div>
+                            <p class="admin-drawer__kicker">Sub-Categories</p>
+                            <h2 class="admin-modal__title">
+                                {{ category?.name }}
+                            </h2>
+                        </div>
                         <button
                             type="button"
                             class="admin-modal__close"
@@ -17,7 +19,7 @@
                         </button>
                     </div>
 
-                    <div class="admin-modal__body">
+                    <div class="admin-modal__body admin-subCatListBody">
                         <div
                             v-if="error"
                             class="admin-alert admin-alert--error"
@@ -36,7 +38,70 @@
                             </div>
                         </div>
 
-                        <div v-if="loadingSubCats" class="admin-tableWrap">
+                        <div v-if="showForm" class="admin-subCatFormPanel">
+                            <h3 class="admin-subCatForm__title">
+                                {{ isEditing ? "Edit Sub-Category" : "Add Sub-Category" }}
+                            </h3>
+
+                            <div class="admin-formGroup">
+                                <label class="admin-formLabel">Name *</label>
+                                <input
+                                    v-model="formData.name"
+                                    type="text"
+                                    class="admin-input"
+                                    :class="{
+                                        'admin-input--error': validationErrors.name,
+                                    }"
+                                    placeholder="Enter sub-category name"
+                                />
+                                <div
+                                    v-if="validationErrors.name"
+                                    class="admin-inputError"
+                                >
+                                    {{ validationErrors.name[0] }}
+                                </div>
+                            </div>
+
+                            <div class="admin-formGroup">
+                                <label class="admin-formLabel">Description</label>
+                                <textarea
+                                    v-model="formData.description"
+                                    class="admin-textarea"
+                                    placeholder="Enter description (optional)"
+                                    rows="3"
+                                ></textarea>
+                            </div>
+
+                            <div class="admin-formGroup">
+                                <label class="admin-formCheckbox">
+                                    <input
+                                        v-model="formData.is_enabled"
+                                        type="checkbox"
+                                    />
+                                    <span>Enable this sub-category</span>
+                                </label>
+                            </div>
+
+                            <div class="admin-formActions">
+                                <BaseButton
+                                    @click="cancelForm"
+                                    variant="secondary"
+                                    :disabled="formSubmitting"
+                                >
+                                    Back to List
+                                </BaseButton>
+                                <BaseButton
+                                    @click="submitForm"
+                                    variant="primary"
+                                    :disabled="!isFormValid || formSubmitting"
+                                    :loading="formSubmitting"
+                                >
+                                    {{ isEditing ? "Update" : "Add" }} Sub-Category
+                                </BaseButton>
+                            </div>
+                        </div>
+
+                        <div v-else-if="loadingSubCats" class="admin-tableWrap">
                             <div class="admin-loadingState">
                                 <p>Loading sub-categories...</p>
                             </div>
@@ -52,6 +117,16 @@
                         </div>
 
                         <div v-else class="admin-tableWrap">
+                            <div class="admin-drawer__toolbar">
+                                <BaseButton
+                                    @click="openAddForm"
+                                    variant="primary"
+                                    size="sm"
+                                >
+                                    + Add Sub-Category
+                                </BaseButton>
+                            </div>
+
                             <table class="admin-table">
                                 <thead>
                                     <tr>
@@ -269,87 +344,22 @@
                             </table>
                         </div>
 
-                        <div v-if="!showForm" class="admin-spacer"></div>
-                        <div v-else class="admin-subCatForm">
-                            <h3 class="admin-subCatForm__title">
-                                {{
-                                    isEditing
-                                        ? "Edit Sub-Category"
-                                        : "Add Sub-Category"
-                                }}
-                            </h3>
-                            <div class="admin-formGroup">
-                                <label class="admin-formLabel">Name *</label>
-                                <input
-                                    v-model="formData.name"
-                                    type="text"
-                                    class="admin-input"
-                                    :class="{
-                                        'admin-input--error':
-                                            validationErrors.name,
-                                    }"
-                                    placeholder="Enter sub-category name"
-                                />
-                                <div
-                                    v-if="validationErrors.name"
-                                    class="admin-inputError"
-                                >
-                                    {{ validationErrors.name[0] }}
-                                </div>
-                            </div>
-                            <div class="admin-formGroup">
-                                <label class="admin-formLabel"
-                                    >Description</label
-                                >
-                                <textarea
-                                    v-model="formData.description"
-                                    class="admin-textarea"
-                                    placeholder="Enter description (optional)"
-                                    rows="3"
-                                ></textarea>
-                            </div>
-                            <div class="admin-formGroup">
-                                <label class="admin-formCheckbox">
-                                    <input
-                                        v-model="formData.is_enabled"
-                                        type="checkbox"
-                                    />
-                                    <span>Enable this sub-category</span>
-                                </label>
-                            </div>
-                            <div class="admin-formActions">
-                                <BaseButton
-                                    @click="cancelForm"
-                                    variant="secondary"
-                                    :disabled="formSubmitting"
-                                    >Cancel</BaseButton
-                                >
-                                <BaseButton
-                                    @click="submitForm"
-                                    variant="primary"
-                                    :disabled="!isFormValid || formSubmitting"
-                                    :loading="formSubmitting"
-                                >
-                                    {{ isEditing ? "Update" : "Add" }}
-                                    Sub-Category
-                                </BaseButton>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="admin-modal__footer">
                         <BaseButton
-                            v-if="!showForm"
-                            @click="openAddForm"
-                            variant="primary"
+                            v-if="showForm"
+                            @click="cancelForm"
+                            variant="secondary"
                             size="md"
-                            >+ Add Sub-Category</BaseButton
                         >
+                            Back to List
+                        </BaseButton>
                         <BaseButton
                             @click="close"
                             variant="secondary"
                             size="md"
-                            >{{ showForm ? "Back" : "Close" }}</BaseButton
+                            >Close</BaseButton
                         >
                     </div>
                 </div>
@@ -656,20 +666,60 @@ watch(
 </script>
 
 <style scoped>
-.admin-spacer {
-    height: 20px;
+.admin-modalOverlay {
+    justify-content: flex-end;
 }
-.admin-subCatForm {
-    border-top: 1px solid var(--border-soft);
-    padding-top: 24px;
-    margin-top: 24px;
+
+.admin-modal--drawer {
+    width: min(720px, 96vw);
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 18px 0 0 18px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: -16px 0 36px rgba(15, 23, 42, 0.18);
 }
+
+.admin-subCatListBody {
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+.admin-tableWrap {
+    overflow-x: auto;
+}
+
+.admin-drawer__kicker {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin: 0 0 4px 0;
+}
+
+.admin-drawer__toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.admin-subCatFormPanel {
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 16px;
+    background: var(--surface-muted, #f8fafc);
+}
+
 .admin-subCatForm__title {
+    margin: 0 0 14px;
     font-size: 15px;
     font-weight: 650;
     color: var(--text-primary);
-    margin-bottom: 16px;
 }
+
 .admin-formGroup {
     margin-bottom: 16px;
 }
@@ -725,5 +775,42 @@ watch(
 }
 .admin-formActions :deep(button) {
     flex: 1;
+}
+
+@media (max-width: 900px) {
+    .admin-modal--drawer {
+        width: 100vw;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .admin-drawer__toolbar {
+        justify-content: stretch;
+    }
+
+    .admin-drawer__toolbar :deep(button) {
+        width: 100%;
+    }
+}
+
+.admin-drawer-enter-active,
+.admin-drawer-leave-active {
+    transition: opacity 0.24s ease;
+}
+
+.admin-drawer-enter-active .admin-modal--drawer,
+.admin-drawer-leave-active .admin-modal--drawer {
+    transition: transform 0.28s ease, opacity 0.2s ease;
+}
+
+.admin-drawer-enter-from,
+.admin-drawer-leave-to {
+    opacity: 0;
+}
+
+.admin-drawer-enter-from .admin-modal--drawer,
+.admin-drawer-leave-to .admin-modal--drawer {
+    transform: translateX(28px);
+    opacity: 0;
 }
 </style>
