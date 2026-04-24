@@ -7,7 +7,7 @@ use App\Repositories\AiSettingsRepository;
 
 class CallCategorizationPromptService
 {
-    private const CONFIDENCE_THRESHOLD = 0.6;
+    private const CONFIDENCE_THRESHOLD = 0.90;
     private const GENERAL_ALLOWED_MAX_WORDS = 24;
     private const NO_RESPONSE_MAX_WORDS = 80;
 
@@ -139,19 +139,23 @@ ANALYSIS INSTRUCTIONS:
    - Only voicemail left? → Use "Voicemail"
    - Status is "missed"? → Use category for missed calls
 
-3. FOR ACTUAL CONVERSATIONS:
-   - Match to existing categories above whenever possible
-   - If no existing category fits well, create a NEW appropriate category name
+3. FOR ACTUAL CONVERSATIONS (STRICT MATCHING):
+   - ONLY assign an existing category if you are >= 90% confident the transcript matches that category's intent/topic
+   - If NO existing category reaches 90% confidence, create a NEW appropriate category name instead
+   - Never force a weak/ambiguous match to an existing category
    - Choose relevant sub-category if available, otherwise null
 
-4. CONFIDENCE SCORING:
-   - 0.8-1.0: Very clear topic and category match
-   - 0.6-0.79: Reasonable match but some ambiguity
-    - Below {$threshold}: Very unclear → use "Other"
+4. CONFIDENCE SCORING (STRICT THRESHOLDS):
+   - 0.90-1.0: Very clear topic, obvious category match → USE EXISTING CATEGORY
+   - 0.70-0.89: Reasonable match but some ambiguity → CREATE NEW CATEGORY instead of guessing
+   - Below 0.70: Very unclear → CREATE "Other/Unclear" if no existing category available
 
 5. CONSISTENCY: Similar calls should receive the same category name.
 
-6. STRICT RULE: Avoid returning "General" when transcript has clear intent (sales, support, billing, booking, complaint, technical issue, etc.). Use a specific category or propose a new one.
+6. STRICT RULES FOR "GENERAL":
+   - Do NOT use "General" for real conversations with clear business intent
+   - Only use "General" for greeting-only/no-response/unclear interactions where transcript is < 24 words AND no substantive intent detected
+   - For substantive calls: either find specific existing category (>=90%) or create new appropriate category
 
 {$categoryListQualityInstruction}
 
@@ -275,7 +279,13 @@ PROMPT;
     }
 
     /**
-     * Parse AI response and validate categorization
+     * Parse AI response and validate categorization with STRICT 90% confidence enforcement.
+     *
+     * STRICT MATCHING RULES:
+     * - Existing categories are ONLY accepted if confidence >= 0.90
+     * - If confidence < 0.90 for an existing category, reject it and create new category instead
+     * - If AI suggests a new category, create it (allows flexibility for unmatched cases)
+     * - Never force weak/ambiguous matches to unrelated existing categories
      */
     public static function validateCategorization(array $aiResponse, ?int $companyId = null, ?string $transcriptText = null): array
     {
@@ -293,7 +303,7 @@ PROMPT;
 
         $categoryName = trim((string) ($aiResponse['category'] ?? ''));
         $subCategoryName = $aiResponse['sub_category'] ?? null;
-        $confidence = $aiResponse['confidence'] ?? 0;
+        $confidence = (float) ($aiResponse['confidence'] ?? 0);
 
         if ($categoryName === '') {
             return [
@@ -309,14 +319,10 @@ PROMPT;
             }
         }
 
-        if ((float) $confidence < self::CONFIDENCE_THRESHOLD) {
-            $categoryName = 'Other';
-            $subCategoryName = 'Unclear';
-        }
-
         $normalizedTranscript = preg_replace('/\s+/', ' ', trim((string) $transcriptText));
         $transcriptWordCount = str_word_count((string) $normalizedTranscript);
 
+        // Special validation for "General" category
         if (strcasecmp($categoryName, 'General') === 0) {
             $containsSubstantiveIntent = self::hasSubstantiveIntent((string) $normalizedTranscript);
             $looksLikeNoResponse = self::looksLikeNoResponseInteraction((string) $normalizedTranscript);
@@ -341,30 +347,92 @@ PROMPT;
             }
         }
 
-        // Verify category exists and is active, or create it if AI suggested a new one
-        $category = CallCategory::query()
+        // Check if the suggested category is an EXISTING category in the database
+        $existingCategory = CallCategory::query()
             ->where('is_enabled', true)
             ->where('status', 'active')
             ->where('company_id', $companyId)
             ->where('name', $categoryName)
             ->first();
 
+        // STRICT MATCHING: Existing categories require >= 90% confidence
+        if ($existingCategory) {
+            if ($confidence < self::CONFIDENCE_THRESHOLD) {
+                // Low confidence for existing category - REJECT completely (don't force or create duplicate)
+                \Illuminate\Support\Facades\Log::warning('Rejecting existing category due to low confidence (< 0.90)', [
+                    'company_id' => $companyId,
+                    'existing_category_id' => $existingCategory->id,
+                    'existing_category_name' => $existingCategory->name,
+                    'confidence' => $confidence,
+                    'threshold' => self::CONFIDENCE_THRESHOLD,
+                    'transcript_preview' => mb_substr((string) $normalizedTranscript, 0, 220),
+                ]);
+
+                // Reject validation - call will remain uncategorized for manual review
+                return [
+                    'valid' => false,
+                    'error' => "Existing category '$categoryName' rejected due to insufficient confidence (< 0.90)",
+                ];
+            } else {
+                // High confidence for existing category - ACCEPT
+                \Illuminate\Support\Facades\Log::info('Accepting existing category with strong confidence (>= 0.90)', [
+                    'company_id' => $companyId,
+                    'existing_category_id' => $existingCategory->id,
+                    'existing_category_name' => $existingCategory->name,
+                    'confidence' => $confidence,
+                ]);
+
+                $category = $existingCategory;
+            }
+        } else {
+            // No existing category with this name - will create new one below
+            $category = null;
+        }
+
+        // If no existing category approved, create new category (allows flexibility for truly unmatched cases)
         if (!$category) {
-            // AI suggested a new category - create it automatically
-            \Illuminate\Support\Facades\Log::info("Creating new AI-suggested category", [
+            $trimmedCategory = trim($categoryName);
+            if ($trimmedCategory === '') {
+                return [
+                    'valid' => false,
+                    'error' => 'Empty category name after trimming',
+                ];
+            }
+
+            \Illuminate\Support\Facades\Log::info("Creating new AI-suggested category (no existing match)", [
                 'company_id' => $companyId,
-                'category_name' => $categoryName,
+                'category_name' => $trimmedCategory,
                 'ai_confidence' => $confidence,
             ]);
 
-            $category = CallCategory::create([
-                'company_id' => $companyId,
-                'name' => $categoryName,
-                'description' => 'Auto-created by AI based on call analysis',
-                'source' => 'ai',
-                'is_enabled' => true,
-                'status' => 'active',
-            ]);
+            try {
+                $category = CallCategory::create([
+                    'company_id' => $companyId,
+                    'name' => $trimmedCategory,
+                    'description' => 'Auto-created by AI based on call analysis',
+                    'source' => 'ai',
+                    'is_enabled' => true,
+                    'status' => 'active',
+                ]);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Category name collision - another process created it; fetch and use it
+                if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate')) {
+                    $category = CallCategory::query()
+                        ->where('is_enabled', true)
+                        ->where('company_id', $companyId)
+                        ->where('name', $trimmedCategory)
+                        ->first();
+
+                    if (!$category) {
+                        return [
+                            'valid' => false,
+                            'error' => "Cannot assign category '$trimmedCategory' - duplicate detected but not found",
+                        ];
+                    }
+                } else {
+                    throw $e;
+                }
+            }
         }
 
         // Verify sub-category if provided
@@ -416,6 +484,8 @@ PROMPT;
 
     /**
      * Fetch active categories and their active sub-categories.
+     * Excludes AI-generated categories to avoid contaminating candidate matching with low-quality auto-created categories.
+     * Only approved (manually-created or system-default) categories are passed to the AI for matching.
      */
     private static function getActiveCategories(?int $companyId = null)
     {
@@ -427,6 +497,8 @@ PROMPT;
             ->where('is_enabled', true)
             ->where('status', 'active')
             ->where('company_id', $companyId)
+            ->where('source', '!=', 'ai')  // Only include admin-created categories, exclude AI-generated to avoid test/noise contamination
+            ->orderBy('name')  // Stable ordering to avoid non-deterministic prompt context
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)
                     ->where('status', 'active');

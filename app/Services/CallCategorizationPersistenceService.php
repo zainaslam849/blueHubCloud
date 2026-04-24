@@ -10,14 +10,18 @@ use Illuminate\Support\Facades\Log;
 
 class CallCategorizationPersistenceService
 {
-    private const CONFIDENCE_THRESHOLD = 0.6;
+    private const CONFIDENCE_THRESHOLD = 0.90;
     /**
      * Persist AI categorization result to a call record.
      *
-     * Validation rules:
-     * - If category not found by name → fallback to "General"
-    * - If confidence < 0.6 → mark as "Other" with sub-category "Unclear"
-     * - If sub-category provided but not found → store as sub_category_label
+     * Note: Validation of strict 90% confidence is now handled by CallCategorizationPromptService::validateCategorization().
+     * This service receives pre-validated categories and persists them to the database.
+     *
+     * Behavior:
+     * - If confidence < 0.90 at this stage, fallback to "Other/Unclear" (defensive measure)
+     * - If category provided is valid and exists, use it
+     * - If category provided is new, it should already be created by validation layer
+     * - If sub-category provided but not found, create it
      *
      * @param int $callId
      * @param string $categoryName

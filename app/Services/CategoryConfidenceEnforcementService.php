@@ -6,14 +6,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Enforce category confidence thresholds and source tracking (STEP 5).
+ * Enforce category confidence thresholds and source tracking.
  *
  * Rules:
- * - If category_confidence < 0.6 → category_id = NULL, sub_category_id = NULL
+ * - If category_confidence < 0.90 → category_id = NULL, sub_category_id = NULL
  * - category_source tracks origin: 'rule' | 'ai' | 'manual'
  * - Manual overrides bypass confidence checks
  *
- * This ensures only high-confidence AI categorization is used in reports.
+ * This ensures only high-confidence AI categorization (>=90%) is used in reports.
  */
 class CategoryConfidenceEnforcementService
 {
@@ -21,15 +21,15 @@ class CategoryConfidenceEnforcementService
      * Apply confidence threshold to calls.
      *
      * Resets low-confidence categorizations to NULL:
-     * - If confidence < 0.6 and source != 'manual' → clear category
+     * - If confidence < 0.90 and source != 'manual' → clear category
      *
      * This is called after categorization (CategorizeSingleCallJob) to clean up
      * low-confidence results before they appear in reports.
      *
-     * @param  float  $confidenceThreshold  (default: 0.6 = 60%)
+     * @param  float  $confidenceThreshold  (default: 0.90 = 90% strict matching)
      * @return int  Number of calls reset
      */
-    public function enforceThreshold(float $confidenceThreshold = 0.6): int
+    public function enforceThreshold(float $confidenceThreshold = 0.90): int
     {
         $reset = DB::table('calls')
             ->where('category_confidence', '<', $confidenceThreshold)
