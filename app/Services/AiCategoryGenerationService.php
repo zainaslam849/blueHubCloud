@@ -117,29 +117,20 @@ CLIENT CONTEXT:
 INPUT: Call summaries only (no transcripts). Use ONLY the summaries provided.
 
 RULES:
-- Generate client-relevant categories based on the summaries.
-- Include subcategories under each category.
+- Generate 5-15 client-relevant categories based on the summaries.
+- Include 2-5 subcategories under each category.
 - Avoid duplicates and overlapping categories.
 - Avoid generic categories unless truly necessary.
-- Use concise, human-friendly names.
-- Output STRICT JSON ONLY (no markdown, no commentary).
+- Use concise, human-friendly names (max 50 characters).
+- Return ONLY valid JSON. No markdown. No code blocks. No explanation. No preamble. No extra text.
 
 SUMMARIES:
 {$summariesText}
 
-EXPECTED OUTPUT (JSON ONLY):
-{
-  "categories": [
-    {
-      "name": "Sales",
-            "sub_categories": ["Pricing", "Product Demo"]
-    },
-    {
-      "name": "Support",
-            "sub_categories": ["Login Issues", "Technical Errors"]
-    }
-  ]
-}
+REQUIRED OUTPUT FORMAT - RETURN ONLY THIS JSON STRUCTURE, NOTHING ELSE:
+{"categories":[{"name":"Category Name","sub_categories":["Subcategory 1","Subcategory 2"]},{"name":"Another Category","sub_categories":["Sub 1","Sub 2"]}]}
+
+Do not include any text before or after the JSON object. Return ONLY the JSON.
 PROMPT;
     }
 }

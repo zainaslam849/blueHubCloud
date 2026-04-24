@@ -405,7 +405,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         ])->timeout(40)->post('https://api.openai.com/v1/chat/completions', [
             'model' => $model,
             'messages' => [
-                ['role' => 'system', 'content' => 'Return STRICT JSON only.'],
+                ['role' => 'system', 'content' => 'You are a JSON generator. Return ONLY valid JSON with no markdown, no code blocks, no explanation, no extra text. Your entire response must be parseable as JSON.'],
                 ['role' => 'user', 'content' => $prompt],
             ],
             'temperature' => 0.2,
@@ -435,7 +435,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             'model' => $model,
             'max_tokens' => 4096,
             'temperature' => 0.2,
-            'system' => 'Return STRICT JSON only.',
+            'system' => 'You are a JSON generator. Return ONLY valid JSON with no markdown, no code blocks, no explanation, no extra text. Your entire response must be parseable as JSON.',
             'messages' => [
                 ['role' => 'user', 'content' => $prompt],
             ],
@@ -464,16 +464,21 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         $payload = [
             'model' => $model,
             'messages' => [
+                ['role' => 'system', 'content' => 'You are a JSON generator. Return ONLY valid JSON with no markdown, no code blocks, no explanation, no extra text. Your entire response must be parseable as JSON.'],
                 ['role' => 'user', 'content' => $prompt],
             ],
-            'response_format' => ['type' => 'json_object'],
             'temperature' => 0.2,
-            // max_tokens intentionally omitted — let the model return a complete response
+            // response_format intentionally omitted for OpenRouter compatibility
+            // OpenRouter may not fully support json_object format, relying on prompt instructions instead
         ];
 
-        $response = Http::withHeaders($headers)
-            ->timeout(45)
-            ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+        try {
+            $response = Http::withHeaders($headers)
+                ->timeout(45)
+                ->post('https://openrouter.ai/api/v1/chat/completions', $payload);
+        } catch (\Throwable $e) {
+            throw new \Exception("OpenRouter API request failed: " . $e->getMessage());
+        }
 
         if (! $response->successful()) {
             throw new \Exception("OpenRouter API failed ({$response->status()}): " . $response->body());
@@ -482,6 +487,16 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         $content = $response->json()['choices'][0]['message']['content'] ?? null;
         if (! $content) {
             throw new \Exception('No content in OpenRouter response');
+        }
+
+        // Validate that we got non-empty JSON-like content
+        $trimmed = trim((string) $content);
+        if (empty($trimmed)) {
+            Log::error('OpenRouter returned empty content', [
+                'model' => $model,
+                'response_structure' => 'missing_choices_or_content',
+            ]);
+            throw new \Exception('OpenRouter returned empty content');
         }
 
         return $content;
@@ -507,13 +522,19 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
 
     private function parseJsonResponse(string $response): array
     {
+        $originalResponse = $response;
         $response = trim($response);
 
-        // Strip markdown fences
+        // First attempt: direct JSON decode
+        $parsed = json_decode($response, true);
+        if (is_array($parsed)) {
+            return $parsed;
+        }
+
+        // Second attempt: strip markdown fences
         if (str_starts_with($response, '```json')) {
             $response = substr($response, 7);
-        }
-        if (str_starts_with($response, '```')) {
+        } elseif (str_starts_with($response, '```')) {
             $response = substr($response, 3);
         }
         if (str_ends_with($response, '```')) {
@@ -526,8 +547,7 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             return $parsed;
         }
 
-        // Fallback: extract the JSON object between the first { and last } in case
-        // the model prepended/appended prose or the response was lightly truncated.
+        // Third attempt: extract JSON object between first { and last }
         $first = strpos($response, '{');
         $last  = strrpos($response, '}');
         if ($first !== false && $last !== false && $last > $first) {
@@ -536,17 +556,48 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             if (is_array($parsed)) {
                 Log::warning('GenerateAiCategoriesForCompanyJob: parsed JSON via extraction fallback', [
                     'company_id' => $this->companyId,
-                    'raw_preview' => mb_substr($response, 0, 300),
+                    'raw_preview' => mb_substr($originalResponse, 0, 300),
+                    'fallback_strategy' => 'extraction_from_prose',
                 ]);
                 return $parsed;
             }
         }
 
-        Log::error('GenerateAiCategoriesForCompanyJob: unparseable AI response', [
+        // Fourth attempt: extract JSON array between first [ and last ]
+        $firstArr = strpos($response, '[');
+        $lastArr  = strrpos($response, ']');
+        if ($firstArr !== false && $lastArr !== false && $lastArr > $firstArr) {
+            $extracted = substr($response, $firstArr, $lastArr - $firstArr + 1);
+            $parsed = json_decode($extracted, true);
+            if (is_array($parsed)) {
+                Log::warning('GenerateAiCategoriesForCompanyJob: parsed JSON array via extraction fallback', [
+                    'company_id' => $this->companyId,
+                    'raw_preview' => mb_substr($originalResponse, 0, 300),
+                    'fallback_strategy' => 'array_extraction',
+                ]);
+                return $parsed;
+            }
+        }
+
+        // Log comprehensive error information for debugging
+        Log::error('GenerateAiCategoriesForCompanyJob: unparseable AI response - all fallback strategies failed', [
             'company_id' => $this->companyId,
-            'raw_preview' => mb_substr($response, 0, 500),
-            'json_error'  => json_last_error_msg(),
+            'response_length' => strlen($originalResponse),
+            'trimmed_length' => strlen($response),
+            'has_opening_brace' => (strpos($response, '{') !== false),
+            'has_closing_brace' => (strpos($response, '}') !== false),
+            'has_opening_bracket' => (strpos($response, '[') !== false),
+            'has_closing_bracket' => (strpos($response, ']') !== false),
+            'starts_with_brace' => str_starts_with($response, '{'),
+            'starts_with_bracket' => str_starts_with($response, '['),
+            'ends_with_brace' => str_ends_with($response, '}'),
+            'ends_with_bracket' => str_ends_with($response, ']'),
+            'raw_preview_first_500' => mb_substr($originalResponse, 0, 500),
+            'raw_preview_last_200' => mb_substr($originalResponse, -200),
+            'json_error_msg' => json_last_error_msg(),
+            'json_error_code' => json_last_error(),
         ]);
+        
         throw new \Exception('Failed to parse AI category JSON response');
     }
 

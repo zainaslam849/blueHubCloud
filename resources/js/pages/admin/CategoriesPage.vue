@@ -814,6 +814,100 @@
             </Transition>
         </Teleport>
 
+        <!-- Permanent Delete Confirmation Modal -->
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div
+                    v-if="showForceDeleteConfirm"
+                    class="admin-modalOverlay"
+                    @click="showForceDeleteConfirm = false"
+                >
+                    <div class="admin-modal admin-modal--confirm" @click.stop>
+                        <div
+                            class="admin-modal__header admin-modal__header--danger"
+                        >
+                            <div class="admin-modal__headerIcon">🗑</div>
+                            <h2
+                                class="admin-modal__title admin-modal__title--danger"
+                            >
+                                Permanently Delete Category
+                            </h2>
+                            <button
+                                type="button"
+                                class="admin-modal__close"
+                                @click="cancelForceDelete"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="admin-modal__body">
+                            <p class="admin-deletePrompt">
+                                Are you sure you want to
+                                <strong>permanently delete</strong>
+                                <strong>{{ forceDeleteTarget?.name }}</strong
+                                >?
+                            </p>
+                            <p
+                                class="admin-deletePrompt admin-deletePrompt--secondary"
+                                style="color: #d32f2f; font-weight: 500"
+                            >
+                                ⚠ This action CANNOT be undone. The category
+                                will be permanently removed from the database.
+                                Calls will become uncategorized.
+                            </p>
+                            <p
+                                class="admin-deletePrompt admin-deletePrompt--secondary"
+                            >
+                                Type the category name to confirm:
+                            </p>
+                            <input
+                                v-model="forceDeleteConfirmText"
+                                type="text"
+                                class="admin-input"
+                                :placeholder="`Type '${forceDeleteTarget?.name}' to confirm`"
+                                @keyup.enter="
+                                    forceDeleteConfirmText ===
+                                        forceDeleteTarget?.name &&
+                                        confirmForceDelete()
+                                "
+                            />
+                        </div>
+
+                        <div
+                            class="admin-modal__footer admin-modal__footer--confirm"
+                        >
+                            <BaseButton
+                                @click="cancelForceDelete"
+                                variant="secondary"
+                                class="admin-btn--full"
+                                :disabled="forceDeleting"
+                            >
+                                Cancel
+                            </BaseButton>
+                            <BaseButton
+                                @click="confirmForceDelete"
+                                variant="danger"
+                                :loading="forceDeleting"
+                                :disabled="
+                                    forceDeleting ||
+                                    forceDeleteConfirmText !==
+                                        forceDeleteTarget?.name
+                                "
+                                class="admin-btn--full"
+                            >
+                                {{
+                                    forceDeleting
+                                        ? "Permanently Deleting..."
+                                        : "Permanently Delete"
+                                }}
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+
         <!-- Sub-Categories Modal -->
         <SubCategoriesModal
             :is-open="showSubCatsModal"
@@ -970,6 +1064,10 @@ const meta = ref({
     per_page: 25,
     total: 0,
 });
+const showForceDeleteConfirm = ref(false);
+const forceDeleteTarget = ref(null);
+const forceDeleteConfirmText = ref("");
+const forceDeleting = ref(null);
 
 const formData = ref({
     name: "",
@@ -1351,6 +1449,43 @@ const deleteCategory = async (category) => {
         } else {
             error.value = err.message || "Failed to delete category";
         }
+    }
+};
+
+const openForceDeleteConfirm = (category) => {
+    forceDeleteTarget.value = category;
+    forceDeleteConfirmText.value = "";
+    showForceDeleteConfirm.value = true;
+};
+
+const cancelForceDelete = () => {
+    showForceDeleteConfirm.value = false;
+    forceDeleteTarget.value = null;
+    forceDeleteConfirmText.value = "";
+    forceDeleting.value = null;
+};
+
+const confirmForceDelete = async () => {
+    if (!forceDeleteTarget.value) return;
+    if (forceDeleteConfirmText.value !== forceDeleteTarget.value.name) return;
+
+    try {
+        forceDeleting.value = forceDeleteTarget.value.id;
+        await adminApi.delete(
+            `/categories/${forceDeleteTarget.value.id}/force-delete`
+        );
+        await fetchCategories();
+        cancelForceDelete();
+        showToast("Category permanently deleted successfully.");
+    } catch (err) {
+        if (err.response?.data?.message) {
+            showToast(err.response.data.message, "error");
+            error.value = err.response.data.message;
+        } else {
+            error.value = err.message || "Failed to permanently delete category";
+        }
+    } finally {
+        forceDeleting.value = null;
     }
 };
 
