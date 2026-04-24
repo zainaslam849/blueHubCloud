@@ -46,9 +46,15 @@ class QueueCallsForCategorizationJob implements ShouldQueue
         // Keep uncategorized calls eligible for AI categorization retries.
 
         if ($this->fromDate !== null && $this->toDate !== null) {
+            // Pad the window by 1 day on each side so calls whose `started_at`
+            // (stored UTC) sits near a UTC midnight boundary aren't dropped
+            // when the supplied fromDate/toDate represent local-calendar dates.
+            // Without this padding, e.g. a call at 2026-04-21 23:36 UTC that is
+            // 2026-04-22 09:36 in AEST would be excluded from a 2026-04-22..24
+            // range parsed as UTC, even though the user expects it included.
             $query->whereBetween('started_at', [
-                CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay(),
-                CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay(),
+                CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay()->subDay(),
+                CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay()->addDay(),
             ]);
         }
 

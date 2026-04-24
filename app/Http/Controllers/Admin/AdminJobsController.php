@@ -19,21 +19,25 @@ class AdminJobsController extends Controller
     {
         $queueConnection = config('queue.default');
 
-        $queueCounts = DB::table('jobs')
-            ->select([
-                'queue',
-                DB::raw('COUNT(*) as queued'),
-                DB::raw('SUM(CASE WHEN reserved_at IS NOT NULL THEN 1 ELSE 0 END) as reserved'),
-            ])
-            ->groupBy('queue')
-            ->orderBy('queue')
-            ->get();
+        if ($queueConnection === 'redis') {
+            [$queueCounts, $totals] = $this->buildRedisQueueCounts();
+        } else {
+            $queueCounts = DB::table('jobs')
+                ->select([
+                    'queue',
+                    DB::raw('COUNT(*) as queued'),
+                    DB::raw('SUM(CASE WHEN reserved_at IS NOT NULL THEN 1 ELSE 0 END) as reserved'),
+                ])
+                ->groupBy('queue')
+                ->orderBy('queue')
+                ->get();
 
-        $totals = [
-            'queued' => (int) DB::table('jobs')->count(),
-            'reserved' => (int) DB::table('jobs')->whereNotNull('reserved_at')->count(),
-            'failed' => (int) DB::table('failed_jobs')->count(),
-        ];
+            $totals = [
+                'queued' => (int) DB::table('jobs')->count(),
+                'reserved' => (int) DB::table('jobs')->whereNotNull('reserved_at')->count(),
+                'failed' => (int) DB::table('failed_jobs')->count(),
+            ];
+        }
 
         $recentJobs = DB::table('jobs')
             ->orderByDesc('id')
@@ -410,6 +414,93 @@ class AdminJobsController extends Controller
     private function buildActiveKey(int $companyId, string $from, string $to): string
     {
         return $companyId . ':' . $from . ':' . $to;
+    }
+
+    /**
+     * Aggregate queued/reserved counts directly from Redis when the queue
+     * connection is Redis (Horizon). Returns [queueCounts, totals] in the
+     * same shape as the database-driver branch.
+     */
+    private function buildRedisQueueCounts(): array
+    {
+        $queueNames = $this->discoverRedisQueueNames();
+        $queueCounts = collect();
+        $totalQueued = 0;
+        $totalReserved = 0;
+
+        foreach ($queueNames as $queue) {
+            try {
+                $queued = (int) Redis::connection('default')->llen("queues:{$queue}");
+                $delayed = (int) Redis::connection('default')->zcard("queues:{$queue}:delayed");
+                $reserved = (int) Redis::connection('default')->zcard("queues:{$queue}:reserved");
+            } catch (\Throwable $e) {
+                $queued = 0;
+                $delayed = 0;
+                $reserved = 0;
+            }
+
+            $totalForQueue = $queued + $delayed;
+            if ($totalForQueue === 0 && $reserved === 0) {
+                continue;
+            }
+
+            $totalQueued += $totalForQueue;
+            $totalReserved += $reserved;
+
+            $queueCounts->push((object) [
+                'queue' => $queue,
+                'queued' => $totalForQueue,
+                'reserved' => $reserved,
+            ]);
+        }
+
+        $totals = [
+            'queued' => $totalQueued,
+            'reserved' => $totalReserved,
+            'failed' => (int) DB::table('failed_jobs')->count(),
+        ];
+
+        return [$queueCounts->sortBy('queue')->values(), $totals];
+    }
+
+    /**
+     * Build the list of Redis queue names worth inspecting. Combines the
+     * default queue, all queues declared in horizon.php supervisors, and
+     * any extra queues currently present in Redis.
+     */
+    private function discoverRedisQueueNames(): array
+    {
+        $queues = collect([(string) config('queue.connections.redis.queue', 'default')]);
+
+        $supervisors = (array) config('horizon.defaults', []);
+        foreach ($supervisors as $supervisor) {
+            foreach ((array) ($supervisor['queue'] ?? []) as $queue) {
+                $queues->push((string) $queue);
+            }
+        }
+
+        try {
+            $keys = (array) Redis::connection('default')->keys('queues:*');
+            $prefix = (string) config('database.redis.options.prefix', '');
+            foreach ($keys as $key) {
+                if ($prefix !== '' && str_starts_with($key, $prefix)) {
+                    $key = substr($key, strlen($prefix));
+                }
+                if (! str_starts_with($key, 'queues:')) {
+                    continue;
+                }
+                $name = substr($key, strlen('queues:'));
+                // Strip ":delayed", ":reserved", ":notify" suffixes.
+                $name = preg_replace('/:(delayed|reserved|notify)$/', '', $name);
+                if ($name !== '' && $name !== null) {
+                    $queues->push($name);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Redis unavailable — fall back to configured queues only.
+        }
+
+        return $queues->filter()->unique()->values()->all();
     }
 
     private function buildWorkerHealth(string $queueConnection, int $queuedJobs, int $reservedJobs, int $queuedPipelines): array

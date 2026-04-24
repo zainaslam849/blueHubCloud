@@ -43,9 +43,12 @@ class QueueCallsForSummarizationJob implements ShouldQueue
             ->orderByDesc('started_at');
 
         if ($this->fromDate !== null && $this->toDate !== null) {
+            // Pad the window by 1 day on each side so calls whose `started_at`
+            // (stored UTC) sits near a UTC midnight boundary aren't dropped
+            // when the supplied fromDate/toDate represent local-calendar dates.
             $query->whereBetween('started_at', [
-                CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay(),
-                CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay(),
+                CarbonImmutable::parse($this->fromDate, 'UTC')->startOfDay()->subDay(),
+                CarbonImmutable::parse($this->toDate, 'UTC')->endOfDay()->addDay(),
             ]);
         }
 
