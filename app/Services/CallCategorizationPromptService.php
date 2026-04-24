@@ -43,45 +43,123 @@ You are an intelligent phone call classification engine for a multi-tenant busin
 
 Your task is to accurately categorize each call based on its content and context.
 
-CATEGORIZATION STRATEGY:
-1. MATCH EXISTING CATEGORIES FIRST: Review the provided category list carefully. If the call fits an existing category, use it. This prevents duplicate categories.
+CORE PRINCIPLE — SEMANTIC REUSE OVER NEW CREATION:
+Your single most important job is to keep each company's category list small, clean, and reusable. Always prefer reusing an existing category over inventing a new one. You decide reuse vs. new by MEANING, never by exact wording.
 
-2. CREATE NEW CATEGORIES WHEN NEEDED: If the call topic genuinely doesn't fit ANY existing category, you may suggest a NEW category that accurately represents the call's purpose. New categories should be:
-   - Clearly distinct from existing ones
-   - Industry-appropriate for this company
-   - Broad enough to apply to multiple calls
-   - Named clearly (e.g., "Technical Support", "Billing Inquiry", "Sales Lead")
+============================================================
+STEP 1 — UNDERSTAND THE CALL'S CORE INTENT
+============================================================
+Read the AI summary (primary signal) and the transcript. In one short mental sentence, identify the call's CORE INTENT:
+   - WHAT does the caller want? (information, a quote, support, to pay a bill, to book, to complain, to follow up, to cancel, to apply, to schedule, etc.)
+   - ABOUT WHAT? (a product, a service, an invoice, an appointment, a property, an order, a job application, a delivery, etc.)
+The category should describe the WHAT (the broad business topic). The sub_category should describe the nuance (the specific variant, stage, product, or action).
 
-3. SPECIAL CASES:
-   - GREETING-ONLY/NO RESPONSE: If transcript shows only "Hello [company], how can I help you?" with NO customer response or dialogue → category: "No Response" or "Missed Call" (whichever exists, or create "No Response")
-   - ABANDONED CALLS: Caller hung up immediately with no conversation → "Missed Call" or "Abandoned"
-   - AFTER HOURS: Calls outside business hours → "After Hours" (if category exists)
-   - VOICEMAIL: Only voicemail left → "Voicemail" (if category exists)
+============================================================
+STEP 2 — SEMANTIC MATCH AGAINST THE EXISTING LIST (STRICT)
+============================================================
+Compare your one-sentence intent to EVERY name in the AVAILABLE CATEGORIES list. Compare by MEANING, not by spelling.
 
-4. CONFIDENCE SCORING:
-   - High confidence (0.8-1.0): Clear topic, obvious category
-   - Medium confidence (0.6-0.79): Reasonable match but ambiguous
-    - Low confidence (<0.6): Very unclear → use "Other"
+Things that DO NOT matter (treat as the same):
+   - Letter case ("billing inquiry" = "Billing Inquiry" = "BILLING INQUIRY")
+   - Punctuation, hyphens, ampersands, slashes ("Sales & Marketing" = "Sales and Marketing" = "Sales/Marketing")
+   - Singular vs. plural ("Order" = "Orders"; "Complaint" = "Complaints")
+   - Word order ("Support Technical" = "Technical Support")
+   - Synonyms and paraphrases of the same concept ("Inquiry" = "Question" = "Enquiry"; "Booking" = "Reservation" = "Appointment" when contextually equivalent)
+   - Adding or removing generic qualifier words ("Inquiry", "Discussion", "Call", "Request", "Question")
+   - Expanded vs. contracted scope of the SAME topic ("Website Development" vs. "Website Design and Development" — same business activity)
 
-6. IMPORTANT RULE FOR "GENERAL":
-    - Do NOT use "General" for real conversations with clear business intent.
-    - Use "General" only for very short/unclear interactions where there is no clear topic.
+THE 90% RULE:
+   - If your call's intent overlaps with any existing category's meaning at >= 90% confidence, you MUST reuse that existing category. Copy its name CHARACTER-FOR-CHARACTER from the list below (preserve its original casing, spelling, and punctuation exactly).
+   - Only when NO existing category overlaps at >= 90% are you allowed to propose a brand-new category name.
+   - "Slightly different wording" is NOT a reason to create a new category. "Genuinely different business topic" is the only valid reason.
 
-5. INDUSTRY AWARENESS: Consider the company's industry context:
-   - Telecom companies: Technical support, billing, service inquiries, sales
-   - Real estate: Property inquiries, viewings, leasing, maintenance
-   - Hospitality: Reservations, guest services, complaints
-   - Retail: Orders, returns, product questions
-   - Professional services: Appointments, consultations, billing
+============================================================
+STEP 3 — USE sub_category FOR THE NUANCE
+============================================================
+Differences in stage, action, product line, or specifics belong in sub_category, NOT in a new top-level category.
 
-RULES:
-- Choose ONE primary category only
-- Sub-category is optional (can be null)
-- Be consistent: similar calls should get the same category
-- Prioritize existing categories to maintain organization
-- Only create new categories when truly necessary
+Pattern (works across ALL industries):
+   category   = the broad business topic the caller is engaging about
+   sub_category = the specific action, stage, product, issue, or variant within that topic
 
-Return valid JSON only.
+Cross-industry examples of correct collapsing (illustrative — apply the same pattern to ANY domain):
+   - Web/IT agency:
+       category="Website Development", sub_category="Bug Fix"
+       category="Website Development", sub_category="New Build Quote"
+       category="Website Development", sub_category="Redesign Discussion"
+       category="Website Development", sub_category="Hosting / Domain"
+     (NOT separate categories like "Website Design", "Website Bug Fix", "Web Project Discussion".)
+   - Real estate:
+       category="Property Inquiry", sub_category="Viewing Request"
+       category="Property Inquiry", sub_category="Rental Application"
+       category="Property Inquiry", sub_category="Price Negotiation"
+   - Hospitality / restaurant / hotel:
+       category="Reservation", sub_category="New Booking"
+       category="Reservation", sub_category="Modify Booking"
+       category="Reservation", sub_category="Cancellation"
+   - Healthcare / clinic:
+       category="Appointment", sub_category="New Booking"
+       category="Appointment", sub_category="Reschedule"
+       category="Appointment", sub_category="Prescription Refill"
+   - Retail / e-commerce:
+       category="Order Inquiry", sub_category="Order Status"
+       category="Order Inquiry", sub_category="Return / Refund"
+       category="Order Inquiry", sub_category="Product Question"
+   - Telecom / ISP:
+       category="Technical Support", sub_category="Outage / Connectivity"
+       category="Technical Support", sub_category="Device Setup"
+       category="Billing Inquiry", sub_category="Payment Discussion"
+       category="Billing Inquiry", sub_category="Invoice Question"
+       category="Billing Inquiry", sub_category="Plan Change"
+   - Professional services (legal / accounting / consulting):
+       category="Consultation Request", sub_category="New Client"
+       category="Consultation Request", sub_category="Existing Matter Update"
+   - Trades / home services (plumbing, electrical, HVAC):
+       category="Service Request", sub_category="Emergency Callout"
+       category="Service Request", sub_category="Quote Request"
+       category="Service Request", sub_category="Follow-up Visit"
+
+These are PATTERNS, not a fixed list. Apply the same logic to whatever industry the company operates in.
+
+============================================================
+STEP 4 — WHEN TO CREATE A NEW CATEGORY (RARE)
+============================================================
+Only create a new category when ALL of the following are true:
+   - No existing category overlaps with the call's intent at >= 90% confidence (by meaning, not wording).
+   - The new topic is broad enough that future calls of the same kind will likely reuse it.
+   - The new name is semantically distinct from every existing name (not a synonym, paraphrase, or variant).
+
+A new category name should be:
+   - Short (1–4 words)
+   - Industry-appropriate
+   - Broad (the specifics go in sub_category)
+   - In Title Case
+
+============================================================
+STEP 5 — SPECIAL CASES (always check first)
+============================================================
+   - GREETING-ONLY / NO CUSTOMER RESPONSE → "No Response" (or "Missed Call" if it already exists)
+   - ABANDONED / IMMEDIATE HANG-UP → "Missed Call" (or "Abandoned" if it exists)
+   - VOICEMAIL ONLY → "Voicemail" (if exists)
+   - AFTER HOURS with no real conversation → "After Hours" (if exists)
+   - "General" is ONLY for genuinely unclear / sub-24-word non-conversations. NEVER for substantive calls.
+
+============================================================
+CONFIDENCE SCORING
+============================================================
+   - 0.90–1.00: Clear topic, strong meaning match → REUSE existing category (must be >= 0.90 to reuse).
+   - 0.70–0.89: Reasonable but ambiguous match → propose a new specific category (do NOT force-reuse).
+   - < 0.70: Weak signal → still output the most likely specific business category; avoid "General/Other/Unclear" unless the call is truly empty.
+
+============================================================
+HARD RULES
+============================================================
+   - Choose exactly ONE primary category.
+   - sub_category is REQUIRED for any substantive call (only null for greeting-only / missed / voicemail / after-hours non-conversations).
+   - If reusing an existing category, copy its name verbatim from the list (exact case, exact spelling).
+   - Never invent a synonym of an existing category. Put the nuance in sub_category instead.
+   - Be consistent: two calls with the same business meaning must get the same category name.
+   - Output VALID JSON ONLY. No explanation, no preamble, no markdown.
 PROMPT;
     }
 
@@ -156,13 +234,15 @@ ANALYSIS INSTRUCTIONS:
    - Only voicemail left? → Use "Voicemail"
    - Status is "missed"? → Use category for missed calls
 
-4. FOR ACTUAL CONVERSATIONS (STRICT MATCHING):
-   - ONLY assign an existing category if you are >= 90% confident the transcript matches that category's intent/topic
-   - If NO existing category reaches 90% confidence, create a NEW appropriate category name instead
-   - Never force a weak/ambiguous match to an existing category
-    - Sub-category is REQUIRED for substantive calls (do not return null for substantive calls)
-    - If no existing sub-category fits, propose a new specific sub-category under the chosen category
-    - Do NOT use "General", "Other", or "Unclear" for substantive business discussions
+4. FOR ACTUAL CONVERSATIONS (STRICT SEMANTIC MATCHING):
+   - Compare by MEANING, not by exact wording. Casing, plurals, punctuation, and minor phrasing differences are irrelevant.
+   - If the call's meaning matches an existing category's meaning at >= 90% confidence, you MUST reuse that existing category's name verbatim (copy it from the list above).
+   - Do NOT invent a near-synonym or expanded variant of an existing name. "Website Development" and "Website Design and Development" mean the same thing — pick the one already in the list and put the nuance (e.g. "design only", "new build", "redesign") into sub_category.
+   - Only if NO existing category overlaps in meaning at >= 90% confidence should you propose a NEW category name.
+   - Never force a weak/ambiguous match to an existing category.
+   - Sub-category is REQUIRED for substantive calls (do not return null for substantive calls). Use sub_category to capture the specific differentiator within the broader category (e.g., category="Technical Support", sub_category="Bug Fix"; category="Billing Inquiry", sub_category="Payment Discussion").
+   - If no existing sub-category fits, propose a new specific sub-category under the chosen category.
+   - Do NOT use "General", "Other", or "Unclear" for substantive business discussions.
 
 5. CONFIDENCE SCORING (STRICT THRESHOLDS):
    - 0.90-1.0: Very clear topic, obvious category match → USE EXISTING CATEGORY
@@ -643,10 +723,75 @@ PROMPT;
             return $hit;
         }
 
-        return CallCategory::withTrashed()
+        $hit = CallCategory::withTrashed()
             ->where('company_id', $companyId)
             ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmed)])
             ->first();
+
+        if ($hit) {
+            return $hit;
+        }
+
+        // Final pass: normalized fingerprint match across all rows for this company
+        // so semantic variants (punctuation, plurals, word-order, stop-words) collapse
+        // to the existing row instead of triggering a duplicate insert.
+        $targetKey = self::normalizeNameForMatch($trimmed);
+        if ($targetKey === '') {
+            return null;
+        }
+
+        return CallCategory::withTrashed()
+            ->where('company_id', $companyId)
+            ->get()
+            ->first(fn (CallCategory $c) => self::normalizeNameForMatch((string) $c->name) === $targetKey);
+    }
+
+    /**
+     * Canonical fingerprint of a category/sub-category name so semantically equivalent
+     * variants (case, punctuation, plurals, word-order, generic stop-words) compare equal.
+     * Mirrors CallCategorizationPersistenceService::normalizeForMatch().
+     */
+    private static function normalizeNameForMatch(string $value): string
+    {
+        $v = mb_strtolower(trim($value));
+        if ($v === '') {
+            return '';
+        }
+
+        $v = str_replace(['&', '/', '-', '_', ',', '.', '+'], [' and ', ' ', ' ', ' ', ' ', ' ', ' '], $v);
+        $v = preg_replace('/[^a-z0-9 ]+/', ' ', $v) ?? '';
+        $v = preg_replace('/\s+/', ' ', $v) ?? '';
+        $v = trim($v);
+        if ($v === '') {
+            return '';
+        }
+
+        $stop = [
+            'and', 'the', 'of', 'for', 'a', 'an', 'to', 'with', 'on', 'in', 'or',
+            'inquiry', 'inquiries', 'enquiry', 'enquiries', 'question', 'questions',
+            'discussion', 'discussions', 'request', 'requests', 'call', 'calls',
+            'issue', 'issues', 'general',
+        ];
+
+        $tokens = array_values(array_filter(
+            explode(' ', $v),
+            fn (string $t) => $t !== '' && ! in_array($t, $stop, true)
+        ));
+
+        $tokens = array_map(function (string $t) {
+            if (mb_strlen($t) > 3 && str_ends_with($t, 'ies')) {
+                return mb_substr($t, 0, -3) . 'y';
+            }
+            if (mb_strlen($t) > 3 && str_ends_with($t, 's') && ! str_ends_with($t, 'ss')) {
+                return mb_substr($t, 0, -1);
+            }
+            return $t;
+        }, $tokens);
+
+        $tokens = array_values(array_unique($tokens));
+        sort($tokens);
+
+        return implode(' ', $tokens);
     }
 
     /**
@@ -738,9 +883,12 @@ PROMPT;
     }
 
     /**
-     * Fetch active categories and their active sub-categories.
-     * Excludes AI-generated categories to avoid contaminating candidate matching with low-quality auto-created categories.
-     * Only approved (manually-created or system-default) categories are passed to the AI for matching.
+     * Fetch active categories and their active sub-categories for the company.
+     *
+     * Includes BOTH admin-created and AI-created categories so the AI can reuse
+     * categories generated in earlier pipeline runs instead of inventing slight
+     * name variants (e.g. "Website Design and Development" vs "Website
+     * Development") that bloat the taxonomy and create duplicate rows.
      */
     private static function getActiveCategories(?int $companyId = null)
     {
@@ -752,7 +900,6 @@ PROMPT;
             ->where('is_enabled', true)
             ->where('status', 'active')
             ->where('company_id', $companyId)
-            ->where('source', '!=', 'ai')  // Only include admin-created categories, exclude AI-generated to avoid test/noise contamination
             ->orderBy('name')  // Stable ordering to avoid non-deterministic prompt context
             ->with(['subCategories' => function ($query) {
                 $query->where('is_enabled', true)

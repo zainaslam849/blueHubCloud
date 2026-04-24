@@ -45,13 +45,10 @@ class CallCategorizationPersistenceService
                 return self::leaveUncategorized($call, 'Low confidence score (<0.90)');
             }
 
-            // Find category by name (only active categories)
-            $category = CallCategory::query()
-                ->where('is_enabled', true)
-                ->where('status', 'active')
-                ->where('company_id', $call->company_id)
-                ->where('name', $categoryName)
-                ->first();
+            // Find category by name (case-insensitive, with normalized fallback to collapse
+            // punctuation/word-order/plural variants like "Sales & Marketing" vs "Sales and Marketing"
+            // or "Website Design and Development" vs "Website Development").
+            $category = self::findExistingCategoryForCompany($call->company_id, $categoryName);
 
             // If AI returned a new category name, create it for this company.
             if (! $category) {
@@ -84,12 +81,7 @@ class CallCategorizationPersistenceService
             $subCategoryLabel = null;
 
             if ($subCategoryName) {
-                $subCategory = SubCategory::query()
-                    ->where('is_enabled', true)
-                    ->where('status', 'active')
-                    ->where('category_id', $category->id)
-                    ->where('name', $subCategoryName)
-                    ->first();
+                $subCategory = self::findExistingSubCategoryForCategory($category->id, $subCategoryName);
 
                 if ($subCategory) {
                     $subCategoryId = $subCategory->id;
@@ -220,5 +212,144 @@ class CallCategorizationPersistenceService
             'failed_count' => $failedCount,
             'results' => $results,
         ];
+    }
+
+    /**
+     * Find an existing active category for the company that semantically matches the given name.
+     *
+     * Tries (in order):
+     *   1. Exact case-insensitive match on trimmed name.
+     *   2. Normalized match (lower-cased, punctuation stripped, plurals collapsed,
+     *      stop-words removed, words sorted) so variants like "Sales & Marketing" and
+     *      "Sales and Marketing", or "Website Design and Development" and "Website
+     *      Development", resolve to the same row instead of creating a duplicate.
+     *
+     * Returns null only when no semantically-equivalent active category exists.
+     */
+    private static function findExistingCategoryForCompany(int $companyId, string $name): ?CallCategory
+    {
+        $trimmed = trim($name);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        // 1) Case-insensitive exact match (works under utf8mb4_unicode_ci collation).
+        $exact = CallCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->where('company_id', $companyId)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmed)])
+            ->first();
+
+        if ($exact) {
+            return $exact;
+        }
+
+        // 2) Normalized match across all active categories for this company.
+        $targetKey = self::normalizeForMatch($trimmed);
+        if ($targetKey === '') {
+            return null;
+        }
+
+        return CallCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->where('company_id', $companyId)
+            ->get()
+            ->first(fn (CallCategory $c) => self::normalizeForMatch((string) $c->name) === $targetKey);
+    }
+
+    /**
+     * Find an existing active sub-category under the given category whose name
+     * semantically matches the given name (same normalization rules as categories).
+     */
+    private static function findExistingSubCategoryForCategory(int $categoryId, string $name): ?SubCategory
+    {
+        $trimmed = trim($name);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $exact = SubCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->where('category_id', $categoryId)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmed)])
+            ->first();
+
+        if ($exact) {
+            return $exact;
+        }
+
+        $targetKey = self::normalizeForMatch($trimmed);
+        if ($targetKey === '') {
+            return null;
+        }
+
+        return SubCategory::query()
+            ->where('is_enabled', true)
+            ->where('status', 'active')
+            ->where('category_id', $categoryId)
+            ->get()
+            ->first(fn (SubCategory $s) => self::normalizeForMatch((string) $s->name) === $targetKey);
+    }
+
+    /**
+     * Build a canonical "fingerprint" of a category/sub-category name so that
+     * semantically-equivalent variants collapse to the same key.
+     *
+     * Steps:
+     *   - lower-case
+     *   - replace common synonyms ("&" -> "and", "/" -> " ")
+     *   - strip non-alphanumeric chars
+     *   - tokenize, drop stop-words ("and", "the", "of", "for", "a", "an",
+     *     "to", "with", "inquiry", "enquiry", "question", "discussion",
+     *     "request", "call", "calls", "issue", "issues", "general")
+     *   - collapse common plurals (trailing 's' on >3-char tokens)
+     *   - sort tokens alphabetically (so word-order doesn't matter)
+     */
+    private static function normalizeForMatch(string $value): string
+    {
+        $v = mb_strtolower(trim($value));
+        if ($v === '') {
+            return '';
+        }
+
+        $v = str_replace(['&', '/', '-', '_', ',', '.', '+'], [' and ', ' ', ' ', ' ', ' ', ' ', ' '], $v);
+        $v = preg_replace('/[^a-z0-9 ]+/', ' ', $v) ?? '';
+        $v = preg_replace('/\s+/', ' ', $v) ?? '';
+        $v = trim($v);
+        if ($v === '') {
+            return '';
+        }
+
+        $stop = [
+            'and', 'the', 'of', 'for', 'a', 'an', 'to', 'with', 'on', 'in', 'or',
+            'inquiry', 'inquiries', 'enquiry', 'enquiries', 'question', 'questions',
+            'discussion', 'discussions', 'request', 'requests', 'call', 'calls',
+            'issue', 'issues', 'general',
+        ];
+
+        $tokens = array_values(array_filter(
+            explode(' ', $v),
+            fn (string $t) => $t !== '' && ! in_array($t, $stop, true)
+        ));
+
+        // Collapse trivial plurals on tokens longer than 3 chars (orders -> order, services -> service).
+        $tokens = array_map(function (string $t) {
+            if (mb_strlen($t) > 3 && str_ends_with($t, 'ies')) {
+                return mb_substr($t, 0, -3) . 'y';
+            }
+            if (mb_strlen($t) > 3 && str_ends_with($t, 's') && ! str_ends_with($t, 'ss')) {
+                return mb_substr($t, 0, -1);
+            }
+            return $t;
+        }, $tokens);
+
+        // De-duplicate and sort so word-order doesn't matter.
+        $tokens = array_values(array_unique($tokens));
+        sort($tokens);
+
+        return implode(' ', $tokens);
     }
 }
