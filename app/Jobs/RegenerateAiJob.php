@@ -171,6 +171,7 @@ class RegenerateAiJob implements ShouldQueue
             ->whereNull('category_id')
             ->where(function ($q) {
                 $q->where('ai_category_status', 'credit_exhausted')
+                    ->orWhere('ai_category_status', 'not_generated')
                     ->orWhereNull('ai_category_status');
             });
 

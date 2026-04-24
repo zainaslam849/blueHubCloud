@@ -43,8 +43,7 @@ class QueueCallsForCategorizationJob implements ShouldQueue
             $query->whereNull('category_id');
         }
 
-        // Exclude calls marked as not_generated (awaiting manual regeneration)
-        $query->where('ai_category_status', '!=', 'not_generated');
+        // Keep uncategorized calls eligible for AI categorization retries.
 
         if ($this->fromDate !== null && $this->toDate !== null) {
             $query->whereBetween('started_at', [

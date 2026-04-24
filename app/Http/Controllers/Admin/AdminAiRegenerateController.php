@@ -81,6 +81,7 @@ class AdminAiRegenerateController extends Controller
                             ->whereNull('category_id')
                             ->where(function ($inner) {
                                 $inner->where('ai_category_status', 'credit_exhausted')
+                                    ->orWhere('ai_category_status', 'not_generated')
                                     ->orWhereNull('ai_category_status');
                             });
                     });
@@ -210,6 +211,7 @@ class AdminAiRegenerateController extends Controller
             ->whereNull('category_id')
             ->where(function ($q) {
                 $q->where('ai_category_status', 'credit_exhausted')
+                    ->orWhere('ai_category_status', 'not_generated')
                     ->orWhereNull('ai_category_status');
             });
     }
