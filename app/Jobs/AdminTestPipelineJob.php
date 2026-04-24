@@ -26,8 +26,8 @@ class AdminTestPipelineJob implements ShouldQueue
     private const STAGE_CALL_CATEGORIZATION = 'call_categorization';
     private const STAGE_REPORT_GENERATION = 'report_generation';
 
-    private ?PipelineRun $pipelineRun = null;
-    private string $activeStage = self::STAGE_CALL_DISCOVERY;
+    public ?PipelineRun $pipelineRun = null;
+    public string $activeStage = self::STAGE_CALL_DISCOVERY;
 
     public function __construct(
         public int $companyId,

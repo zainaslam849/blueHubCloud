@@ -418,7 +418,9 @@
                                     </BaseButton>
                                     <BaseButton
                                         v-if="category.deleted_at"
-                                        @click="openForceDeleteConfirm(category)"
+                                        @click="
+                                            openForceDeleteConfirm(category)
+                                        "
                                         size="sm"
                                         variant="danger"
                                         class="admin-actionBtn admin-actionBtn--force-delete"
@@ -869,7 +871,7 @@
                                 @keyup.enter="
                                     forceDeleteConfirmText ===
                                         forceDeleteTarget?.name &&
-                                        confirmForceDelete()
+                                    confirmForceDelete()
                                 "
                             />
                         </div>
@@ -1472,7 +1474,7 @@ const confirmForceDelete = async () => {
     try {
         forceDeleting.value = forceDeleteTarget.value.id;
         await adminApi.delete(
-            `/categories/${forceDeleteTarget.value.id}/force-delete`
+            `/categories/${forceDeleteTarget.value.id}/force-delete`,
         );
         await fetchCategories();
         cancelForceDelete();
@@ -1482,7 +1484,8 @@ const confirmForceDelete = async () => {
             showToast(err.response.data.message, "error");
             error.value = err.response.data.message;
         } else {
-            error.value = err.message || "Failed to permanently delete category";
+            error.value =
+                err.message || "Failed to permanently delete category";
         }
     } finally {
         forceDeleting.value = null;
