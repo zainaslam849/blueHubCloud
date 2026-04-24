@@ -9,13 +9,6 @@
                 </p>
             </div>
             <div style="display: flex; gap: 10px; flex-wrap: wrap">
-                <BaseButton
-                    variant="secondary"
-                    size="md"
-                    @click="openAiGenerateModal"
-                >
-                    Generate AI Categories
-                </BaseButton>
                 <BaseButton variant="primary" size="md" @click="openAddForm">
                     + Add Category
                 </BaseButton>
