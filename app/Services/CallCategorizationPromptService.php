@@ -8,6 +8,7 @@ use App\Repositories\AiSettingsRepository;
 class CallCategorizationPromptService
 {
     private const CONFIDENCE_THRESHOLD = 0.90;
+    private const SUBCATEGORY_REFINED_THRESHOLD = 0.75;
     private const GENERAL_ALLOWED_MAX_WORDS = 24;
     private const NO_RESPONSE_MAX_WORDS = 80;
 
@@ -159,7 +160,8 @@ ANALYSIS INSTRUCTIONS:
    - ONLY assign an existing category if you are >= 90% confident the transcript matches that category's intent/topic
    - If NO existing category reaches 90% confidence, create a NEW appropriate category name instead
    - Never force a weak/ambiguous match to an existing category
-   - Choose relevant sub-category if available, otherwise null
+    - Sub-category is REQUIRED for substantive calls (do not return null for substantive calls)
+    - If no existing sub-category fits, propose a new specific sub-category under the chosen category
     - Do NOT use "General", "Other", or "Unclear" for substantive business discussions
 
 5. CONFIDENCE SCORING (STRICT THRESHOLDS):
@@ -179,7 +181,7 @@ ANALYSIS INSTRUCTIONS:
 OUTPUT FORMAT (JSON ONLY, NO EXPLANATION):
 {
   "category": "<exact category name from list above, or new category name>",
-  "sub_category": "<exact sub-category name from list above, or null>",
+    "sub_category": "<exact sub-category name from list above, or a new specific sub-category name>",
     "confidence": 0.95
 }
 PROMPT;
@@ -306,7 +308,12 @@ PROMPT;
      * - If AI suggests a new category, create it (allows flexibility for unmatched cases)
      * - Never force weak/ambiguous matches to unrelated existing categories
      */
-    public static function validateCategorization(array $aiResponse, ?int $companyId = null, ?string $transcriptText = null): array
+    public static function validateCategorization(
+        array $aiResponse,
+        ?int $companyId = null,
+        ?string $transcriptText = null,
+        ?string $summaryText = null
+    ): array
     {
         if (! $companyId) {
             throw new \InvalidArgumentException('Company ID is required for categorization validation.');
@@ -340,13 +347,6 @@ PROMPT;
 
         $normalizedTranscript = preg_replace('/\s+/', ' ', trim((string) $transcriptText));
         $transcriptWordCount = str_word_count((string) $normalizedTranscript);
-
-        if ($confidence < self::CONFIDENCE_THRESHOLD) {
-            return [
-                'valid' => false,
-                'error' => 'Confidence below strict threshold of 0.90',
-            ];
-        }
 
         // Special validation for "General" category
         if (strcasecmp($categoryName, 'General') === 0) {
@@ -403,35 +403,9 @@ PROMPT;
             ->where('name', $categoryName)
             ->first();
 
-        // STRICT MATCHING: Existing categories require >= 90% confidence
+        // Existing category candidate found.
         if ($existingCategory) {
-            if ($confidence < self::CONFIDENCE_THRESHOLD) {
-                // Low confidence for existing category - REJECT completely (don't force or create duplicate)
-                \Illuminate\Support\Facades\Log::warning('Rejecting existing category due to low confidence (< 0.90)', [
-                    'company_id' => $companyId,
-                    'existing_category_id' => $existingCategory->id,
-                    'existing_category_name' => $existingCategory->name,
-                    'confidence' => $confidence,
-                    'threshold' => self::CONFIDENCE_THRESHOLD,
-                    'transcript_preview' => mb_substr((string) $normalizedTranscript, 0, 220),
-                ]);
-
-                // Reject validation - call will remain uncategorized for manual review
-                return [
-                    'valid' => false,
-                    'error' => "Existing category '$categoryName' rejected due to insufficient confidence (< 0.90)",
-                ];
-            } else {
-                // High confidence for existing category - ACCEPT
-                \Illuminate\Support\Facades\Log::info('Accepting existing category with strong confidence (>= 0.90)', [
-                    'company_id' => $companyId,
-                    'existing_category_id' => $existingCategory->id,
-                    'existing_category_name' => $existingCategory->name,
-                    'confidence' => $confidence,
-                ]);
-
-                $category = $existingCategory;
-            }
+            $category = $existingCategory;
         } else {
             // No existing category with this name - will create new one below
             $category = null;
@@ -483,6 +457,24 @@ PROMPT;
             }
         }
 
+        $containsSubstantiveIntent = self::hasSubstantiveIntent((string) $normalizedTranscript);
+        $looksLikeNoResponse = self::looksLikeNoResponseInteraction((string) $normalizedTranscript);
+
+        if ($subCategoryName === null && $containsSubstantiveIntent && ! $looksLikeNoResponse) {
+            $subCategoryName = self::buildAutoSubCategoryName(
+                $category->name,
+                (string) $normalizedTranscript,
+                (string) $summaryText
+            );
+
+            \Illuminate\Support\Facades\Log::info('Auto-generated sub-category for substantive call', [
+                'company_id' => $companyId,
+                'category_id' => $category->id,
+                'category_name' => $category->name,
+                'sub_category_name' => $subCategoryName,
+            ]);
+        }
+
         // Verify sub-category if provided
         if ($subCategoryName !== null) {
             $subCategory = $category->subCategories()
@@ -510,6 +502,23 @@ PROMPT;
                 ]);
             }
 
+            if ($confidence < self::CONFIDENCE_THRESHOLD) {
+                if (! $containsSubstantiveIntent || $looksLikeNoResponse || $confidence < self::SUBCATEGORY_REFINED_THRESHOLD) {
+                    return [
+                        'valid' => false,
+                        'error' => 'Confidence too low for sub-category-assisted assignment',
+                    ];
+                }
+
+                \Illuminate\Support\Facades\Log::info('Accepted low-confidence categorization due to specific sub-category', [
+                    'company_id' => $companyId,
+                    'category_id' => $category->id,
+                    'sub_category_id' => $subCategory->id,
+                    'confidence' => $confidence,
+                    'refined_threshold' => self::SUBCATEGORY_REFINED_THRESHOLD,
+                ]);
+            }
+
             return [
                 'valid' => true,
                 'category_id' => $category->id,
@@ -517,6 +526,16 @@ PROMPT;
                 'category_name' => $category->name,
                 'sub_category_name' => $subCategory->name,
                 'confidence' => $confidence,
+            ];
+        }
+
+        // Confidence gates:
+        // - >= 0.90 always valid
+        // - 0.75..0.89 valid only for substantive calls that have a specific sub-category
+        if ($confidence < self::CONFIDENCE_THRESHOLD) {
+            return [
+                'valid' => false,
+                'error' => 'Confidence below strict threshold and no specific sub-category available',
             ];
         }
 
@@ -528,6 +547,29 @@ PROMPT;
             'sub_category_name' => null,
             'confidence' => $confidence,
         ];
+    }
+
+    private static function buildAutoSubCategoryName(string $categoryName, string $transcriptText, string $summaryText = ''): string
+    {
+        $source = strtolower(trim($summaryText . ' ' . $transcriptText));
+
+        $rules = [
+            'payment|invoice|billing|card|charge|refund' => 'Payment and Billing',
+            'quote|pricing|price|budget|cost' => 'Pricing and Quotes',
+            'booking|schedule|appointment|calendar|reschedule' => 'Booking and Scheduling',
+            'website|web\s?design|hosting|domain|seo|content|landing\s?page' => 'Website Development',
+            'support|issue|problem|error|bug|fix|troubleshoot' => 'Technical Support',
+            'voicemail|no response|unavailable|missed call|leave a message' => 'Voicemail or No Response',
+            'sales|lead|proposal|inquiry|enquiry' => 'Sales Inquiry',
+        ];
+
+        foreach ($rules as $pattern => $label) {
+            if (preg_match('/' . $pattern . '/i', $source) === 1) {
+                return $label;
+            }
+        }
+
+        return 'General ' . trim($categoryName);
     }
 
     /**

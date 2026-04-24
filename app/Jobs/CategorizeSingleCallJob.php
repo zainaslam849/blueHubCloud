@@ -125,7 +125,8 @@ class CategorizeSingleCallJob implements ShouldQueue
             $validation = CallCategorizationPromptService::validateCategorization(
                 $result,
                 $call->company_id,
-                $call->transcript_text
+                $call->transcript_text,
+                $call->ai_summary
             );
 
             Log::info('CategorizeSingleCallJob: validation outcome', [
