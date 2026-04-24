@@ -102,42 +102,96 @@ class CategorizeSingleCallJob implements ShouldQueue
             // Parse provider and model from categorization_model (format: "openai/gpt-4o-mini")
             [$provider, $model] = explode('/', $aiSettings->categorization_model, 2);
 
-            // OpenRouter uses the full model string (openai/gpt-4o-mini) as the model ID
-            if ($aiSettings->provider === 'openrouter') {
-                $result = $this->callOpenRouter($aiSettings->api_key, $aiSettings->categorization_model, $prompt);
-            } elseif ($provider === 'openai') {
-                $result = $this->callOpenAI($aiSettings->api_key, $model, $prompt);
-            } elseif ($provider === 'anthropic') {
-                $result = $this->callAnthropic($aiSettings->api_key, $model, $prompt);
-            } else {
-                throw new \Exception("Unsupported AI provider: {$aiSettings->provider}");
+            $maxAttempts = 4; // 1 initial + 3 retries with stronger instructions
+            $attempt = 0;
+            $result = null;
+            $validation = null;
+            $lastInvalidReason = null;
+
+            while ($attempt < $maxAttempts) {
+                $attempt++;
+
+                $attemptPrompt = $prompt;
+                if ($attempt > 1) {
+                    // Append a retry directive forcing the model to produce a specific
+                    // category with confidence >= 0.90. Never accept "General"/"Other"
+                    // as a fallback — invent a more specific, accurate category instead.
+                    $retryDirective = "\n\nIMPORTANT RETRY INSTRUCTION (attempt {$attempt} of {$maxAttempts}):\n"
+                        . "Your previous response was rejected. Reason: " . ($lastInvalidReason ?? 'unknown') . ".\n"
+                        . "You MUST now:\n"
+                        . "1. Re-read the transcript and summary carefully.\n"
+                        . "2. Choose a specific, descriptive category that accurately reflects the call's intent (≥ 90% confidence).\n"
+                        . "3. DO NOT return 'General', 'Other', or 'Unclear'. If no existing category fits, INVENT a new specific category name based on the actual call content.\n"
+                        . "4. Provide a specific sub-category as well.\n"
+                        . "5. Set confidence to a number >= 0.90 only if you are truly confident; otherwise refine the category until you are.\n"
+                        . "6. Respond with valid JSON: {\"category\": \"...\", \"sub_category\": \"...\", \"confidence\": 0.9x}";
+
+                    $attemptPrompt['user'] = ($prompt['user'] ?? '') . $retryDirective;
+                }
+
+                // OpenRouter uses the full model string (openai/gpt-4o-mini) as the model ID
+                if ($aiSettings->provider === 'openrouter') {
+                    $result = $this->callOpenRouter($aiSettings->api_key, $aiSettings->categorization_model, $attemptPrompt);
+                } elseif ($provider === 'openai') {
+                    $result = $this->callOpenAI($aiSettings->api_key, $model, $attemptPrompt);
+                } elseif ($provider === 'anthropic') {
+                    $result = $this->callAnthropic($aiSettings->api_key, $model, $attemptPrompt);
+                } else {
+                    throw new \Exception("Unsupported AI provider: {$aiSettings->provider}");
+                }
+
+                Log::info('CategorizeSingleCallJob: raw AI categorization response', [
+                    'call_id' => $this->callId,
+                    'company_id' => $call->company_id,
+                    'attempt' => $attempt,
+                    'category_raw' => $result['category'] ?? null,
+                    'sub_category_raw' => $result['sub_category'] ?? null,
+                    'confidence_raw' => $result['confidence'] ?? null,
+                    'response_keys' => array_keys($result),
+                ]);
+
+                $validation = CallCategorizationPromptService::validateCategorization(
+                    $result,
+                    $call->company_id,
+                    $call->transcript_text,
+                    $call->ai_summary
+                );
+
+                Log::info('CategorizeSingleCallJob: validation outcome', [
+                    'call_id' => $this->callId,
+                    'company_id' => $call->company_id,
+                    'attempt' => $attempt,
+                    'valid' => $validation['valid'] ?? false,
+                    'validation_error' => $validation['error'] ?? null,
+                    'category_validated' => $validation['category_name'] ?? null,
+                    'sub_category_validated' => $validation['sub_category_name'] ?? null,
+                    'confidence_validated' => $validation['confidence'] ?? null,
+                ]);
+
+                if ($validation['valid']) {
+                    break;
+                }
+
+                $lastInvalidReason = $validation['error'] ?? 'unknown validation error';
+
+                // Only retry for confidence/General/Other rejections — those are the
+                // failure modes the model can fix by trying again with a sharper prompt.
+                $isRetryable = str_contains(strtolower($lastInvalidReason), 'confidence')
+                    || str_contains(strtolower($lastInvalidReason), 'general')
+                    || str_contains(strtolower($lastInvalidReason), 'other')
+                    || str_contains(strtolower($lastInvalidReason), 'unclear');
+
+                if (! $isRetryable) {
+                    break;
+                }
+
+                Log::info('CategorizeSingleCallJob: retrying AI for stronger category', [
+                    'call_id' => $this->callId,
+                    'attempt' => $attempt,
+                    'next_attempt' => $attempt + 1,
+                    'reason' => $lastInvalidReason,
+                ]);
             }
-
-            Log::info('CategorizeSingleCallJob: raw AI categorization response', [
-                'call_id' => $this->callId,
-                'company_id' => $call->company_id,
-                'category_raw' => $result['category'] ?? null,
-                'sub_category_raw' => $result['sub_category'] ?? null,
-                'confidence_raw' => $result['confidence'] ?? null,
-                'response_keys' => array_keys($result),
-            ]);
-
-            $validation = CallCategorizationPromptService::validateCategorization(
-                $result,
-                $call->company_id,
-                $call->transcript_text,
-                $call->ai_summary
-            );
-
-            Log::info('CategorizeSingleCallJob: validation outcome', [
-                'call_id' => $this->callId,
-                'company_id' => $call->company_id,
-                'valid' => $validation['valid'] ?? false,
-                'validation_error' => $validation['error'] ?? null,
-                'category_validated' => $validation['category_name'] ?? null,
-                'sub_category_validated' => $validation['sub_category_name'] ?? null,
-                'confidence_validated' => $validation['confidence'] ?? null,
-            ]);
 
             if (! $validation['valid']) {
                 $call->category_id = null;
@@ -149,9 +203,10 @@ class CategorizeSingleCallJob implements ShouldQueue
                 $call->ai_category_status = 'not_generated';
                 $call->save();
 
-                Log::warning('AI categorization invalid; leaving call uncategorized for manual retry', [
+                Log::warning('AI categorization invalid after all retries; leaving call uncategorized for manual retry', [
                     'call_id' => $this->callId,
                     'company_id' => $call->company_id,
+                    'attempts' => $attempt,
                     'category' => $result['category'] ?? null,
                     'sub_category' => $result['sub_category'] ?? null,
                     'error' => $validation['error'] ?? null,

@@ -399,10 +399,10 @@ PROMPT;
         // Search by company_id + name only (no status/enabled filter) so that archived
         // or disabled categories are found and re-activated rather than causing a
         // unique-constraint collision on CREATE.
-        $existingCategory = CallCategory::withTrashed()
-            ->where('company_id', $companyId)
-            ->where('name', $categoryName)
-            ->first();
+        // Use a case-insensitive, whitespace-tolerant match so AI variations like
+        // "voicemail " / "Voicemail" / "VOICEMAIL" all resolve to the same row and
+        // do NOT trip the (company_id, name) unique constraint on CREATE.
+        $existingCategory = self::lookupCategorySafely($companyId, $categoryName);
 
         // Existing category candidate found.
         if ($existingCategory) {
@@ -450,19 +450,34 @@ PROMPT;
                     'status' => 'active',
                 ]);
             } catch (\Illuminate\Database\QueryException $e) {
-                // Race condition: another process created the category between our check and insert.
-                // Re-fetch without status filters to handle archived/disabled records too.
-                if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate')) {
-                    $category = CallCategory::withTrashed()
-                        ->where('company_id', $companyId)
-                        ->where('name', $trimmedCategory)
-                        ->first();
+                // Duplicate-key collision. Possible causes:
+                //  1) Concurrent sibling job inserted the row between our SELECT and INSERT.
+                //  2) AI returned the name with case/whitespace variant that our initial
+                //     SELECT missed but the unique index treats as equal.
+                //  3) Legacy row from before the company-scoped unique migration
+                //     (NULL company_id) under the same name.
+                // Re-fetch defensively so the call still gets categorized.
+                if ($e->getCode() === '23000' || str_contains(strtolower($e->getMessage()), 'duplicate')) {
+                    $category = self::recoverCategoryAfterDuplicate($companyId, $trimmedCategory, $e);
 
                     if (!$category) {
-                        return [
-                            'valid' => false,
-                            'error' => "Cannot assign category '$trimmedCategory' - duplicate detected but not found",
-                        ];
+                        // Final defensive fallback: never leave the call uncategorized
+                        // because of a transient lookup miss. Create with a disambiguated
+                        // name so the unique constraint is guaranteed to pass.
+                        \Illuminate\Support\Facades\Log::error("Cannot recover category after duplicate; creating disambiguated row", [
+                            'company_id' => $companyId,
+                            'category_name' => $trimmedCategory,
+                            'error' => $e->getMessage(),
+                        ]);
+
+                        $category = CallCategory::create([
+                            'company_id' => $companyId,
+                            'name' => $trimmedCategory.' ('.$companyId.'-'.substr((string) microtime(true), -6).')',
+                            'description' => 'Auto-created by AI (disambiguated after duplicate-recovery failure)',
+                            'source' => 'ai',
+                            'is_enabled' => true,
+                            'status' => 'active',
+                        ]);
                     }
 
                     // Re-activate if needed.
@@ -498,29 +513,65 @@ PROMPT;
 
         // Verify sub-category if provided
         if ($subCategoryName !== null) {
-            $subCategory = $category->subCategories()
-                ->where('is_enabled', true)
-                ->where('status', 'active')
-                ->where('name', $subCategoryName)
+            // Case-insensitive trimmed match including disabled/archived rows so we
+            // do NOT trip the (category_id, name) unique index on CREATE.
+            $trimmedSub = trim($subCategoryName);
+            $subCategory = \App\Models\SubCategory::query()
+                ->where('category_id', $category->id)
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmedSub)])
                 ->first();
 
-            if (!$subCategory) {
+            if ($subCategory) {
+                if (!$subCategory->is_enabled || $subCategory->status !== 'active') {
+                    $subCategory->is_enabled = true;
+                    $subCategory->status = 'active';
+                    $subCategory->save();
+                }
+            } else {
                 // AI suggested a new sub-category - create it automatically
                 \Illuminate\Support\Facades\Log::info("Creating new AI-suggested sub-category", [
                     'company_id' => $companyId,
                     'category_id' => $category->id,
                     'category_name' => $category->name,
-                    'sub_category_name' => $subCategoryName,
+                    'sub_category_name' => $trimmedSub,
                     'ai_confidence' => $confidence,
                 ]);
 
-                $subCategory = \App\Models\SubCategory::create([
-                    'category_id' => $category->id,
-                    'name' => $subCategoryName,
-                    'description' => 'Auto-created by AI based on call analysis',
-                    'is_enabled' => true,
-                    'status' => 'active',
-                ]);
+                try {
+                    $subCategory = \App\Models\SubCategory::create([
+                        'category_id' => $category->id,
+                        'name' => $trimmedSub,
+                        'description' => 'Auto-created by AI based on call analysis',
+                        'is_enabled' => true,
+                        'status' => 'active',
+                    ]);
+                } catch (\Illuminate\Database\QueryException $e) {
+                    if ($e->getCode() === '23000' || str_contains(strtolower($e->getMessage()), 'duplicate')) {
+                        \DB::reconnect();
+                        $subCategory = \App\Models\SubCategory::query()
+                            ->where('category_id', $category->id)
+                            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmedSub)])
+                            ->first();
+
+                        if (!$subCategory) {
+                            // Disambiguate to guarantee insert succeeds rather than
+                            // failing the whole categorization.
+                            $subCategory = \App\Models\SubCategory::create([
+                                'category_id' => $category->id,
+                                'name' => $trimmedSub.' ('.substr((string) microtime(true), -6).')',
+                                'description' => 'Auto-created by AI (disambiguated after duplicate-recovery failure)',
+                                'is_enabled' => true,
+                                'status' => 'active',
+                            ]);
+                        } elseif (!$subCategory->is_enabled || $subCategory->status !== 'active') {
+                            $subCategory->is_enabled = true;
+                            $subCategory->status = 'active';
+                            $subCategory->save();
+                        }
+                    } else {
+                        throw $e;
+                    }
+                }
             }
 
             if ($confidence < self::CONFIDENCE_THRESHOLD) {
@@ -568,6 +619,99 @@ PROMPT;
             'sub_category_name' => null,
             'confidence' => $confidence,
         ];
+    }
+
+    /**
+     * Find an existing CallCategory for this company tolerating case and whitespace
+     * differences in the AI-supplied name. Includes archived/disabled and soft-deleted
+     * rows so the caller can re-activate them instead of colliding with the
+     * (company_id, name) unique index on CREATE.
+     */
+    private static function lookupCategorySafely(int $companyId, string $rawName): ?CallCategory
+    {
+        $trimmed = trim($rawName);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $hit = CallCategory::withTrashed()
+            ->where('company_id', $companyId)
+            ->where('name', $trimmed)
+            ->first();
+
+        if ($hit) {
+            return $hit;
+        }
+
+        return CallCategory::withTrashed()
+            ->where('company_id', $companyId)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmed)])
+            ->first();
+    }
+
+    /**
+     * Recover a CallCategory after the INSERT failed with a duplicate-key error.
+     *
+     * The recovery query MUST escape any open transaction snapshot — otherwise under
+     * REPEATABLE READ the SELECT keeps returning the same null result it returned
+     * before the conflicting insert from another worker committed. We force a fresh
+     * DB connection before re-querying and try several lookup strategies in order
+     * of likelihood.
+     */
+    private static function recoverCategoryAfterDuplicate(int $companyId, string $trimmedCategory, \Throwable $originalException): ?CallCategory
+    {
+        try {
+            \Illuminate\Support\Facades\DB::reconnect();
+        } catch (\Throwable $reconnectError) {
+            \Illuminate\Support\Facades\Log::warning('DB::reconnect() failed during category recovery', [
+                'error' => $reconnectError->getMessage(),
+            ]);
+        }
+
+        $hit = CallCategory::withTrashed()
+            ->where('company_id', $companyId)
+            ->where('name', $trimmedCategory)
+            ->first();
+        if ($hit) {
+            return $hit;
+        }
+
+        $hit = CallCategory::withTrashed()
+            ->where('company_id', $companyId)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmedCategory)])
+            ->first();
+        if ($hit) {
+            return $hit;
+        }
+
+        // Legacy row from before the company-scoped unique migration: row exists
+        // with NULL company_id under the same name. Adopt it into this company.
+        $orphan = CallCategory::withTrashed()
+            ->whereNull('company_id')
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmedCategory)])
+            ->first();
+        if ($orphan) {
+            $orphan->company_id = $companyId;
+            $orphan->save();
+            \Illuminate\Support\Facades\Log::info('Adopted legacy NULL-company category during AI categorization', [
+                'company_id' => $companyId,
+                'category_id' => $orphan->id,
+                'category_name' => $orphan->name,
+            ]);
+            return $orphan;
+        }
+
+        \Illuminate\Support\Facades\Log::error('Category duplicate-recovery exhausted all strategies', [
+            'company_id' => $companyId,
+            'category_name' => $trimmedCategory,
+            'original_error' => $originalException->getMessage(),
+            'visible_rows' => CallCategory::withTrashed()
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($trimmedCategory)])
+                ->get(['id', 'company_id', 'name', 'is_enabled', 'status', 'deleted_at'])
+                ->toArray(),
+        ]);
+
+        return null;
     }
 
     private static function buildAutoSubCategoryName(string $categoryName, string $transcriptText, string $summaryText = ''): string
