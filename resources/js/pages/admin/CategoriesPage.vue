@@ -416,28 +416,6 @@
                                             >Restoring...</span
                                         >
                                     </BaseButton>
-                                    <BaseButton
-                                        v-if="category.deleted_at"
-                                        @click="openForceDeleteConfirm(category)"
-                                        size="sm"
-                                        variant="danger"
-                                        class="admin-actionBtn admin-actionBtn--force-delete"
-                                        :disabled="forceDeleting"
-                                    >
-                                        <span class="admin-actionBtn__icon"
-                                            >🗑</span
-                                        >
-                                        <span
-                                            v-if="forceDeleting !== category.id"
-                                            class="admin-actionBtn__text"
-                                            >Permanently Delete</span
-                                        >
-                                        <span
-                                            v-else
-                                            class="admin-actionBtn__text"
-                                            >Deleting...</span
-                                        >
-                                    </BaseButton>
                                 </div>
                             </td>
                         </tr>
