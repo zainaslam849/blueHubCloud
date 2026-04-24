@@ -139,12 +139,13 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
         }
 
         if ($pipelineRun) {
-            $summaryStageStatus = $pipelineRun->stageStatus('ai_summary');
-            if (in_array($summaryStageStatus, ['queued', 'running', 'completed'], true)) {
-                Log::info('ContinuePipelineAfterTranscriptionsJob: downstream stages already queued or completed, skipping', [
+            $categorizationStageStatus = $pipelineRun->stageStatus('category_generation');
+            // Only skip if categorization (the final downstream stage) is already processing or done
+            if (in_array($categorizationStageStatus, ['queued', 'running', 'completed'], true)) {
+                Log::info('ContinuePipelineAfterTranscriptionsJob: downstream categorization already queued or completed, skipping', [
                     'company_id' => $this->companyId,
                     'pipeline_run_id' => $pipelineRun->id,
-                    'ai_summary_stage_status' => $summaryStageStatus,
+                    'category_generation_stage_status' => $categorizationStageStatus,
                 ]);
 
                 return;
