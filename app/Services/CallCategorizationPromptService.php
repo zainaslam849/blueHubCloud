@@ -395,10 +395,11 @@ PROMPT;
             }
         }
 
-        // Check if the suggested category is an EXISTING category in the database
-        $existingCategory = CallCategory::query()
-            ->where('is_enabled', true)
-            ->where('status', 'active')
+        // Check if the suggested category is an EXISTING category in the database.
+        // Search by company_id + name only (no status/enabled filter) so that archived
+        // or disabled categories are found and re-activated rather than causing a
+        // unique-constraint collision on CREATE.
+        $existingCategory = CallCategory::withTrashed()
             ->where('company_id', $companyId)
             ->where('name', $categoryName)
             ->first();
@@ -406,12 +407,24 @@ PROMPT;
         // Existing category candidate found.
         if ($existingCategory) {
             $category = $existingCategory;
+            // Re-activate if archived/disabled/soft-deleted so AI can assign it again.
+            if (!$category->is_enabled || $category->status !== 'active' || $category->trashed()) {
+                $category->restore(); // no-op if not soft-deleted
+                $category->is_enabled = true;
+                $category->status = 'active';
+                $category->save();
+                \Illuminate\Support\Facades\Log::info("Re-activated archived/disabled category for AI use", [
+                    'company_id' => $companyId,
+                    'category_id' => $category->id,
+                    'category_name' => $category->name,
+                ]);
+            }
         } else {
             // No existing category with this name - will create new one below
             $category = null;
         }
 
-        // If no existing category approved, create new category (allows flexibility for truly unmatched cases)
+        // If no existing category found, create a new one.
         if (!$category) {
             $trimmedCategory = trim($categoryName);
             if ($trimmedCategory === '') {
@@ -437,10 +450,10 @@ PROMPT;
                     'status' => 'active',
                 ]);
             } catch (\Illuminate\Database\QueryException $e) {
-                // Category name collision - another process created it; fetch and use it
+                // Race condition: another process created the category between our check and insert.
+                // Re-fetch without status filters to handle archived/disabled records too.
                 if ($e->getCode() === '23000' || str_contains($e->getMessage(), 'Duplicate')) {
-                    $category = CallCategory::query()
-                        ->where('is_enabled', true)
+                    $category = CallCategory::withTrashed()
                         ->where('company_id', $companyId)
                         ->where('name', $trimmedCategory)
                         ->first();
@@ -450,6 +463,14 @@ PROMPT;
                             'valid' => false,
                             'error' => "Cannot assign category '$trimmedCategory' - duplicate detected but not found",
                         ];
+                    }
+
+                    // Re-activate if needed.
+                    if (!$category->is_enabled || $category->status !== 'active' || $category->trashed()) {
+                        $category->restore();
+                        $category->is_enabled = true;
+                        $category->status = 'active';
+                        $category->save();
                     }
                 } else {
                     throw $e;
