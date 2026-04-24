@@ -54,11 +54,6 @@
         </div>
 
         <div class="admin-topbar__right">
-            <button type="button" class="admin-chip" disabled>
-                <span class="admin-chip__label">Company</span>
-                <span class="admin-chip__value">Placeholder</span>
-            </button>
-
             <ThemeToggle />
 
             <div class="admin-menu" ref="menuEl">
