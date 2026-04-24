@@ -99,12 +99,13 @@ class CallCategorizationController extends Controller
         ]);
 
         $prompt = CallCategorizationPromptService::buildPromptObject(
-            $validated['transcript'],
-            $validated['direction'] ?? 'inbound',
-            $validated['status'] ?? 'completed',
-            $validated['duration'] ?? 0,
-            $validated['is_after_hours'] ?? false,
-            $validated['company_id']
+            transcriptText: $validated['transcript'],
+            summaryText: null,
+            direction: $validated['direction'] ?? 'inbound',
+            status: $validated['status'] ?? 'completed',
+            duration: $validated['duration'] ?? 0,
+            isAfterHours: $validated['is_after_hours'] ?? false,
+            companyId: $validated['company_id']
         );
 
         return response()->json([

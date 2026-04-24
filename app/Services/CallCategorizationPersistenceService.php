@@ -18,7 +18,7 @@ class CallCategorizationPersistenceService
      * This service receives pre-validated categories and persists them to the database.
      *
      * Behavior:
-     * - If confidence < 0.90 at this stage, fallback to "Other/Unclear" (defensive measure)
+        * - If confidence < 0.90 at this stage, keep call uncategorized for manual retry (defensive measure)
      * - If category provided is valid and exists, use it
      * - If category provided is new, it should already be created by validation layer
      * - If sub-category provided but not found, create it
@@ -40,9 +40,9 @@ class CallCategorizationPersistenceService
         try {
             $call = Call::findOrFail($callId);
 
-            // Validation: If confidence < 0.6 → mark as "Other/Unclear"
+            // Defensive guard: strict mode never persists low-confidence categories.
             if ($confidence < self::CONFIDENCE_THRESHOLD) {
-                return self::assignOtherCategory($call, $confidence, 'Low confidence score');
+                return self::leaveUncategorized($call, 'Low confidence score (<0.90)');
             }
 
             // Find category by name (only active categories)
@@ -171,79 +171,6 @@ class CallCategorizationPersistenceService
         Log::warning('Left call uncategorized because AI category output was not usable', [
             'call_id' => $call->id,
             'reason' => $reason,
-        ]);
-
-        return [
-            'success' => true,
-            'call' => $call->fresh(['category']),
-            'fallback_used' => true,
-            'reason' => $reason,
-        ];
-    }
-
-    /**
-     * Assign "Other" category for low confidence results.
-     */
-    private static function assignOtherCategory(Call $call, float $confidence, string $reason): array
-    {
-        $otherCategory = CallCategory::query()
-            ->where('is_enabled', true)
-            ->where('status', 'active')
-            ->where('company_id', $call->company_id)
-            ->where('name', 'Other')
-            ->first();
-
-        if (! $otherCategory) {
-            $otherCategory = CallCategory::create([
-                'company_id' => $call->company_id,
-                'name' => 'Other',
-                'description' => 'Auto-created fallback category during AI categorization',
-                'source' => 'ai',
-                'is_enabled' => true,
-                'status' => 'active',
-                'generated_at' => now(),
-                'generated_by_model' => null,
-            ]);
-
-            Log::warning('Other category was missing and has been auto-created for fallback assignment', [
-                'call_id' => $call->id,
-                'company_id' => $call->company_id,
-                'category_id' => $otherCategory->id,
-                'reason' => $reason,
-                'confidence' => $confidence,
-            ]);
-        }
-
-        $subCategoryId = null;
-        $subCategoryLabel = null;
-        $unclearSub = SubCategory::query()
-            ->where('is_enabled', true)
-            ->where('status', 'active')
-            ->where('category_id', $otherCategory->id)
-            ->where('name', 'Unclear')
-            ->first();
-
-        if ($unclearSub) {
-            $subCategoryId = $unclearSub->id;
-        } else {
-            $subCategoryLabel = 'Unclear';
-        }
-
-        $call->update([
-            'category_id' => $otherCategory->id,
-            'sub_category_id' => $subCategoryId,
-            'sub_category_label' => $subCategoryLabel,
-            'category_source' => 'ai',
-            'category_confidence' => $confidence,
-            'categorized_at' => now(),
-        ]);
-
-        DB::commit();
-
-        Log::warning('Used "Other" category for low confidence', [
-            'call_id' => $call->id,
-            'reason' => $reason,
-            'confidence' => $confidence,
         ]);
 
         return [

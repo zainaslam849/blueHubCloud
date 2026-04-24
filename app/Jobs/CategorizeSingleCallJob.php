@@ -71,6 +71,7 @@ class CategorizeSingleCallJob implements ShouldQueue
         // Build AI prompt
         $prompt = CallCategorizationPromptService::buildPromptObject(
             transcriptText: $call->transcript_text,
+            summaryText: $call->ai_summary,
             direction: $call->direction ?? 'inbound',
             status: $call->status ?? 'completed',
             duration: $call->duration_seconds ?? 0,

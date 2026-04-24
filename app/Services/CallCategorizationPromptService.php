@@ -32,6 +32,7 @@ class CallCategorizationPromptService
 NON-NEGOTIABLE SAFETY RULES:
 - Do NOT default to "General" for substantive conversations with clear intent.
 - If the available categories are too generic, you MAY propose a specific new category.
+- Only output confidence >= 0.90 for final category decisions.
 - Return JSON only with keys: category, sub_category, confidence.
 PROMPT;
         }
@@ -88,6 +89,7 @@ PROMPT;
      */
     public static function buildUserPrompt(
         string $transcriptText,
+        ?string $summaryText = null,
         string $direction = 'inbound',
         string $status = 'completed',
         int $duration = 0,
@@ -115,7 +117,11 @@ PROMPT;
         // Format duration
         $durationStr = self::formatDuration($duration);
 
-        return <<<PROMPT
+          $summarySection = trim((string) $summaryText) !== ''
+                ? trim((string) $summaryText)
+                : 'No AI summary available for this call. Use transcript intent only.';
+
+          return <<<PROMPT
 AVAILABLE CATEGORIES FOR THIS COMPANY:
 {$categoriesSection}
 
@@ -125,34 +131,45 @@ CALL CONTEXT:
 - Duration: {$durationStr}
 - After hours: {$afterHours}
 
+AI SUMMARY (PRIMARY SIGNAL):
+"""
+{$summarySection}
+"""
+
 TRANSCRIPT:
 """
 {$transcriptText}
 """
 
 ANALYSIS INSTRUCTIONS:
-1. READ THE TRANSCRIPT CAREFULLY: Understand what was discussed or if there was any real conversation.
+1. SUMMARY-FIRST CLASSIFICATION:
+    - Use AI SUMMARY as the primary intent signal when it is present
+    - Use transcript details to verify and disambiguate
+    - If summary and transcript disagree, prioritize the transcript evidence
 
-2. CHECK FOR SPECIAL CASES FIRST:
+2. READ THE TRANSCRIPT CAREFULLY: Understand what was discussed or if there was any real conversation.
+
+3. CHECK FOR SPECIAL CASES FIRST:
    - Greeting-only with no response? (e.g., only "Hello, how can I help you?") → Use "No Response" or "Missed Call"
    - Abandoned/hung up immediately? → Use "Missed Call" or "Abandoned"
    - Only voicemail left? → Use "Voicemail"
    - Status is "missed"? → Use category for missed calls
 
-3. FOR ACTUAL CONVERSATIONS (STRICT MATCHING):
+4. FOR ACTUAL CONVERSATIONS (STRICT MATCHING):
    - ONLY assign an existing category if you are >= 90% confident the transcript matches that category's intent/topic
    - If NO existing category reaches 90% confidence, create a NEW appropriate category name instead
    - Never force a weak/ambiguous match to an existing category
    - Choose relevant sub-category if available, otherwise null
+    - Do NOT use "General", "Other", or "Unclear" for substantive business discussions
 
-4. CONFIDENCE SCORING (STRICT THRESHOLDS):
+5. CONFIDENCE SCORING (STRICT THRESHOLDS):
    - 0.90-1.0: Very clear topic, obvious category match → USE EXISTING CATEGORY
-   - 0.70-0.89: Reasonable match but some ambiguity → CREATE NEW CATEGORY instead of guessing
-   - Below 0.70: Very unclear → CREATE "Other/Unclear" if no existing category available
+    - 0.70-0.89: Reasonable match but some ambiguity → CREATE NEW SPECIFIC CATEGORY instead of guessing
+    - Below 0.70: If transcript has business intent, still output the best specific category hypothesis (avoid "General/Other/Unclear")
 
-5. CONSISTENCY: Similar calls should receive the same category name.
+6. CONSISTENCY: Similar calls should receive the same category name.
 
-6. STRICT RULES FOR "GENERAL":
+7. STRICT RULES FOR "GENERAL":
    - Do NOT use "General" for real conversations with clear business intent
    - Only use "General" for greeting-only/no-response/unclear interactions where transcript is < 24 words AND no substantive intent detected
    - For substantive calls: either find specific existing category (>=90%) or create new appropriate category
@@ -163,7 +180,7 @@ OUTPUT FORMAT (JSON ONLY, NO EXPLANATION):
 {
   "category": "<exact category name from list above, or new category name>",
   "sub_category": "<exact sub-category name from list above, or null>",
-  "confidence": 0.85
+    "confidence": 0.95
 }
 PROMPT;
     }
@@ -257,6 +274,7 @@ PROMPT;
      */
     public static function buildPromptObject(
         string $transcriptText,
+        ?string $summaryText = null,
         string $direction = 'inbound',
         string $status = 'completed',
         int $duration = 0,
@@ -268,6 +286,7 @@ PROMPT;
             'system' => self::getSystemPrompt(),
             'user' => self::buildUserPrompt(
                 $transcriptText,
+                $summaryText,
                 $direction,
                 $status,
                 $duration,
@@ -322,6 +341,13 @@ PROMPT;
         $normalizedTranscript = preg_replace('/\s+/', ' ', trim((string) $transcriptText));
         $transcriptWordCount = str_word_count((string) $normalizedTranscript);
 
+        if ($confidence < self::CONFIDENCE_THRESHOLD) {
+            return [
+                'valid' => false,
+                'error' => 'Confidence below strict threshold of 0.90',
+            ];
+        }
+
         // Special validation for "General" category
         if (strcasecmp($categoryName, 'General') === 0) {
             $containsSubstantiveIntent = self::hasSubstantiveIntent((string) $normalizedTranscript);
@@ -343,6 +369,28 @@ PROMPT;
                 return [
                     'valid' => false,
                     'error' => 'General category rejected for substantive transcript',
+                ];
+            }
+        }
+
+        // "Other/Unclear" must never be used for substantive conversations.
+        if (strcasecmp($categoryName, 'Other') === 0) {
+            $containsSubstantiveIntent = self::hasSubstantiveIntent((string) $normalizedTranscript);
+            $looksLikeNoResponse = self::looksLikeNoResponseInteraction((string) $normalizedTranscript);
+            $isUnclearSub = is_string($subCategoryName)
+                && strcasecmp(trim($subCategoryName), 'Unclear') === 0;
+
+            if ($containsSubstantiveIntent && ! $looksLikeNoResponse && $transcriptWordCount > self::GENERAL_ALLOWED_MAX_WORDS) {
+                return [
+                    'valid' => false,
+                    'error' => 'Other category rejected for substantive transcript',
+                ];
+            }
+
+            if ($isUnclearSub && ! $looksLikeNoResponse && $transcriptWordCount > self::GENERAL_ALLOWED_MAX_WORDS) {
+                return [
+                    'valid' => false,
+                    'error' => 'Other/Unclear rejected for substantive transcript',
                 ];
             }
         }

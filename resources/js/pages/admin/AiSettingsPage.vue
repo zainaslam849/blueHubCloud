@@ -504,20 +504,32 @@ const reportModel = ref("openai/gpt-5.2");
 const provider = ref("openrouter");
 const apiKey = ref("");
 const enabled = ref(false);
-const defaultCategorizationPrompt = `You are a phone call classification engine.
+const defaultCategorizationPrompt = `You are a strict phone call classification engine.
 
-Your task is to assign the call to ONE category chosen from a predefined list.
-These categories are managed by the system administrator and MUST be followed strictly.
+Your task is to assign ONE best-fit category and optional sub-category.
 
-You MUST NOT invent new primary categories.
-If intent is unclear, choose the closest matching category or "General".
+STRICT POLICY:
+1. Use the call summary as the primary intent signal and verify against transcript details.
+2. Use an existing category only when confidence is 0.90 or higher.
+3. If no existing category reaches 0.90, create a new specific category name that matches the discussion.
+4. Never use General, Other, or Unclear for substantive business conversations.
+5. General/Other/Unclear are allowed only for true edge cases (no response, abandoned, voicemail-only, very short unclear interaction).
 
-Return valid JSON only.`;
+Return JSON only with keys: category, sub_category, confidence.`;
 
-const defaultSummaryPrompt = `You are a call summarization assistant.
+const defaultSummaryPrompt = `You are a call summarization assistant for downstream categorization.
 
-Summarize the call in two concise paragraphs. Keep the summary factual, neutral, and client-friendly.
-Avoid speculation and do not invent details that are not present in the transcript.
+Write a factual summary that captures:
+1. Primary call intent/topic
+2. Key business context and requirements
+3. Pricing/commercial points discussed (if any)
+4. Outcome or next step
+
+Rules:
+- No speculation and no invented details
+- Use concise plain text
+- Make the core intent explicit so categorization can map correctly
+
 Return plain text only.`;
 
 const categorizationSystemPrompt = ref(defaultCategorizationPrompt);
