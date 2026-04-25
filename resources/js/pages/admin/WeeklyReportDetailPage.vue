@@ -42,7 +42,7 @@
                         {{ report?.header?.company_name || "Weekly Report" }}
                     </h1>
                     <p class="admin-reportDetailHeader__subtitle">
-                        Week of {{ report?.header?.week_start || "Loading..." }}
+                        {{ subtitleText }}
                     </p>
                 </div>
             </div>
@@ -189,7 +189,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import adminApi from "../../router/admin/api";
@@ -207,6 +207,25 @@ const route = useRoute();
 const loading = ref(true);
 const error = ref("");
 const report = ref(null);
+
+const subtitleText = computed(() => {
+    if (loading.value && !report.value) {
+        return "Week of Loading...";
+    }
+
+    const formatted = report.value?.header?.week_range?.formatted;
+    if (formatted) {
+        return `Week of ${formatted}`;
+    }
+
+    const start = report.value?.header?.week_range?.start;
+    const end = report.value?.header?.week_range?.end;
+    if (start && end) {
+        return `Week of ${start} to ${end}`;
+    }
+
+    return "Weekly Report";
+});
 
 async function fetchReport() {
     const id = route.params.id;

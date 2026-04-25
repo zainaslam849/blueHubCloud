@@ -14,16 +14,34 @@
         </div>
 
         <div v-else class="admin-executiveSummary">
-            <p class="admin-executiveSummary__text">{{ summary }}</p>
+            <p class="admin-executiveSummary__text" v-html="summaryHtml"></p>
         </div>
     </BaseCard>
 </template>
 
 <script setup>
+import { computed } from "vue";
+
 import { BaseCard } from "../base";
 
-defineProps({
+const props = defineProps({
     loading: { type: Boolean, default: false },
     summary: { type: String, default: "" },
+});
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+const summaryHtml = computed(() => {
+    const escaped = escapeHtml(props.summary || "");
+    return escaped
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\n/g, "<br>");
 });
 </script>
