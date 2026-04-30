@@ -79,6 +79,16 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         $end = CarbonImmutable::now()->toDateString();
         $start = CarbonImmutable::now()->subDays($this->rangeDays)->toDateString();
 
+        // Collect ALL existing category names for this company (active + archived)
+        // so the AI prompt can instruct the model to reuse them verbatim.
+        $existingCategoryNames = CallCategory::query()
+            ->where('company_id', $this->companyId)
+            ->pluck('name')
+            ->filter(fn ($n) => is_string($n) && trim($n) !== '')
+            ->map(fn ($n) => trim($n))
+            ->values()
+            ->all();
+
         $promptPayload = $generationService->buildPrompt(
             companyId: $this->companyId,
             companyPbxAccountId: null,
@@ -86,7 +96,8 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                 'start' => $start,
                 'end' => $end,
             ],
-            model: $aiSettings->categorization_model
+            model: $aiSettings->categorization_model,
+            existingCategoryNames: $existingCategoryNames
         );
 
         if (($promptPayload['summary_count'] ?? 0) === 0) {
@@ -157,6 +168,12 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
             }
 
             DB::transaction(function () use ($normalizedCategories, $aiSettings) {
+                // Pre-load ALL categories for this company (active + archived) once so we can
+                // do in-memory semantic fingerprint matching inside the loop without N+1 queries.
+                $allCompanyCategories = CallCategory::query()
+                    ->where('company_id', $this->companyId)
+                    ->get();
+
                 $aiCategoryIds = CallCategory::query()
                     ->where('company_id', $this->companyId)
                     ->where('source', 'ai')
@@ -191,6 +208,18 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
                         ->where('company_id', $this->companyId)
                         ->where('name', $categoryName)
                         ->first();
+
+                    // Semantic fallback: find any existing row (active or archived) whose
+                    // normalised fingerprint matches the AI-generated name.  This prevents
+                    // near-duplicates like "Booking & Payment" vs "Booking and Payment"
+                    // from creating separate rows across pipeline runs.
+                    if (! $existing) {
+                        $targetKey = $this->normalizeCategoryName($categoryName);
+                        if ($targetKey !== '') {
+                            $existing = $allCompanyCategories
+                                ->first(fn (CallCategory $c) => $this->normalizeCategoryName((string) $c->name) === $targetKey);
+                        }
+                    }
 
                     if ($existing && $existing->source === 'admin') {
                         continue;
@@ -677,5 +706,53 @@ class GenerateAiCategoriesForCompanyJob implements ShouldQueue
         $value = strtolower(trim($name));
 
         return in_array($value, ['general', 'other', 'misc', 'miscellaneous', 'uncategorized', 'unknown'], true);
+    }
+
+    /**
+     * Canonical fingerprint for a category name so semantically equivalent variants
+     * (case, punctuation, word-order, common stop-words) compare equal.
+     * Mirrors CallCategorizationPersistenceService::normalizeForMatch().
+     */
+    private function normalizeCategoryName(string $value): string
+    {
+        $v = mb_strtolower(trim($value));
+        if ($v === '') {
+            return '';
+        }
+
+        $v = str_replace(['&', '/', '-', '_', ',', '.', '+'], [' and ', ' ', ' ', ' ', ' ', ' ', ' '], $v);
+        $v = preg_replace('/[^a-z0-9 ]+/', ' ', $v) ?? '';
+        $v = preg_replace('/\s+/', ' ', $v) ?? '';
+        $v = trim($v);
+        if ($v === '') {
+            return '';
+        }
+
+        $stop = [
+            'and', 'the', 'of', 'for', 'a', 'an', 'to', 'with', 'on', 'in', 'or',
+            'inquiry', 'inquiries', 'enquiry', 'enquiries', 'question', 'questions',
+            'discussion', 'discussions', 'request', 'requests', 'call', 'calls',
+            'issue', 'issues', 'general',
+        ];
+
+        $tokens = array_values(array_filter(
+            explode(' ', $v),
+            fn (string $t) => $t !== '' && ! in_array($t, $stop, true)
+        ));
+
+        $tokens = array_map(function (string $t) {
+            if (mb_strlen($t) > 3 && str_ends_with($t, 'ies')) {
+                return mb_substr($t, 0, -3) . 'y';
+            }
+            if (mb_strlen($t) > 3 && str_ends_with($t, 's') && ! str_ends_with($t, 'ss')) {
+                return mb_substr($t, 0, -1);
+            }
+            return $t;
+        }, $tokens);
+
+        $tokens = array_values(array_unique($tokens));
+        sort($tokens);
+
+        return implode(' ', $tokens);
     }
 }

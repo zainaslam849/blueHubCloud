@@ -20,7 +20,8 @@ class AiCategoryGenerationService
         int $companyId,
         ?int $companyPbxAccountId,
         array $dateRange,
-        string $model
+        string $model,
+        array $existingCategoryNames = []
     ): array {
         $summaries = $this->fetchSummaries($companyId, $companyPbxAccountId, $dateRange);
         $summariesText = $this->formatSummaries($summaries);
@@ -29,7 +30,8 @@ class AiCategoryGenerationService
             $companyId,
             $companyPbxAccountId,
             $dateRange,
-            $summariesText
+            $summariesText,
+            $existingCategoryNames
         );
 
         return [
@@ -103,10 +105,20 @@ class AiCategoryGenerationService
         int $companyId,
         ?int $companyPbxAccountId,
         array $dateRange,
-        string $summariesText
+        string $summariesText,
+        array $existingCategoryNames = []
     ): string {
         $start = $dateRange['start'] ?? 'N/A';
         $end = $dateRange['end'] ?? 'N/A';
+
+        $existingSection = '';
+        if (! empty($existingCategoryNames)) {
+            $nameList = implode("\n", array_map(fn ($n) => "- {$n}", $existingCategoryNames));
+            $existingSection = "\nEXISTING CATEGORY NAMES (you MUST reuse these exact names when they cover the same topic):\n"
+                . $nameList
+                . "\n\nREUSE RULE: Before inventing any new category name, check this list. If an existing name adequately describes the call topic, use that EXACT name (same spelling, same punctuation, same capitalisation). Only create a brand-new name when no existing entry is a good fit.\n";
+        }
+
         return <<<PROMPT
 You are an AI analyst tasked with generating a client-specific call category system.
 
@@ -115,7 +127,7 @@ CLIENT CONTEXT:
 - Date Range: {$start} to {$end}
 
 INPUT: Call summaries only (no transcripts). Use ONLY the summaries provided.
-
+{$existingSection}
 RULES:
 - Generate 5-15 client-relevant categories based on the summaries.
 - Include 2-5 subcategories under each category.
