@@ -231,6 +231,13 @@ function handleLogoError() {
     logoLoadFailed.value = true;
 }
 
+watch(
+    () => props.logoUrl,
+    () => {
+        logoLoadFailed.value = false;
+    },
+);
+
 const route = useRoute();
 const openSections = ref({});
 const hoverGroup = ref(null);

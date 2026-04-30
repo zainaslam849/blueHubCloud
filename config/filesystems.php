@@ -2,6 +2,11 @@
 
 return [
 
+    // Dedicated disk selector for admin branding assets (logo/favicon).
+    'app_settings_disk' => env('APP_SETTINGS_DISK', 'public'),
+    // AWS Secrets Manager secret name for app settings S3 credentials.
+    'app_settings_secret_name' => env('APP_SETTINGS_AWS_SECRET_NAME', 'app/settings-storage'),
+
     /*
     |--------------------------------------------------------------------------
     | Default Filesystem Disk
@@ -40,6 +45,19 @@ return [
             'driver' => 'local',
             'root' => storage_path('app/public'),
             'url' => env('APP_URL').'/storage',
+            'visibility' => 'public',
+            'throw' => false,
+        ],
+
+        's3' => [
+            'driver' => 's3',
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'region' => env('AWS_DEFAULT_REGION'),
+            'bucket' => env('AWS_BUCKET'),
+            'url' => env('AWS_URL'),
+            'endpoint' => env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'visibility' => 'public',
             'throw' => false,
         ],
