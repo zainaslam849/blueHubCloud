@@ -50,6 +50,8 @@ bootstrap/cache/*
 # ----------------------------
 .idea
 .vscode
+.claude
+.venv
 *.swp
 *.swo
 .DS_Store
@@ -76,5 +78,13 @@ Homestead.json
 *.tar.bz2
 *.dump
 *.bak
+/abc.logs
+/check_*.php
+/delete_*.php
+/tools/
+/scripts/
+/*.pdf
+/cdr_analysis_report_*.html
 *.md
+!README.md
 /exports
