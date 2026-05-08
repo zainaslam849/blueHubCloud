@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { http } from "../api/http";
 
 interface ReportData {
     header: {
@@ -128,17 +129,15 @@ const goToAiRegeneration = (): void => {
 
 onMounted(async () => {
     try {
-        const response = await fetch(
+        const response = await http.get(
             `/admin/api/weekly-call-reports/${reportId.value}`,
         );
-        if (!response.ok) {
-            throw new Error(`Failed to load report: ${response.statusText}`);
-        }
-        const json = await response.json();
-        reportData.value = json.data;
-    } catch (err) {
-        error.value =
-            err instanceof Error ? err.message : "Failed to load report";
+        reportData.value = response.data?.data ?? response.data;
+    } catch (err: any) {
+        const message =
+            err?.response?.data?.message ||
+            (err instanceof Error ? err.message : "Failed to load report");
+        error.value = message;
     } finally {
         loading.value = false;
     }

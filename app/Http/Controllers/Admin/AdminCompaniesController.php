@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\ListCompaniesRequest;
+use App\Http\Requests\Admin\StoreCompanyRequest;
+use App\Http\Requests\Admin\SyncTenantsRequest;
+use App\Http\Requests\Admin\UpdateCompanyRequest;
 use App\Models\Company;
 use App\Models\CompanyPbxAccount;
 use App\Models\Call;
@@ -25,25 +29,21 @@ class AdminCompaniesController extends Controller
 {
     protected PbxwareClient $pbxwareClient;
 
-    public function __construct()
+    public function __construct(PbxwareClient $pbxwareClient)
     {
-        $this->pbxwareClient = new PbxwareClient();
+        // Resolved via the container so test doubles and config-aware
+        // construction (Secrets Manager wiring) are honored consistently.
+        $this->pbxwareClient = $pbxwareClient;
     }
 
     /**
      * List all companies with their PBX account info - with pagination, search, and sorting
      */
-    public function index(Request $request): JsonResponse
+    public function index(ListCompaniesRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'page' => ['sometimes', 'integer', 'min:1'],
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
-            'search' => ['sometimes', 'string', 'max:255'],
-            'sort' => ['sometimes', 'in:name,status,timezone,created_at'],
-            'direction' => ['sometimes', 'in:asc,desc'],
-            'status' => ['sometimes', 'in:active,inactive'],
-            'include_deleted' => ['sometimes', 'in:true,false,1,0'],
-        ]);
+        $this->authorize('viewAny', Company::class);
+
+        $validated = $request->validated();
 
         $page = $validated['page'] ?? 1;
         $perPage = $validated['per_page'] ?? 25;
@@ -151,16 +151,11 @@ class AdminCompaniesController extends Controller
     /**
      * Create new company with optional PBX account linking
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreCompanyRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:companies,name'],
-            'timezone' => ['sometimes', 'string', 'max:64'],
-            'status' => ['sometimes', 'in:active,inactive'],
-            'server_id' => ['sometimes', 'string', 'max:100'],
-            'pbx_provider_id' => ['sometimes', 'integer', 'exists:pbx_providers,id'],
-            'tenant_code' => ['sometimes', 'nullable', 'string', 'max:100'],
-        ]);
+        $this->authorize('create', Company::class);
+
+        $validated = $request->validated();
 
         $company = Company::create([
             'name' => $validated['name'],
@@ -215,11 +210,9 @@ class AdminCompaniesController extends Controller
     /**
      * Fetch available tenants from PBXware and sync to local cache
      */
-    public function syncTenants(Request $request): JsonResponse
+    public function syncTenants(SyncTenantsRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'pbx_provider_id' => ['required', 'integer', 'exists:pbx_providers,id'],
-        ]);
+        $validated = $request->validated();
 
         try {
             // Fetch tenants from PBXware
@@ -391,12 +384,10 @@ class AdminCompaniesController extends Controller
     /**
      * Get available (unmapped) tenants for dropdown
      */
-    public function availableTenants(Request $request): JsonResponse
+    public function availableTenants(SyncTenantsRequest $request): JsonResponse
     {
         try {
-            $validated = $request->validate([
-                'pbx_provider_id' => ['required', 'integer', 'exists:pbx_providers,id'],
-            ]);
+            $validated = $request->validated();
 
             $tenants = PbxwareTenant::where('pbx_provider_id', $validated['pbx_provider_id'])
                 ->leftJoin('company_pbx_accounts', function ($join) use ($validated) {
@@ -433,18 +424,12 @@ class AdminCompaniesController extends Controller
     /**
      * Update company, optionally linking/unlinking PBX account
      */
-    public function update(Request $request, int $id): JsonResponse
+    public function update(UpdateCompanyRequest $request, int $id): JsonResponse
     {
         $company = Company::findOrFail($id);
+        $this->authorize('update', $company);
 
-        $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255', 'unique:companies,name,' . $id],
-            'timezone' => ['sometimes', 'string', 'max:64'],
-            'status' => ['sometimes', 'in:active,inactive'],
-            'server_id' => ['sometimes', 'string', 'max:100'],
-            'pbx_provider_id' => ['sometimes', 'integer', 'exists:pbx_providers,id'],
-            'tenant_code' => ['sometimes', 'nullable', 'string', 'max:100'],
-        ]);
+        $validated = $request->validated();
 
         $company->update([
             'name' => $validated['name'] ?? $company->name,
@@ -493,6 +478,7 @@ class AdminCompaniesController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $company = Company::findOrFail($id);
+        $this->authorize('delete', $company);
         $company->delete();
 
         return response()->json(['message' => 'Company soft-deleted successfully']);
@@ -504,6 +490,7 @@ class AdminCompaniesController extends Controller
     public function forceDelete(int $id): JsonResponse
     {
         $company = Company::withTrashed()->findOrFail($id);
+        $this->authorize('forceDelete', $company);
 
         if (! $company->trashed()) {
             return response()->json([

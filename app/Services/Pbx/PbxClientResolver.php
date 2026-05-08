@@ -16,7 +16,7 @@ class PbxClientResolver
         // Prefer explicit runtime config override when present (e.g. CLI --mock),
         // otherwise fall back to PBXWARE_MOCK_MODE env var.
         $mock = (string) config('pbx.mode') === 'mock'
-            || filter_var(env('PBXWARE_MOCK_MODE', false), FILTER_VALIDATE_BOOLEAN);
+            || filter_var(config('services.pbxware.mock_mode', false), FILTER_VALIDATE_BOOLEAN);
         if ($mock) {
             return new MockPbxwareClient();
         }

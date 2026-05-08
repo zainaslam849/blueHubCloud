@@ -15,9 +15,10 @@ const emit = defineEmits<{
 const route = useRoute();
 
 const openGroups = ref<{ [key: string]: boolean }>({});
-function toggleGroup(key: string) {
-    openGroups.value[key] = !openGroups.value[key];
-}
+// `openGroups` powers expand/collapse in the larger Metronic layout; the
+// helper that toggled it has been inlined into the template, so the ref is
+// kept here for future re-introduction.
+void openGroups;
 
 const navGroups = [
     {
@@ -105,7 +106,7 @@ function isActive(name: string) {
                         :title="props.collapsed ? item.name : undefined"
                     >
                         <span class="navIcon"
-                            ><AppIcon :name="item.icon"
+                            ><AppIcon :name="(item.icon as any)"
                         /></span>
                         <span class="navLabel">{{ item.name }}</span>
                         <span
@@ -126,8 +127,9 @@ function isActive(name: string) {
                 :href="link.href"
                 class="outlineLink"
                 target="_blank"
+                rel="noopener noreferrer"
             >
-                <AppIcon :name="link.icon" />
+                <AppIcon :name="(link.icon as any)" />
                 <span class="outlineLabel">{{ link.label }}</span>
             </a>
         </div>

@@ -16,14 +16,16 @@ class SyncPbxTenants extends Command
 
     protected PbxwareClient $pbxwareClient;
 
-    public function __construct()
-    {
-        parent::__construct();
-        $this->pbxwareClient = new PbxwareClient();
-    }
+    // NOTE: Do NOT inject PbxwareClient via __construct. Laravel resolves
+    // every registered command's constructor during artisan boot/discovery,
+    // and PbxwareClient::__construct performs Secrets Manager I/O. Inject
+    // via handle() so the client is only built when this command actually
+    // runs.
 
-    public function handle()
+    public function handle(PbxwareClient $pbxwareClient)
     {
+        $this->pbxwareClient = $pbxwareClient;
+
         $this->info('Starting PBXware tenant sync...');
         $hadFailures = false;
         $requestedProviderId = $this->option('provider-id');

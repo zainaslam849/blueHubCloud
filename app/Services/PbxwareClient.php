@@ -23,7 +23,7 @@ class PbxwareClient
         // Determine mock mode strictly from environment variable only.
         // PBXWARE_MOCK_MODE is the single source of truth for mock vs real
         // PBX behaviour. Do not rely on APP_ENV or other config values.
-        $mock = filter_var(env('PBXWARE_MOCK_MODE', false), FILTER_VALIDATE_BOOLEAN);
+        $mock = filter_var(config('services.pbxware.mock_mode', false), FILTER_VALIDATE_BOOLEAN);
         if ($mock) {
             Log::info('PbxwareClient: operating in MOCK mode per PBXWARE_MOCK_MODE env var');
             $this->baseUrl = '';
@@ -147,7 +147,7 @@ class PbxwareClient
     protected function getCachedCredentials(): array
     {
         $cacheKey = $this->cacheKey();
-        $disableCache = filter_var(env('PBXWARE_DISABLE_SECRETS_CACHE', false), FILTER_VALIDATE_BOOLEAN);
+        $disableCache = filter_var(config('services.pbxware.disable_secrets_cache', false), FILTER_VALIDATE_BOOLEAN);
 
         if ($disableCache) {
             Cache::forget($cacheKey);

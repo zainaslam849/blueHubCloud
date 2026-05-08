@@ -2,6 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Requests\Admin\BulkOverrideRequest;
+use App\Http\Requests\Admin\CallsNeedingReviewRequest;
+use App\Http\Requests\Admin\EnforceThresholdRequest;
+use App\Http\Requests\Admin\OverrideCategoryRequest;
 use App\Models\Call;
 use App\Models\CallCategory;
 use App\Services\CategoryConfidenceEnforcementService;
@@ -30,12 +34,9 @@ class CategoryOverrideController
      * @queryParam threshold float (default: 0.6) Confidence threshold
      * @queryParam limit int (default: 50) Number of results
      */
-    public function getCallsNeedingReview(Request $request): JsonResponse
+    public function getCallsNeedingReview(CallsNeedingReviewRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'threshold' => ['nullable', 'numeric', 'between:0.5,1.0'],
-            'limit' => ['nullable', 'integer', 'between:1,1000'],
-        ]);
+        $validated = $request->validated();
 
         $threshold = (float) ($validated['threshold'] ?? 0.6);
         $limit = (int) ($validated['limit'] ?? 50);
@@ -77,14 +78,9 @@ class CategoryOverrideController
      * @bodyParam sub_category_id int|null
      * @bodyParam sub_category_label string|null
      */
-    public function overrideCallCategory(Request $request): JsonResponse
+    public function overrideCallCategory(OverrideCategoryRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'call_id' => 'required|integer|exists:calls,id',
-            'category_id' => 'nullable|integer|exists:call_categories,id',
-            'sub_category_id' => 'nullable|integer|exists:sub_categories,id',
-            'sub_category_label' => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validated();
 
         $updated = $this->enforcementService->manuallyOverride(
             $validated['call_id'],
@@ -124,14 +120,9 @@ class CategoryOverrideController
      *
      * @bodyParam overrides array required Array of {call_id, category_id, sub_category_id}
      */
-    public function bulkOverride(Request $request): JsonResponse
+    public function bulkOverride(BulkOverrideRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'overrides' => 'required|array',
-            'overrides.*.call_id' => 'required|integer|exists:calls,id',
-            'overrides.*.category_id' => 'nullable|integer|exists:call_categories,id',
-            'overrides.*.sub_category_id' => 'nullable|integer|exists:sub_categories,id',
-        ]);
+        $validated = $request->validated();
 
         $results = [
             'total' => count($validated['overrides']),
@@ -185,13 +176,9 @@ class CategoryOverrideController
      * @queryParam threshold float (default: 0.6)
      * @queryParam dry_run bool (default: false) Preview without making changes
      */
-    public function enforceThreshold(Request $request): JsonResponse
+    public function enforceThreshold(EnforceThresholdRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'threshold' => ['nullable', 'numeric', 'between:0.5,1.0'],
-            'dry_run' => ['nullable', 'boolean'],
-            'confirm' => ['nullable', 'boolean'],
-        ]);
+        $validated = $request->validated();
 
         $threshold = (float) ($validated['threshold'] ?? 0.6);
         $dryRun = $request->boolean('dry_run', false);

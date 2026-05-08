@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreSubCategoryRequest;
+use App\Http\Requests\Admin\UpdateSubCategoryRequest;
 use App\Models\CallCategory;
 use App\Models\SubCategory;
 use Illuminate\Http\Request;
@@ -45,19 +47,9 @@ class SubCategoryController extends Controller
     /**
      * Store a new sub-category
      */
-    public function store(Request $request, $categoryId)
+    public function store(StoreSubCategoryRequest $request, $categoryId)
     {
-        $validated = $request->validate([
-            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('sub_categories', 'name')->where('category_id', $categoryId),
-            ],
-            'description' => 'nullable|string|max:1000',
-            'is_enabled' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
 
@@ -75,20 +67,9 @@ class SubCategoryController extends Controller
     /**
      * Update a sub-category
      */
-    public function update(Request $request, $categoryId, $subCategoryId)
+    public function update(UpdateSubCategoryRequest $request, $categoryId, $subCategoryId)
     {
-        $validated = $request->validate([
-            'company_id' => ['nullable', 'integer', 'exists:companies,id'],
-            'name' => [
-                'sometimes',
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('sub_categories', 'name')->where('category_id', $categoryId)->ignore($subCategoryId),
-            ],
-            'description' => 'nullable|string|max:1000',
-            'is_enabled' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         $category = $this->resolveCategory((int) $categoryId, $validated['company_id'] ?? null);
         $subCategory = $category->subCategories()->withTrashed()->findOrFail($subCategoryId);

@@ -3,7 +3,16 @@
 namespace App\Providers;
 
 use App\Contracts\AiProviderContract;
+use App\Models\Call;
+use App\Models\CallCategory;
+use App\Models\Company;
+use App\Models\CompanyPbxAccount;
 use App\Models\WeeklyCallReport;
+use App\Policies\AiSettingsPolicy;
+use App\Policies\CallCategoryPolicy;
+use App\Policies\CallPolicy;
+use App\Policies\CompanyPbxAccountPolicy;
+use App\Policies\CompanyPolicy;
 use App\Policies\WeeklyCallReportPolicy;
 use App\Services\StubAiProvider;
 use Illuminate\Support\Facades\Gate;
@@ -37,6 +46,16 @@ class AppServiceProvider extends ServiceProvider
     {
         // Register policies
         Gate::policy(WeeklyCallReport::class, WeeklyCallReportPolicy::class);
+        Gate::policy(Company::class, CompanyPolicy::class);
+        Gate::policy(CompanyPbxAccount::class, CompanyPbxAccountPolicy::class);
+        Gate::policy(Call::class, CallPolicy::class);
+        Gate::policy(CallCategory::class, CallCategoryPolicy::class);
+
+        // AI settings is a class-level gate (no Eloquent model). Define
+        // an explicit gate that delegates to AiSettingsPolicy::manage().
+        Gate::define('manage-ai-settings', [AiSettingsPolicy::class, 'manage']);
+        Gate::define('view-ai-settings', [AiSettingsPolicy::class, 'view']);
+        Gate::define('update-ai-settings', [AiSettingsPolicy::class, 'update']);
     }
 
     /**

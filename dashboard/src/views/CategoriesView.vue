@@ -50,6 +50,8 @@ const formData = ref<FormState>({
 });
 
 // Computed
+// Retained for future filter UI (display the active company filter label).
+// Marked void so vue-tsc does not flag it as unused.
 const selectedCompanyName = computed(() => {
     if (!selectedCompanyFilter.value) return "All Clients";
     const company = companies.value.find(
@@ -57,6 +59,7 @@ const selectedCompanyName = computed(() => {
     );
     return company?.name || "Unknown";
 });
+void selectedCompanyName;
 
 const filteredCategories = computed(() => {
     let filtered = categories.value;

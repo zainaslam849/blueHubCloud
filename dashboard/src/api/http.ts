@@ -18,3 +18,29 @@ http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     }
     return config;
 });
+
+// Response interceptor: on 401/403, clear auth state and redirect to /login
+// preserving the current location so the user lands back here after re-auth.
+http.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error?.response?.status;
+        if (status === 401 || status === 403) {
+            try {
+                auth.logout();
+            } catch {
+                // ignore
+            }
+
+            if (typeof window !== "undefined") {
+                const current = window.location.pathname + window.location.search;
+                const onLogin = window.location.pathname.startsWith("/login");
+                if (!onLogin) {
+                    const redirect = encodeURIComponent(current);
+                    window.location.assign(`/login?redirect=${redirect}`);
+                }
+            }
+        }
+        return Promise.reject(error);
+    },
+);

@@ -314,7 +314,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
 
                 // Build metrics JSON structure
                 $aiSummary = null;
-                $reportsAiEnabled = filter_var(env('REPORTS_AI_ENABLED', false), FILTER_VALIDATE_BOOLEAN);
+                $reportsAiEnabled = filter_var(config('services.reports.ai_enabled', false), FILTER_VALIDATE_BOOLEAN);
 
                 if ($reportsAiEnabled) {
                     $aiSummary = $this->generateAiInsights(

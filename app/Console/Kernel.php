@@ -27,11 +27,10 @@ class Kernel extends ConsoleKernel
             ->everyFiveMinutes()
             ->withoutOverlapping();
 
-        // Auto-sync PBXware tenants every minute (model decides when each provider is due)
-        $schedule->command('pbx:sync-tenants')
-            ->everyMinute()
-            ->withoutOverlapping()
-            ->name('pbx-tenant-sync');
+        // pbx:sync-tenants is registered in routes/console.php (Laravel 11 convention).
+        // Do NOT re-register it here — duplicate registration causes the scheduler to
+        // run the command twice per minute and `php artisan schedule:list` to show
+        // two entries for the same job.
 
         // Hardcoded AI category generation schedule (every week)
         $schedule->command('ai:generate-categories --company=1 --range=30')
@@ -39,7 +38,7 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping();
 
         $schedule->call(function () {
-            $enabled = (bool) config('services.pbxware.ingest_enabled', env('PBXWARE_INGEST_ENABLED', true));
+            $enabled = (bool) config('services.pbxware.ingest_enabled', true);
             if (! $enabled) {
                 Log::info('PBXware ingest scheduler is disabled via PBXWARE_INGEST_ENABLED');
                 return;

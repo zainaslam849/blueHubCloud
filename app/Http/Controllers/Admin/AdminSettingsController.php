@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AdminSettingsUpdateRequest;
+use App\Http\Requests\Admin\UpdatePasswordRequest;
 use App\Models\AppSetting;
 use App\Services\AwsSecretsService;
 use Illuminate\Http\JsonResponse;
@@ -61,15 +63,9 @@ class AdminSettingsController extends Controller
         return $trimmed;
     }
 
-    public function update(Request $request): JsonResponse
+    public function update(AdminSettingsUpdateRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'site_name' => ['nullable', 'string', 'max:120'],
-            'admin_logo' => ['nullable', 'file', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
-            'admin_favicon' => ['nullable', 'file', 'mimes:png,ico,svg', 'max:1024'],
-            'admin_logo_clear' => ['nullable', 'boolean'],
-            'admin_favicon_clear' => ['nullable', 'boolean'],
-        ]);
+        $validated = $request->validated();
 
         $settings = AppSetting::query()->first();
         if (! $settings) {
@@ -315,12 +311,9 @@ class AdminSettingsController extends Controller
         }
     }
 
-    public function updatePassword(Request $request): JsonResponse
+    public function updatePassword(UpdatePasswordRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'current_password' => ['required', 'string'],
-            'new_password' => ['required', 'string', 'min:8', 'confirmed'],
-        ]);
+        $validated = $request->validated();
 
         $user = Auth::guard('admin')->user();
         if (! $user) {

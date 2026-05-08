@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\CallCategory;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\StoreCategoryRequest;
+use App\Http\Requests\Admin\UpdateCategoryRequest;
+use App\Models\CallCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -91,18 +93,11 @@ class CategoryController extends Controller
     /**
      * Create a new category
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreCategoryRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-            ],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'is_enabled' => ['boolean'],
-        ]);
+        $this->authorize('create', CallCategory::class);
+
+        $validated = $request->validated();
 
         // Check unique constraint for the target company
         $existingCategory = CallCategory::where('company_id', $validated['company_id'])
@@ -140,8 +135,10 @@ class CategoryController extends Controller
     /**
      * Update a category
      */
-    public function update(Request $request, CallCategory $category): JsonResponse
+    public function update(UpdateCategoryRequest $request, CallCategory $category): JsonResponse
     {
+        $this->authorize('update', $category);
+
         // Prevent editing the "General" category
         if ($category->isGeneral()) {
             throw ValidationException::withMessages([
@@ -165,20 +162,7 @@ class CategoryController extends Controller
             }
         }
 
-        $validated = $request->validate([
-            'name' => [
-                'sometimes',
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('call_categories', 'name')
-                    ->where('company_id', $category->company_id)
-                    ->ignore($category->id),
-            ],
-            'description' => ['nullable', 'string', 'max:1000'],
-            'is_enabled' => ['boolean'],
-            'status' => ['nullable', Rule::in(['active', 'archived'])],
-        ]);
+        $validated = $request->validated();
 
         if (array_key_exists('status', $validated)) {
             if ($validated['status'] === 'archived') {

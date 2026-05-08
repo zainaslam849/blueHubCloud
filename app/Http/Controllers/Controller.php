@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Company;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 
 abstract class Controller
 {
+    use AuthorizesRequests;
+
     protected function resolveAuthenticatedCompany(): Company
     {
         $adminUser = Auth::guard('admin')->user();

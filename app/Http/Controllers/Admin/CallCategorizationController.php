@@ -3,10 +3,15 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\BuildCallPromptRequest;
+use App\Http\Requests\Admin\BulkPersistCategorizationRequest;
+use App\Http\Requests\Admin\PersistCategorizationRequest;
+use App\Http\Requests\Admin\ValidateCategorizationRequest;
 use App\Models\CallCategory;
 use App\Services\CallCategorizationPromptService;
 use App\Services\CallCategorizationPersistenceService;
 use App\Support\ApiResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -70,14 +75,9 @@ class CallCategorizationController extends Controller
     /**
      * Validate AI categorization response
      */
-    public function validateCategorization(Request $request)
+    public function validateCategorization(ValidateCategorizationRequest $request)
     {
-        $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'category' => 'required|string',
-            'sub_category' => 'nullable|string',
-            'confidence' => 'required|numeric|between:0,1',
-        ]);
+        $validated = $request->validated();
 
         $result = CallCategorizationPromptService::validateCategorization(
             $validated,
@@ -90,16 +90,9 @@ class CallCategorizationController extends Controller
     /**
      * Get full prompt for a specific call
      */
-    public function buildCallPrompt(Request $request)
+    public function buildCallPrompt(BuildCallPromptRequest $request)
     {
-        $validated = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'transcript' => 'required|string',
-            'direction' => 'nullable|in:inbound,outbound',
-            'status' => 'nullable|in:completed,missed,failed',
-            'duration' => 'nullable|integer|min:0',
-            'is_after_hours' => 'nullable|boolean',
-        ]);
+        $validated = $request->validated();
 
         $prompt = CallCategorizationPromptService::buildPromptObject(
             transcriptText: $validated['transcript'],
@@ -156,14 +149,9 @@ class CallCategorizationController extends Controller
      * - If confidence < 0.4 → mark as "Other"
      * - Sub-category stored as label if not found
      */
-    public function persistCategorization()
+    public function persistCategorization(PersistCategorizationRequest $request)
     {
-        $validated = request()->validate([
-            'call_id' => 'required|integer|exists:calls,id',
-            'category' => 'required|string',
-            'sub_category' => 'nullable|string',
-            'confidence' => 'required|numeric|between:0,1',
-        ]);
+        $validated = $request->validated();
 
         try {
             $result = CallCategorizationPersistenceService::persistCategorization(
@@ -190,15 +178,9 @@ class CallCategorizationController extends Controller
     /**
      * Bulk persist multiple categorizations
      */
-    public function bulkPersistCategorizations()
+    public function bulkPersistCategorizations(BulkPersistCategorizationRequest $request)
     {
-        $validated = request()->validate([
-            'categorizations' => 'required|array',
-            'categorizations.*.call_id' => 'required|integer|exists:calls,id',
-            'categorizations.*.category' => 'required|string',
-            'categorizations.*.sub_category' => 'nullable|string',
-            'categorizations.*.confidence' => 'required|numeric|between:0,1',
-        ]);
+        $validated = $request->validated();
 
         $result = CallCategorizationPersistenceService::bulkPersist($validated['categorizations']);
 

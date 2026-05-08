@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { safeUrl } from "../../utils/safeUrl";
+
 type Props = {
     pdfUrl?: string | null;
     csvUrl?: string | null;
@@ -11,6 +14,9 @@ const props = withDefaults(defineProps<Props>(), {
     loading: false,
 });
 
+const safePdfUrl = computed(() => safeUrl(props.pdfUrl));
+const safeCsvUrl = computed(() => safeUrl(props.csvUrl));
+
 function onDisabledClick(e: MouseEvent) {
     e.preventDefault();
 }
@@ -20,24 +26,24 @@ function onDisabledClick(e: MouseEvent) {
     <div class="downloads">
         <a
             class="btn btn--secondary"
-            :class="{ disabled: loading || !pdfUrl }"
-            :href="pdfUrl || undefined"
+            :class="{ disabled: loading || !safePdfUrl }"
+            :href="safePdfUrl"
             target="_blank"
-            rel="noopener"
-            :aria-disabled="loading || !pdfUrl"
-            @click="loading || !pdfUrl ? onDisabledClick($event) : undefined"
+            rel="noopener noreferrer"
+            :aria-disabled="loading || !safePdfUrl"
+            @click="loading || !safePdfUrl ? onDisabledClick($event) : undefined"
         >
             {{ loading ? "Loading…" : "Open PDF" }}
         </a>
 
         <a
             class="btn btn--secondary"
-            :class="{ disabled: loading || !csvUrl }"
-            :href="csvUrl || undefined"
+            :class="{ disabled: loading || !safeCsvUrl }"
+            :href="safeCsvUrl"
             target="_blank"
-            rel="noopener"
-            :aria-disabled="loading || !csvUrl"
-            @click="loading || !csvUrl ? onDisabledClick($event) : undefined"
+            rel="noopener noreferrer"
+            :aria-disabled="loading || !safeCsvUrl"
+            @click="loading || !safeCsvUrl ? onDisabledClick($event) : undefined"
         >
             {{ loading ? "Loading…" : "Open CSV" }}
         </a>

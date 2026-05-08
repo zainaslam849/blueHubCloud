@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from "vue-router";
+import { safeUrl } from "../../utils/safeUrl";
 
 type ActionVariant = "primary" | "secondary" | "ghost";
 
@@ -32,6 +33,10 @@ function btnClass(variant: ActionVariant | undefined) {
     if (variant === "secondary") return "btn btn--secondary";
     return "btn btn--ghost";
 }
+
+function safeHref(value?: string): string | undefined {
+    return safeUrl(value);
+}
 </script>
 
 <template>
@@ -60,10 +65,10 @@ function btnClass(variant: ActionVariant | undefined) {
                         {{ props.primaryAction.label }}
                     </router-link>
                     <a
-                        v-else-if="props.primaryAction.href"
-                        :href="props.primaryAction.href"
+                        v-else-if="props.primaryAction.href && safeHref(props.primaryAction.href)"
+                        :href="safeHref(props.primaryAction.href)"
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         :class="
                             btnClass(props.primaryAction.variant ?? 'primary')
                         "
@@ -93,10 +98,10 @@ function btnClass(variant: ActionVariant | undefined) {
                         {{ props.secondaryAction.label }}
                     </router-link>
                     <a
-                        v-else-if="props.secondaryAction.href"
-                        :href="props.secondaryAction.href"
+                        v-else-if="props.secondaryAction.href && safeHref(props.secondaryAction.href)"
+                        :href="safeHref(props.secondaryAction.href)"
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         :class="
                             btnClass(props.secondaryAction.variant ?? 'ghost')
                         "

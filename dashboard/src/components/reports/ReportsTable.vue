@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import AsyncStatusBadge from "../status/AsyncStatusBadge.vue";
 import NoReportsState from "../states/NoReportsState.vue";
+import { safeUrl } from "../../utils/safeUrl";
 
 type ReportStatus = "processing" | "ready" | "failed";
 
@@ -83,7 +84,14 @@ function statusTooltip(status: ReportStatus) {
 
 function canDownload(status: ReportStatus, url?: string) {
     if (!url) return false;
-    return status === "ready";
+    if (status !== "ready") return false;
+    // Reject URLs that fail the safe-origin allow-list (e.g. javascript:,
+    // data:, or unknown external hosts injected through the report payload).
+    return Boolean(safeUrl(url));
+}
+
+function safeHref(url?: string): string | undefined {
+    return safeUrl(url);
 }
 
 function prev() {
@@ -155,9 +163,9 @@ function next() {
                     <a
                         v-if="canDownload(r.status, r.pdfUrl)"
                         class="btn btn--secondary"
-                        :href="r.pdfUrl"
+                        :href="safeHref(r.pdfUrl)"
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                     >
                         Download PDF
                     </a>
@@ -173,9 +181,9 @@ function next() {
                     <a
                         v-if="canDownload(r.status, r.csvUrl)"
                         class="btn"
-                        :href="r.csvUrl"
+                        :href="safeHref(r.csvUrl)"
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                     >
                         Download CSV
                     </a>

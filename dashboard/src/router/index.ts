@@ -3,11 +3,19 @@ import {
     createWebHistory,
     type RouteRecordRaw,
 } from "vue-router";
+import { auth } from "../composables/useAuth";
 
 const routes: RouteRecordRaw[] = [
     {
+        path: "/login",
+        name: "login",
+        component: () => import("../views/LoginView.vue"),
+        meta: { title: "Sign in", requiresAuth: false },
+    },
+    {
         path: "/",
         component: () => import("../layouts/AppShell.vue"),
+        meta: { requiresAuth: true },
         children: [
             {
                 path: "",
@@ -73,4 +81,27 @@ const routes: RouteRecordRaw[] = [
 export const router = createRouter({
     history: createWebHistory(),
     routes,
+});
+
+// Global guard: any route whose meta.requiresAuth is not explicitly false
+// requires an authenticated user. Unauthenticated visits are redirected to
+// /login with a `redirect` query param so the user lands back here after
+// signing in.
+router.beforeEach((to) => {
+    const requiresAuth = to.matched.some(
+        (record) => record.meta?.requiresAuth !== false,
+    );
+
+    if (!requiresAuth) {
+        return true;
+    }
+
+    if (auth.isAuthenticated()) {
+        return true;
+    }
+
+    return {
+        name: "login",
+        query: { redirect: to.fullPath },
+    };
 });

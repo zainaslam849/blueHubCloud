@@ -29,7 +29,7 @@ class AwsSecretsService
 
     public function __construct()
     {
-        $this->debug = filter_var(env('AWS_SECRETS_DEBUG', false), FILTER_VALIDATE_BOOLEAN);
+        $this->debug = filter_var(config('services.aws.secrets_debug', false), FILTER_VALIDATE_BOOLEAN);
 
         // Prefer a PBX-specific region override, then AWS default.
         // Default to ap-southeast-2 for this project.
