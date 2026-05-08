@@ -8,6 +8,8 @@ use App\Jobs\GenerateWeeklyPbxReportsJob;
 use App\Jobs\SummarizeSingleCallJob;
 use App\Models\Call;
 use App\Models\CallTranscription;
+use App\Services\Admin\AdminCallPresenter;
+use App\Services\Admin\AdminCallsIndexQueryService;
 use App\Services\Normalization\PbxPayloadNormalizer;
 use App\Services\Providers\PbxwareAdapter;
 use Carbon\CarbonImmutable;
@@ -19,7 +21,11 @@ use Illuminate\Support\Facades\Log;
 
 class AdminCallsController extends Controller
 {
-    public function index(Request $request)
+    public function __construct(
+        private readonly AdminCallPresenter $presenter,
+    ) {}
+
+    public function index(Request $request, AdminCallsIndexQueryService $queryService)
     {
         $validated = $request->validate([
             'page' => ['sometimes', 'integer', 'min:1'],
@@ -36,143 +42,15 @@ class AdminCallsController extends Controller
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
         ]);
 
-        $perPage = (int) ($validated['per_page'] ?? 25);
-        $search = trim((string) ($validated['search'] ?? ''));
-
-        $sort = (string) ($validated['sort'] ?? 'created_at');
-        $direction = (string) ($validated['direction'] ?? 'desc');
-
-        $allowedSort = [
-            'id',
-            'pbx_unique_id',
-            'duration_seconds',
-            'status',
-            'created_at',
-            'started_at',
-            'company',
-            'provider',
-        ];
-
-        if (! in_array($sort, $allowedSort, true)) {
-            $sort = 'created_at';
-        }
-
-        $query = Call::query()->select('calls.*')
-            ->with([
-                'company:id,name',
-                'companyPbxAccount:id,pbx_provider_id,company_id',
-                'companyPbxAccount.pbxProvider:id,name',
-                'category:id,name',
-                'subCategory:id,name',
-            ]);
-
-        $needsCompanyJoin = $sort === 'company' || $search !== '';
-        $needsProviderJoin = $sort === 'provider';
-
-        if ($needsCompanyJoin) {
-            $query->leftJoin('companies', 'companies.id', '=', 'calls.company_id');
-        }
-
-        if ($needsProviderJoin) {
-            $query->leftJoin('company_pbx_accounts', 'company_pbx_accounts.id', '=', 'calls.company_pbx_account_id');
-            $query->leftJoin('pbx_providers', 'pbx_providers.id', '=', 'company_pbx_accounts.pbx_provider_id');
-        }
-
-        if ($search !== '') {
-            $query->where(function ($q) use ($search) {
-                $numericId = ctype_digit($search) ? (int) $search : null;
-
-                if ($numericId) {
-                    $q->orWhere('calls.id', $numericId);
-                }
-
-                $q->orWhere('calls.pbx_unique_id', 'like', "%{$search}%")
-                    ->orWhere('calls.status', 'like', "%{$search}%")
-                    ->orWhere('calls.direction', 'like', "%{$search}%")
-                    ->orWhere('calls.from', 'like', "%{$search}%")
-                    ->orWhere('calls.to', 'like', "%{$search}%");
-
-                // If companies join is present, allow company-name searching.
-                $q->orWhere('companies.name', 'like', "%{$search}%");
-            });
-        }
-
-        // Company filter
-        if (isset($validated['company_id'])) {
-            $query->where('calls.company_id', $validated['company_id']);
-        }
-
-        // Category filters
-        if (isset($validated['category_id'])) {
-            $query->where('calls.category_id', $validated['category_id']);
-        }
-
-        if (isset($validated['source'])) {
-            $query->where('calls.category_source', $validated['source']);
-        }
-
-        if (isset($validated['confidence_min'])) {
-            $query->where('calls.category_confidence', '>=', $validated['confidence_min']);
-        }
-
-        if (isset($validated['confidence_max'])) {
-            $query->where('calls.category_confidence', '<=', $validated['confidence_max']);
-        }
-
-        if (isset($validated['start_date'])) {
-            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
-            $query->where('calls.created_at', '>=', $startDate);
-        }
-
-        if (isset($validated['end_date'])) {
-            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
-            $query->where('calls.created_at', '<=', $endDate);
-        }
-
-        if ($sort === 'company') {
-            $query->orderBy('companies.name', $direction);
-        } elseif ($sort === 'provider') {
-            $query->orderBy('pbx_providers.name', $direction);
-        } else {
-            $query->orderBy("calls.{$sort}", $direction);
-        }
-
-        // Stable ordering for consistent pagination.
-        $query->orderBy('calls.id', 'desc');
-
-        $paginator = $query->paginate($perPage)->appends($request->query());
+        $result = $queryService->paginate($validated);
+        $paginator = $result['paginator']->appends($request->query());
+        $sort = $result['sort'];
+        $direction = $result['direction'];
 
         return response()->json([
-            'data' => collect($paginator->items())->map(function (Call $call) {
-                $providerName = $call->companyPbxAccount?->pbxProvider?->name ?? '—';
-
-                $aiRecovery = $this->buildAiRecoveryState($call);
-
-                return [
-                    'id' => $call->id,
-                    'callId' => $call->pbx_unique_id,
-                    'callTime' => optional($call->started_at ?? $call->created_at)->toISOString(),
-                    'fromNumber' => $call->from,
-                    'toNumber' => $call->to,
-                    'company' => $call->company?->name ?? '—',
-                    'provider' => $providerName,
-                    'durationSeconds' => (int) ($call->duration_seconds ?? 0),
-                    'status' => $this->normalizeOperationalStatus($call->status),
-                    'hasTranscription' => (bool) ($call->has_transcription ?? false),
-                    'transcriptionStatus' => $call->transcription_status,
-                    'transcriptSnippet' => $call->transcript_text ? mb_substr($call->transcript_text, 0, 160) : null,
-                    'createdAt' => optional($call->created_at)->toISOString(),
-                    'category' => $call->category?->name,
-                    'categoryId' => $call->category_id,
-                    'subCategory' => $call->subCategory?->name ?? $call->sub_category_label,
-                    'categorySource' => $call->category_source,
-                    'categoryConfidence' => $call->category_confidence,
-                    'aiSummaryStatus' => $call->ai_summary_status,
-                    'aiCategoryStatus' => $call->ai_category_status,
-                    'hasAiSummary' => $this->hasAiSummary($call),
-                    'aiRecovery' => $aiRecovery,
-                ];
-            })->values(),
+            'data' => collect($paginator->items())
+                ->map(fn (Call $call) => $this->presenter->toIndexRow($call))
+                ->values(),
             'meta' => [
                 'currentPage' => $paginator->currentPage(),
                 'lastPage' => $paginator->lastPage(),
@@ -206,7 +84,7 @@ class AdminCallsController extends Controller
 
         $transcriptionStatus = (bool) ($call->has_transcription ?? false) ? 'completed' : 'none';
         $transcriptionProvider = (bool) ($call->has_transcription ?? false) ? 'pbxware' : null;
-        $aiRecovery = $this->buildAiRecoveryState($call);
+        $aiRecovery = $this->presenter->buildAiRecoveryState($call);
 
         $jobHistory = collect();
 
@@ -279,7 +157,7 @@ class AdminCallsController extends Controller
                 'company' => $call->company?->name ?? '—',
                 'provider' => $providerName,
                 'durationSeconds' => (int) ($call->duration_seconds ?? 0),
-                'status' => $this->normalizeOperationalStatus($call->status),
+                    'status' => $this->presenter->normalizeOperationalStatus($call->status),
                 'createdAt' => optional($call->created_at)->toISOString(),
                 'startedAt' => optional($call->started_at)->toISOString(),
                 'direction' => $call->direction,
@@ -325,7 +203,7 @@ class AdminCallsController extends Controller
             ], 404);
         }
 
-        $aiRecovery = $this->buildAiRecoveryState($call);
+        $aiRecovery = $this->presenter->buildAiRecoveryState($call);
 
         if (! $aiRecovery['hasTranscript']) {
             return response()->json([
@@ -599,110 +477,9 @@ class AdminCallsController extends Controller
             : $query->where('pbx_unique_id', $idOrUid)->first();
     }
 
-    private function normalizeOperationalStatus(?string $statusRaw): string
-    {
-        $status = strtolower((string) $statusRaw);
-
-        $normalized = in_array($status, ['completed', 'complete', 'success', 'answered'], true)
-            ? 'completed'
-            : (in_array($status, ['processing', 'queued', 'running', 'in_progress'], true)
-                ? 'processing'
-                : (in_array($status, ['failed', 'error', 'missed'], true) ? 'failed' : $status));
-
-        if (! in_array($normalized, ['completed', 'processing', 'failed'], true)) {
-            return 'processing';
-        }
-
-        return $normalized;
-    }
-
     private function hasUsableTranscript(Call $call): bool
     {
         return is_string($call->transcript_text) && trim($call->transcript_text) !== '';
-    }
-
-    private function hasAiSummary(Call $call): bool
-    {
-        return is_string($call->ai_summary) && trim($call->ai_summary) !== '';
-    }
-
-    private function buildAiRecoveryState(Call $call): array
-    {
-        $hasTranscript = $this->hasUsableTranscript($call);
-        $hasSummary = $this->hasAiSummary($call);
-        $hasCategory = $call->category_id !== null;
-        $summaryStatus = (string) ($call->ai_summary_status ?? '');
-        $categoryStatus = (string) ($call->ai_category_status ?? '');
-
-        if (! $hasTranscript) {
-            return [
-                'hasTranscript' => false,
-                'hasSummary' => $hasSummary,
-                'hasCategory' => $hasCategory,
-                'canRegenerate' => false,
-                'action' => 'none',
-                'actionLabel' => null,
-                'statusText' => 'Transcript is not available for that call.',
-            ];
-        }
-
-        if (! $hasSummary && in_array($summaryStatus, ['queued', 'running'], true)) {
-            return [
-                'hasTranscript' => true,
-                'hasSummary' => false,
-                'hasCategory' => $hasCategory,
-                'canRegenerate' => false,
-                'action' => 'processing',
-                'actionLabel' => null,
-                'statusText' => 'AI summary and category generation are already queued for this call.',
-            ];
-        }
-
-        if (! $hasSummary) {
-            return [
-                'hasTranscript' => true,
-                'hasSummary' => false,
-                'hasCategory' => $hasCategory,
-                'canRegenerate' => true,
-                'action' => 'summary_and_category',
-                'actionLabel' => 'Generate summary + category',
-                'statusText' => 'Transcript is available. Generate AI summary first, then AI category.',
-            ];
-        }
-
-        if (! $hasCategory && in_array($categoryStatus, ['queued', 'running'], true)) {
-            return [
-                'hasTranscript' => true,
-                'hasSummary' => true,
-                'hasCategory' => false,
-                'canRegenerate' => false,
-                'action' => 'processing',
-                'actionLabel' => null,
-                'statusText' => 'AI category generation is already queued for this call.',
-            ];
-        }
-
-        if (! $hasCategory) {
-            return [
-                'hasTranscript' => true,
-                'hasSummary' => true,
-                'hasCategory' => false,
-                'canRegenerate' => true,
-                'action' => 'category_only',
-                'actionLabel' => 'Generate category',
-                'statusText' => 'AI summary is available. Generate AI category for this call.',
-            ];
-        }
-
-        return [
-            'hasTranscript' => true,
-            'hasSummary' => true,
-            'hasCategory' => true,
-            'canRegenerate' => false,
-            'action' => 'complete',
-            'actionLabel' => null,
-            'statusText' => 'AI summary and category are already available for this call.',
-        ];
     }
 
     private function normalizeAiStageStatus(?string $status): string
