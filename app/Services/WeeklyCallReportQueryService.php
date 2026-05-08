@@ -18,7 +18,7 @@ class WeeklyCallReportQueryService
         return $this->baseQuery()
             ->orderByDesc('week_start_date')
             ->get($this->baseSelect())
-            ->map([$this, 'normalizeRow'])
+            ->map(fn ($r) => $this->normalizeRow($r))
             ->values();
     }
 
@@ -33,7 +33,7 @@ class WeeklyCallReportQueryService
             ->where('company_id', $companyId)
             ->orderByDesc('week_start_date')
             ->get($this->baseSelect())
-            ->map([$this, 'normalizeRow'])
+            ->map(fn ($r) => $this->normalizeRow($r))
             ->values();
     }
 
