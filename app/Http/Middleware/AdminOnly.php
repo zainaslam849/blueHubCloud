@@ -39,6 +39,11 @@ class AdminOnly
             return redirect()->to('/');
         }
 
+        // Keep authorization policies/gates consistent with the admin session.
+        // Without this, $this->authorize(...) may resolve a different/default
+        // guard user and incorrectly return "This action is unauthorized.".
+        Auth::shouldUse('admin');
+
         return $next($request);
     }
 }
