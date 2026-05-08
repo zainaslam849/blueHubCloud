@@ -135,6 +135,55 @@ class AdminTestPipelineJob implements ShouldQueue
                 ])
                 ->count();
 
+            // Fast-path: if there are no answered calls to verify for transcripts,
+            // there is nothing for summary/categorization queues to process.
+            // Complete the remaining stages immediately so runs do not sit in a
+            // queued state waiting for work that can never exist.
+            if ($transcriptionCandidates === 0) {
+                $this->completeStage(self::STAGE_TRANSCRIPTION_FETCH, [
+                    'mode' => 'skipped_no_candidates',
+                    'candidate_total' => 0,
+                    'completed_at' => now()->toIso8601String(),
+                ]);
+                $this->completeStage(self::STAGE_AI_SUMMARY, [
+                    'queued_summaries' => 0,
+                    'reason' => 'no_transcript_candidates',
+                ]);
+                $this->completeStage(self::STAGE_CATEGORY_GENERATION, [
+                    'queued' => false,
+                    'reason' => 'no_transcript_candidates',
+                ]);
+                $this->completeStage(self::STAGE_CALL_CATEGORIZATION, [
+                    'queued_calls' => 0,
+                    'reason' => 'no_transcript_candidates',
+                ]);
+                $this->completeStage(self::STAGE_REPORT_GENERATION, [
+                    'queued' => false,
+                    'reason' => 'no_transcript_candidates',
+                ]);
+
+                if ($this->pipelineRun) {
+                    $this->pipelineRun->markCompleted(self::STAGE_REPORT_GENERATION);
+                    $existingMetrics = is_array($this->pipelineRun->metrics) ? $this->pipelineRun->metrics : [];
+                    $this->pipelineRun->forceFill([
+                        'metrics' => array_merge($existingMetrics, [
+                            'transcription_candidate_total' => 0,
+                            'no_transcript_fast_path' => true,
+                        ]),
+                    ])->save();
+                }
+
+                Log::info('AdminTestPipelineJob - no transcript candidates; pipeline marked completed without queueing downstream stages', [
+                    'company_id' => $this->companyId,
+                    'pipeline_run_id' => $this->pipelineRun?->id,
+                    'from' => $from,
+                    'to' => $to,
+                    'event' => 'no_transcript_fast_path_complete',
+                ]);
+
+                return;
+            }
+
             FetchTranscriptionsJob::dispatch(
                 $this->companyId,
                 $from,

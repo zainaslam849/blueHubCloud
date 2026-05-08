@@ -121,7 +121,7 @@ class AdminJobsController extends Controller
                     );
                 }
 
-                if ($transcriptSignal === null && $summaryReason === 'no_transcripts_available') {
+                if ($transcriptSignal === null && in_array($summaryReason, ['no_transcripts_available', 'no_transcript_candidates'], true)) {
                     $transcriptSignal = 'No transcript candidates in selected range';
                 }
 

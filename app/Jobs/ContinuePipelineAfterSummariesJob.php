@@ -160,6 +160,66 @@ class ContinuePipelineAfterSummariesJob implements ShouldQueue
             $pipelineRun = PipelineRun::query()->with('stages')->find($this->pipelineRunId);
         }
 
+        $transcriptedCallsInRange = Call::query()
+            ->where('company_id', $this->companyId)
+            ->whereNotNull('transcript_text')
+            ->where('transcript_text', '!=', '')
+            ->whereBetween('started_at', [$from, $to])
+            ->count();
+
+        // Fast-path: if this range has zero transcripted calls, there is no
+        // summary/categorization/report queue work to perform for this run.
+        // Finalize immediately so runs do not remain queued waiting for work
+        // that can never be produced.
+        if ($transcriptedCallsInRange === 0) {
+            if ($pipelineRun) {
+                $pipelineRun->upsertStage('ai_summary', [
+                    'status' => 'completed',
+                    'metrics' => [
+                        'pending_summaries' => 0,
+                        'reason' => 'no_transcript_candidates',
+                        'completed_at' => now()->toIso8601String(),
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $pipelineRun->upsertStage('category_generation', [
+                    'status' => 'completed',
+                    'metrics' => [
+                        'queued' => false,
+                        'reason' => 'no_transcript_candidates',
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $pipelineRun->upsertStage('call_categorization', [
+                    'status' => 'completed',
+                    'metrics' => [
+                        'queued_calls' => 0,
+                        'reason' => 'no_transcript_candidates',
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $pipelineRun->upsertStage('report_generation', [
+                    'status' => 'completed',
+                    'metrics' => [
+                        'queued' => false,
+                        'reason' => 'no_transcript_candidates',
+                    ],
+                    'finished_at' => now(),
+                ]);
+                $pipelineRun->markCompleted('report_generation');
+            }
+
+            Log::info('ContinuePipelineAfterSummariesJob: no transcript candidates in range, pipeline finalized without queueing downstream stages', [
+                'company_id' => $this->companyId,
+                'pipeline_run_id' => $this->pipelineRunId,
+                'from' => $this->fromDate,
+                'to' => $this->toDate,
+                'event' => 'no_transcript_fast_path_complete',
+            ]);
+
+            return;
+        }
+
         if ($pipelineRun) {
             $categoryStageStatus = $pipelineRun->stageStatus('category_generation');
             if (in_array($categoryStageStatus, ['queued', 'running', 'completed'], true)) {
