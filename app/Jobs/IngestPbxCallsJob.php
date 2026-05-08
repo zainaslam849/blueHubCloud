@@ -94,6 +94,12 @@ class IngestPbxCallsJob implements ShouldQueue
             $splitWindowRetries = 0;
             $paginationUnresolvedSingleDay = 0;
 
+            // Per-run dedup of PBX unique IDs across all paginated windows.
+            // The PBX endpoint can return the same row in adjacent split windows;
+            // combined with Call SoftDeletes the DB unique index will raise 1062
+            // unless we short-circuit here. Keyed by company_pbx_account_id:server_id:uid.
+            $seenInThisRun = [];
+
             $windows = $this->buildCdrDateWindows($range['from'], $range['to']);
             $pendingWindows = $windows;
             $windowSequence = 0;
@@ -356,32 +362,75 @@ class IngestPbxCallsJob implements ShouldQueue
                     $endedAt = \Carbon\Carbon::createFromTimestamp((int) $epoch + $billsec)->toDateTimeString();
                 }
 
-                $call = Call::updateOrCreate(
-                    [
+                // Per-run dedup: if we already processed this UID in this job run
+                // (e.g. the PBX returned it in two overlapping split windows), skip.
+                $seenKey = $this->companyPbxAccountId . ':' . $serverId . ':' . $callUid;
+                if (isset($seenInThisRun[$seenKey])) {
+                    $callsSkipped++;
+                    continue;
+                }
+                $seenInThisRun[$seenKey] = true;
+
+                $callAttributes = array_filter([
+                    'company_id' => $this->companyId,
+                    // Direction is not provided by this CDR payload, keep stable placeholder.
+                    'direction' => 'unknown',
+                    'from' => $fromValue,
+                    'to' => $toValue,
+                    'answered_by_extension' => $answeredByExtension,
+                    'caller_extension' => $callerExtension,
+                    'ring_group' => $ringGroup,
+                    'department' => $locationType,
+                    'pbx_metadata' => $pbxMetadata,
+                    'started_at' => $startedAt,
+                    // Final mapped status (do not set PROCESSING for CDR-based calls)
+                    'status' => $finalStatus,
+                    // Final duration from CDR billsec
+                    'duration_seconds' => $billsec,
+                ], static function ($v) {
+                    return $v !== null && $v !== '';
+                });
+
+                $call = null;
+                try {
+                    // withTrashed(): the DB unique index on (company_pbx_account_id, server_id,
+                    // pbx_unique_id) does not include deleted_at, so updateOrCreate without
+                    // withTrashed() would attempt an INSERT that collides with a soft-deleted row.
+                    $call = \App\Models\Call::withTrashed()->updateOrCreate(
+                        [
+                            'company_pbx_account_id' => $this->companyPbxAccountId,
+                            'server_id' => $serverId,
+                            'pbx_unique_id' => $callUid,
+                        ],
+                        $callAttributes
+                    );
+
+                    if (method_exists($call, 'trashed') && $call->trashed()) {
+                        $call->restore();
+                    }
+                } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                    // Last-line defense: createOrFirst race with another worker, or any
+                    // remaining edge case. Re-fetch (with trashed) and continue without crashing the job.
+                    Log::warning('PBX_TRACE cdr.row.duplicate_uid_caught', [
+                        'company_id' => $this->companyId,
                         'company_pbx_account_id' => $this->companyPbxAccountId,
                         'server_id' => $serverId,
                         'pbx_unique_id' => $callUid,
-                    ],
-                    array_filter([
-                        'company_id' => $this->companyId,
-                        // Direction is not provided by this CDR payload, keep stable placeholder.
-                        'direction' => 'unknown',
-                        'from' => $fromValue,
-                        'to' => $toValue,
-                        'answered_by_extension' => $answeredByExtension,
-                        'caller_extension' => $callerExtension,
-                        'ring_group' => $ringGroup,
-                        'department' => $locationType,
-                        'pbx_metadata' => $pbxMetadata,
-                        'started_at' => $startedAt,
-                        // Final mapped status (do not set PROCESSING for CDR-based calls)
-                        'status' => $finalStatus,
-                        // Final duration from CDR billsec
-                        'duration_seconds' => $billsec,
-                    ], static function ($v) {
-                        return $v !== null && $v !== '';
-                    })
-                );
+                        'window_index' => $windowIndex ?? null,
+                    ]);
+                    $call = \App\Models\Call::withTrashed()->where([
+                        'company_pbx_account_id' => $this->companyPbxAccountId,
+                        'server_id' => $serverId,
+                        'pbx_unique_id' => $callUid,
+                    ])->first();
+                    if ($call && method_exists($call, 'trashed') && $call->trashed()) {
+                        try { $call->restore(); } catch (\Throwable $ignore) {}
+                    }
+                    if (! $call) {
+                        $callsSkipped++;
+                        continue;
+                    }
+                }
 
                 // Persist ended_at if available (not mass assignable in model fillable)
                 if ($endedAt !== null) {
