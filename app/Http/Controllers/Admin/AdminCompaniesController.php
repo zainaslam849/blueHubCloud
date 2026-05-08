@@ -11,6 +11,7 @@ use App\Models\PbxProvider;
 use App\Models\PbxwareTenant;
 use App\Models\WeeklyCallReport;
 use App\Services\PbxwareClient;
+use App\Support\ApiResponse;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class AdminCompaniesController extends Controller
 {
@@ -376,11 +378,13 @@ class AdminCompaniesController extends Controller
                 'new_tenants' => $newTenants,
             ]);
         } catch (PbxwareClientException $e) {
-            Log::error('Failed to sync tenants', ['error' => $e->getMessage()]);
-            return response()->json([
-                'message' => 'Failed to sync tenants: ' . $e->getMessage(),
+            $correlationId = (string) Str::uuid();
+            Log::error('Failed to sync tenants', [
+                'correlation_id' => $correlationId,
                 'error' => $e->getMessage(),
-            ], 400);
+                'exception' => get_class($e),
+            ]);
+            return ApiResponse::error(400, 'Failed to sync tenants. See server logs for details.', $correlationId);
         }
     }
 
@@ -411,12 +415,18 @@ class AdminCompaniesController extends Controller
                 ->get();
 
             return response()->json(['data' => $tenants]);
-        } catch (\Exception $e) {
+        } catch (ValidationException $e) {
+            // Re-throw so Laravel's normal 422 handling applies.
+            throw $e;
+        } catch (\Throwable $e) {
+            $correlationId = (string) Str::uuid();
             Log::error('Failed to load available tenants', [
+                'correlation_id' => $correlationId,
                 'error' => $e->getMessage(),
+                'exception' => get_class($e),
                 'pbx_provider_id' => $request->input('pbx_provider_id'),
             ]);
-            return response()->json(['data' => []], 200);
+            return ApiResponse::error(500, 'Failed to load available tenants.', $correlationId);
         }
     }
 

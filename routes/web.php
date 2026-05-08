@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 
 Route::get('/', function () {
     return redirect('/admin/login');
@@ -24,41 +25,62 @@ Route::get('/', function () {
 
 Route::get('/cron/pbx-sync', function (Request $request) {
     $configuredToken = (string) config('services.scheduler.token', '');
-    $providedToken = (string) $request->query('token', '');
 
-    if ($configuredToken === '' || $providedToken === '' || !hash_equals($configuredToken, $providedToken)) {
+    // Prefer header-based auth (X-Scheduler-Token); accept query token for
+    // backward compatibility with already-configured external schedulers.
+    $providedToken = (string) ($request->header('X-Scheduler-Token') ?? '');
+    if ($providedToken === '') {
+        $providedToken = (string) $request->query('token', '');
+    }
+
+    $correlationId = (string) Str::uuid();
+
+    if ($configuredToken === '' || $providedToken === '' || ! hash_equals($configuredToken, $providedToken)) {
+        Log::warning('Cron webhook unauthorized', [
+            'correlation_id' => $correlationId,
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
         return response()->json([
             'success' => false,
             'message' => 'Unauthorized',
+            'correlation_id' => $correlationId,
         ], 403);
     }
 
     try {
         Artisan::call('pbx:sync-tenants');
+        // NOTE: Artisan output is intentionally NOT returned to the caller to
+        // avoid leaking internal command output. Full output is logged.
         $output = trim(Artisan::output());
 
         Log::info('Cron webhook executed pbx:sync-tenants', [
+            'correlation_id' => $correlationId,
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'exit_code' => 0,
+            'output_length' => strlen($output),
         ]);
 
         return response()->json([
             'success' => true,
             'message' => 'Tenant sync triggered.',
-            'output' => $output,
+            'correlation_id' => $correlationId,
         ]);
     } catch (\Throwable $e) {
         Log::error('Cron webhook failed to execute pbx:sync-tenants', [
+            'correlation_id' => $correlationId,
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'error' => $e->getMessage(),
+            'exception' => get_class($e),
         ]);
 
         return response()->json([
             'success' => false,
             'message' => 'Tenant sync failed to trigger.',
-            'error' => $e->getMessage(),
+            'correlation_id' => $correlationId,
         ], 500);
     }
 })->name('cron.pbx-sync')->middleware('throttle:20,1');

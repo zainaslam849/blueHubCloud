@@ -34,8 +34,17 @@ class PbxwareTenant extends Model
         return $this->belongsTo(PbxProvider::class);
     }
 
+    /**
+     * Resolve the CompanyPbxAccount that maps this tenant.
+     *
+     * NOTE: PBX server_id values are NOT globally unique — they only identify
+     * a tenant within a single PBX provider. The relation MUST be scoped by
+     * pbx_provider_id, otherwise a tenant on Provider A can falsely match an
+     * unrelated CompanyPbxAccount on Provider B.
+     */
     public function companyPbxAccount(): HasOne
     {
-        return $this->hasOne(CompanyPbxAccount::class, 'server_id', 'server_id');
+        return $this->hasOne(CompanyPbxAccount::class, 'server_id', 'server_id')
+            ->where('company_pbx_accounts.pbx_provider_id', $this->pbx_provider_id);
     }
 }

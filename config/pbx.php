@@ -18,6 +18,19 @@ return [
     // Default provider to use when code doesn't specify one
     'default_provider' => env('PBX_DEFAULT_PROVIDER', 'pbxware'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Debug payload logging
+    |--------------------------------------------------------------------------
+    |
+    | When true (and the app is NOT running in production) the PBX client and
+    | adapter will log full PBX response bodies. Default is false. Production
+    | logs always exclude raw payloads regardless of this flag, since PBX
+    | responses can contain call/transcription content.
+    |
+    */
+    'debug_payloads' => env('PBX_DEBUG_PAYLOADS', false),
+
     // Provider-specific configuration. Keep keys vendor-agnostic (slug => config).
     'providers' => [
         'pbxware' => [

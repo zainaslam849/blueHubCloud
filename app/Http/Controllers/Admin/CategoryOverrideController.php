@@ -32,8 +32,13 @@ class CategoryOverrideController
      */
     public function getCallsNeedingReview(Request $request): JsonResponse
     {
-        $threshold = (float) $request->query('threshold', 0.6);
-        $limit = (int) $request->query('limit', 50);
+        $validated = $request->validate([
+            'threshold' => ['nullable', 'numeric', 'between:0.5,1.0'],
+            'limit' => ['nullable', 'integer', 'between:1,1000'],
+        ]);
+
+        $threshold = (float) ($validated['threshold'] ?? 0.6);
+        $limit = (int) ($validated['limit'] ?? 50);
 
         $calls = $this->enforcementService->getCallsNeedingReview($threshold, $limit);
 
@@ -182,8 +187,15 @@ class CategoryOverrideController
      */
     public function enforceThreshold(Request $request): JsonResponse
     {
-        $threshold = (float) $request->query('threshold', 0.6);
+        $validated = $request->validate([
+            'threshold' => ['nullable', 'numeric', 'between:0.5,1.0'],
+            'dry_run' => ['nullable', 'boolean'],
+            'confirm' => ['nullable', 'boolean'],
+        ]);
+
+        $threshold = (float) ($validated['threshold'] ?? 0.6);
         $dryRun = $request->boolean('dry_run', false);
+        $confirm = $request->boolean('confirm', false);
 
         if ($dryRun) {
             // Preview: count calls that would be affected
@@ -202,6 +214,15 @@ class CategoryOverrideController
                 'would_be_reset' => $wouldBeReset,
                 'message' => "DRY RUN: {$wouldBeReset} calls would be reset if threshold is enforced",
             ]);
+        }
+
+        // Destructive operation: require explicit confirm=true to proceed.
+        if (! $confirm) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Refusing to enforce threshold without explicit confirmation. Re-issue the request with confirm=true (and consider running dry_run=true first).',
+                'threshold' => $threshold,
+            ], 422);
         }
 
         // Actually enforce the threshold

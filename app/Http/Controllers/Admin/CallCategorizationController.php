@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\CallCategory;
 use App\Services\CallCategorizationPromptService;
 use App\Services\CallCategorizationPersistenceService;
+use App\Support\ApiResponse;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class CallCategorizationController extends Controller
 {
@@ -173,10 +176,14 @@ class CallCategorizationController extends Controller
             return response()->json($result);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
+            $correlationId = (string) Str::uuid();
+            Log::error('persistCategorization failed', [
+                'correlation_id' => $correlationId,
+                'call_id' => $validated['call_id'] ?? null,
                 'error' => $e->getMessage(),
-            ], 500);
+                'exception' => get_class($e),
+            ]);
+            return ApiResponse::error(500, 'Failed to persist categorization.', $correlationId);
         }
     }
 

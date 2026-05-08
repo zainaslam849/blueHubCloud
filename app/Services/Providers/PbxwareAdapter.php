@@ -424,17 +424,30 @@ class PbxwareAdapter implements ProviderAdapterInterface
         $contentType = (string) ($httpResponse->header('Content-Type') ?? '');
         $requestUrl = $this->redactUrl((string) $httpResponse->effectiveUri());
 
-        Log::info('PBXWARE_EXACT_RESPONSE', [
-            'endpoint' => $endpointLabel,
-            'action' => $action,
-            'server_id' => $serverId,
-            'external_id' => $externalId,
-            'status' => $httpResponse->status(),
-            'content_type' => $contentType,
-            'url' => $requestUrl,
-            'request_params' => $this->redactRequestParams($query),
-            'raw_body' => $this->redactRawResponseBody($rawBody),
-        ]);
+        Log::info('PBXWARE_EXACT_RESPONSE', $this->shouldLogPayloads()
+            ? [
+                'endpoint' => $endpointLabel,
+                'action' => $action,
+                'server_id' => $serverId,
+                'external_id' => $externalId,
+                'status' => $httpResponse->status(),
+                'content_type' => $contentType,
+                'url' => $requestUrl,
+                'request_params' => $this->redactRequestParams($query),
+                'raw_body' => $this->redactRawResponseBody($rawBody),
+            ]
+            : [
+                'endpoint' => $endpointLabel,
+                'action' => $action,
+                'server_id' => $serverId,
+                'external_id' => $externalId,
+                'status' => $httpResponse->status(),
+                'content_type' => $contentType,
+                'url' => $requestUrl,
+                'request_params' => $this->redactRequestParams($query),
+                'raw_body_length' => strlen($rawBody),
+            ]
+        );
 
         $decoded = null;
         if ($rawBody !== '') {
@@ -465,6 +478,16 @@ class PbxwareAdapter implements ProviderAdapterInterface
     private function redactUrl(string $url): string
     {
         return (string) preg_replace('/(apikey=)([^&]+)/i', '$1REDACTED', $url);
+    }
+
+    /**
+     * True only when full PBX payload bodies should be written to logs.
+     * Gated by config('pbx.debug_payloads') AND non-production environment.
+     */
+    private function shouldLogPayloads(): bool
+    {
+        return (bool) config('pbx.debug_payloads', false)
+            && app()->environment() !== 'production';
     }
 
     private function redactRequestParams(array $params): array

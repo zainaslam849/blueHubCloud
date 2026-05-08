@@ -295,15 +295,26 @@ class PbxwareClient
             // PBXware API is query-based and primarily uses GET for list/download
             $response = $request->get($url);
 
-            // TEMP DIAGNOSTIC: full raw PBX response logging for visibility.
-            // Always redact API keys if they ever appear.
-            Log::info('PBXWARE_RAW_RESPONSE', [
-                'action' => $path,
-                'status' => $response->status(),
-                'body' => $this->redactRawPbxResponseBody((string) $response->body()),
-            ]);
-
             $latencyMs = round((microtime(true) - $start) * 1000, 2);
+
+            // Default: log only metadata. Full body logging is gated behind
+            // config('pbx.debug_payloads') AND non-production environments,
+            // since PBX response bodies can contain call/transcription data.
+            if ($this->shouldLogPayloads()) {
+                Log::info('PBXWARE_RAW_RESPONSE', [
+                    'action' => $path,
+                    'status' => $response->status(),
+                    'latency_ms' => $latencyMs,
+                    'body' => $this->redactRawPbxResponseBody((string) $response->body()),
+                ]);
+            } else {
+                Log::info('PbxwareClient: response', [
+                    'action' => $path,
+                    'status' => $response->status(),
+                    'latency_ms' => $latencyMs,
+                    'body_length' => strlen((string) $response->body()),
+                ]);
+            }
 
             // Redact apikey when logging URL
             $redactedUrl = $this->redactUrl($url);
@@ -372,6 +383,16 @@ class PbxwareClient
         return preg_replace('/(apikey=)([^&]+)/i', '$1REDACTED', $url);
     }
 
+    /**
+     * True only when full PBX payload bodies should be written to logs.
+     * Gated by config('pbx.debug_payloads') AND non-production environment.
+     */
+    protected function shouldLogPayloads(): bool
+    {
+        return (bool) config('pbx.debug_payloads', false)
+            && app()->environment() !== 'production';
+    }
+
     protected function buildUrl(string $path): string
     {
         $path = ltrim($path, '/');
@@ -433,10 +454,15 @@ class PbxwareClient
             throw $e;
         }
 
-        // Capture a short redacted preview of the raw PBX response for diagnostics.
+        // Capture a short redacted preview of the raw PBX response only when
+        // debug payload logging is enabled AND the app is not in production.
         $rawBody = (string) $response->body();
-        $preview = substr($this->redactRawPbxResponseBody($rawBody), 0, 200);
-        Log::info('PbxwareClient: transcription.response_preview', ['server' => $server, 'uniqueid' => $uniqueid, 'preview' => $preview, 'len' => strlen($rawBody), 'status' => $response->status()]);
+        if ($this->shouldLogPayloads()) {
+            $preview = substr($this->redactRawPbxResponseBody($rawBody), 0, 200);
+            Log::info('PbxwareClient: transcription.response_preview', ['server' => $server, 'uniqueid' => $uniqueid, 'preview' => $preview, 'len' => strlen($rawBody), 'status' => $response->status()]);
+        } else {
+            Log::info('PbxwareClient: transcription.response_meta', ['server' => $server, 'uniqueid' => $uniqueid, 'len' => strlen($rawBody), 'status' => $response->status()]);
+        }
 
         // Parse and return following the existing fetchAction semantics
         if ($response->status() !== 200) {
