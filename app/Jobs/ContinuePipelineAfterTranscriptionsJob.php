@@ -208,6 +208,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
                 $this->pipelineQueue,
                 $this->pipelineRunId,
                 $this->rangeDays,
+                $this->summarizeLimit,
             )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(5));
 
             return;
@@ -231,6 +232,7 @@ class ContinuePipelineAfterTranscriptionsJob implements ShouldQueue
             $this->pipelineQueue,
             $this->pipelineRunId,
             $this->rangeDays,
+            $this->summarizeLimit,
         )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(20));
 
         if ($pipelineRun) {

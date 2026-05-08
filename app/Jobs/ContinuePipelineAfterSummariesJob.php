@@ -22,6 +22,14 @@ class ContinuePipelineAfterSummariesJob implements ShouldQueue
     public int $timeout = 60;
     public array $backoff = [15, 30, 60];
 
+    /**
+     * Maximum number of times this job will re-dispatch itself while waiting
+     * for pending summaries. At ~20s between polls this caps blocking at
+     * roughly 20 minutes; after that the run advances anyway so it can never
+     * loop forever.
+     */
+    private const MAX_POLL_ATTEMPTS = 60;
+
     public function __construct(
         public int $companyId,
         public string $fromDate,
@@ -30,6 +38,8 @@ class ContinuePipelineAfterSummariesJob implements ShouldQueue
         public string $pipelineQueue = 'default',
         public ?int $pipelineRunId = null,
         public int $rangeDays = 30,
+        public int $summarizeLimit = 500,
+        public int $pollAttempts = 0,
     ) {}
 
     public function handle(): void
@@ -50,23 +60,99 @@ class ContinuePipelineAfterSummariesJob implements ShouldQueue
             ->count();
 
         if ($pendingSummaries > 0) {
-            Log::info('ContinuePipelineAfterSummariesJob: waiting for summarization stage to finish', [
-                'company_id' => $this->companyId,
-                'pending_summaries' => $pendingSummaries,
-                'pipeline_run_id' => $this->pipelineRunId,
-            ]);
+            // RACE-CONDITION RECOVERY:
+            // The upstream ContinuePipelineAfterTranscriptionsJob may have
+            // short-circuited with reason="no_transcripts_available" because
+            // transcripts were still being saved when it ran. By the time we
+            // poll here, those late transcripts exist but no summarization
+            // job was ever dispatched for them. Detect this on the FIRST
+            // poll only, and dispatch QueueCallsForSummarizationJob ourselves
+            // so the work actually gets done instead of polling forever.
+            if ($this->pollAttempts === 0) {
+                Log::warning('ContinuePipelineAfterSummariesJob: late-arriving transcripts detected, dispatching summarization recovery', [
+                    'company_id' => $this->companyId,
+                    'pending_summaries' => $pendingSummaries,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'event' => 'late_transcript_recovery',
+                ]);
 
-            static::dispatch(
-                $this->companyId,
-                $this->fromDate,
-                $this->toDate,
-                $this->categorizeLimit,
-                $this->pipelineQueue,
-                $this->pipelineRunId,
-                $this->rangeDays,
-            )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(20));
+                QueueCallsForSummarizationJob::dispatch(
+                    $this->companyId,
+                    max($this->summarizeLimit, $pendingSummaries),
+                    25,
+                    $this->pipelineQueue,
+                    $this->fromDate,
+                    $this->toDate,
+                    $this->pipelineRunId,
+                )->onQueue($this->pipelineQueue);
 
-            return;
+                if ($this->pipelineRunId) {
+                    $run = PipelineRun::query()->find($this->pipelineRunId);
+                    if ($run) {
+                        $run->upsertStage('ai_summary', [
+                            'status' => 'running',
+                            'metrics' => [
+                                'recovered_late_transcripts' => $pendingSummaries,
+                                'recovered_at' => now()->toIso8601String(),
+                            ],
+                        ]);
+                        $run->markRunning('ai_summary');
+                    }
+                }
+            }
+
+            // SAFETY CAP: stop polling forever. After MAX_POLL_ATTEMPTS,
+            // mark the stage completed-with-timeout and let the pipeline move
+            // on so categorization / report generation can still finish with
+            // whatever summaries were produced.
+            if ($this->pollAttempts >= self::MAX_POLL_ATTEMPTS) {
+                Log::error('ContinuePipelineAfterSummariesJob: poll timeout reached, advancing pipeline with partial summaries', [
+                    'company_id' => $this->companyId,
+                    'pending_summaries' => $pendingSummaries,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'poll_attempts' => $this->pollAttempts,
+                    'event' => 'poll_timeout',
+                ]);
+
+                if ($this->pipelineRunId) {
+                    $run = PipelineRun::query()->find($this->pipelineRunId);
+                    if ($run) {
+                        $run->upsertStage('ai_summary', [
+                            'status' => 'completed',
+                            'metrics' => [
+                                'pending_summaries_at_timeout' => $pendingSummaries,
+                                'reason' => 'poll_timeout',
+                                'completed_at' => now()->toIso8601String(),
+                            ],
+                            'finished_at' => now(),
+                        ]);
+                    }
+                }
+
+                // Fall through to the "summaries done" branch below so the
+                // category / report stages still get queued.
+            } else {
+                Log::info('ContinuePipelineAfterSummariesJob: waiting for summarization stage to finish', [
+                    'company_id' => $this->companyId,
+                    'pending_summaries' => $pendingSummaries,
+                    'pipeline_run_id' => $this->pipelineRunId,
+                    'poll_attempts' => $this->pollAttempts,
+                ]);
+
+                static::dispatch(
+                    $this->companyId,
+                    $this->fromDate,
+                    $this->toDate,
+                    $this->categorizeLimit,
+                    $this->pipelineQueue,
+                    $this->pipelineRunId,
+                    $this->rangeDays,
+                    $this->summarizeLimit,
+                    $this->pollAttempts + 1,
+                )->onQueue($this->pipelineQueue)->delay(now()->addSeconds(20));
+
+                return;
+            }
         }
 
         $pipelineRun = null;
