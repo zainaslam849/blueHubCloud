@@ -217,11 +217,11 @@ class AdminSettingsController extends Controller
             'secret' => $secretKey,
             'region' => $region,
             'bucket' => $bucket,
-            'url' => $this->firstNonEmptySecretValue($secret, ['AWS_URL', 'aws_url', 'url']) ?: env('AWS_URL'),
-            'endpoint' => $this->firstNonEmptySecretValue($secret, ['AWS_ENDPOINT', 'aws_endpoint', 'endpoint']) ?: env('AWS_ENDPOINT'),
+            'url' => $this->firstNonEmptySecretValue($secret, ['AWS_URL', 'aws_url', 'url']) ?: config('services.aws.url'),
+            'endpoint' => $this->firstNonEmptySecretValue($secret, ['AWS_ENDPOINT', 'aws_endpoint', 'endpoint']) ?: config('services.aws.endpoint'),
             'use_path_style_endpoint' => filter_var(
                 $this->firstNonEmptySecretValue($secret, ['AWS_USE_PATH_STYLE_ENDPOINT', 'aws_use_path_style_endpoint', 'use_path_style_endpoint'])
-                    ?? env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+                    ?? config('services.aws.use_path_style_endpoint', false),
                 FILTER_VALIDATE_BOOLEAN
             ),
             'visibility' => 'public',

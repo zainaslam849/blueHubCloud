@@ -11,6 +11,8 @@ use App\Models\CallCategory;
 use App\Services\CategoryConfidenceEnforcementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Admin endpoint for manually overriding call categories (STEP 5).
@@ -150,11 +152,20 @@ class CategoryOverrideController
                     ];
                 }
             } catch (\Exception $e) {
+                $correlationId = (string) Str::uuid();
+                Log::error('CategoryOverrideController::bulkOverride item failed', [
+                    'correlation_id' => $correlationId,
+                    'index' => $index,
+                    'call_id' => $override['call_id'] ?? null,
+                    'error' => $e->getMessage(),
+                    'exception' => get_class($e),
+                ]);
                 $results['failed']++;
                 $results['errors'][] = [
                     'index' => $index,
                     'call_id' => $override['call_id'],
-                    'message' => $e->getMessage(),
+                    'message' => 'Override failed for this call. See server logs.',
+                    'correlation_id' => $correlationId,
                 ];
             }
         }

@@ -14,6 +14,13 @@ return [
     'pbxware' => [
         'aws_region' => env('PBXWARE_AWS_REGION', env('AWS_DEFAULT_REGION', 'ap-southeast-2')),
         'timeout' => env('PBXWARE_TIMEOUT', 30),
+        // PBXware credential ENV-fallback values. Authoritative source remains
+        // AWS Secrets Manager; these are only consulted when the secret is
+        // missing/incomplete. Centralized here so runtime code uses config()
+        // (a hard requirement for `php artisan config:cache`).
+        'api_key' => env('PBXWARE_API_KEY'),
+        'base_url' => env('PBXWARE_BASE_URL'),
+        'server_id' => env('PBXWARE_SERVER_ID'),
         // Master switch for the PBXware ingest scheduler (Kernel.php).
         'ingest_enabled' => env('PBXWARE_INGEST_ENABLED', true),
         // When true, PBXware client returns mock data instead of contacting the
@@ -28,6 +35,23 @@ return [
         // When true, AwsSecretsService logs verbose secret resolution traces.
         // Never enable in production; secret values may appear in logs.
         'secrets_debug' => env('AWS_SECRETS_DEBUG', false),
+        // Default AWS region used when no PBXWARE_AWS_REGION override exists.
+        'region' => env('AWS_DEFAULT_REGION'),
+        // Static credentials (optional). When unset, the AWS SDK falls back to
+        // its default provider chain (instance profile / shared config).
+        'access_key_id' => env('AWS_ACCESS_KEY_ID'),
+        'secret_access_key' => env('AWS_SECRET_ACCESS_KEY'),
+        'session_token' => env('AWS_SESSION_TOKEN'),
+        // Optional S3-compatible overrides.
+        'url' => env('AWS_URL'),
+        'endpoint' => env('AWS_ENDPOINT'),
+        'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+    ],
+
+    'reporting' => [
+        // Industry-average agent cost used by InsightDrivenReportService for
+        // automation savings projections. Configure via AGENT_COST_PER_HOUR.
+        'agent_cost_per_hour' => env('AGENT_COST_PER_HOUR', 35),
     ],
 
     'scheduler' => [

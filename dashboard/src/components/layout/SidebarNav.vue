@@ -106,7 +106,7 @@ function isActive(name: string) {
                         :title="props.collapsed ? item.name : undefined"
                     >
                         <span class="navIcon"
-                            ><AppIcon :name="(item.icon as any)"
+                            ><AppIcon :name="item.icon as any"
                         /></span>
                         <span class="navLabel">{{ item.name }}</span>
                         <span
@@ -129,7 +129,7 @@ function isActive(name: string) {
                 target="_blank"
                 rel="noopener noreferrer"
             >
-                <AppIcon :name="(link.icon as any)" />
+                <AppIcon :name="link.icon as any" />
                 <span class="outlineLabel">{{ link.label }}</span>
             </a>
         </div>

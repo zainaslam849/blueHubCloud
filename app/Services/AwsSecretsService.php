@@ -33,9 +33,8 @@ class AwsSecretsService
 
         // Prefer a PBX-specific region override, then AWS default.
         // Default to ap-southeast-2 for this project.
-        $region = env('PBXWARE_AWS_REGION')
-            ?: (config('services.pbxware.aws_region') ?: null)
-            ?: (env('AWS_DEFAULT_REGION') ?: null)
+        $region = config('services.pbxware.aws_region')
+            ?: (config('services.aws.region') ?: null)
             ?: 'ap-southeast-2';
 
         $clientConfig = [
@@ -47,9 +46,9 @@ class AwsSecretsService
         // as the explicit credential source and log that fact. Otherwise
         // allow the SDK to use its default provider chain (shared config,
         // environment, instance profile / IAM role).
-        $awsKey = env('AWS_ACCESS_KEY_ID');
-        $awsSecret = env('AWS_SECRET_ACCESS_KEY');
-        $awsToken = env('AWS_SESSION_TOKEN');
+        $awsKey = config('services.aws.access_key_id');
+        $awsSecret = config('services.aws.secret_access_key');
+        $awsToken = config('services.aws.session_token');
 
         if (! empty($awsKey) && ! empty($awsSecret)) {
             $clientConfig['credentials'] = [

@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Repositories\AiSettingsRepository;
+use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class AdminAiSettingsController extends Controller
 {
@@ -76,22 +79,29 @@ class AdminAiSettingsController extends Controller
                 ]
             ]);
         } catch (\Exception $e) {
-            // Provide more helpful error messages
-            $message = $e->getMessage();
-            if (strpos($message, '401') !== false) {
-                $message = 'Invalid API key - please check and try again';
-            } elseif (strpos($message, '404') !== false) {
-                $message = 'AI service endpoint not found - please verify provider configuration';
-            } elseif (strpos($message, 'Connection')  !== false) {
-                $message = 'Could not connect to AI service - check your internet connection';
-            } elseif (strpos($message, 'timeout') !== false) {
-                $message = 'Request timeout - AI service took too long to respond';
+            // Map common transport-layer errors to user-safe messages. The raw
+            // exception text is never returned to the client; it is logged
+            // server-side under a correlation id for operator triage.
+            $rawMessage = $e->getMessage();
+            $safeMessage = 'Failed to connect to AI service. Please verify provider configuration.';
+            if (strpos($rawMessage, '401') !== false) {
+                $safeMessage = 'Invalid API key - please check and try again';
+            } elseif (strpos($rawMessage, '404') !== false) {
+                $safeMessage = 'AI service endpoint not found - please verify provider configuration';
+            } elseif (strpos($rawMessage, 'Connection') !== false) {
+                $safeMessage = 'Could not connect to AI service - check your internet connection';
+            } elseif (strpos($rawMessage, 'timeout') !== false) {
+                $safeMessage = 'Request timeout - AI service took too long to respond';
             }
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to connect to AI service: ' . $message
-            ], 400);
+
+            $correlationId = (string) Str::uuid();
+            Log::error('AdminAiSettingsController::test failed', [
+                'correlation_id' => $correlationId,
+                'error' => $rawMessage,
+                'exception' => get_class($e),
+            ]);
+
+            return ApiResponse::error(400, $safeMessage, $correlationId);
         }
     }
     

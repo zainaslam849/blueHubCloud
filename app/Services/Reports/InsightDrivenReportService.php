@@ -298,7 +298,7 @@ class InsightDrivenReportService
         $savableMinutes = $automatable->sum('duration_seconds') / 60;
 
         // Use industry average agent cost
-        $agentCostPerHour = env('AGENT_COST_PER_HOUR', 35); // $35/hour default
+        $agentCostPerHour = config('services.reporting.agent_cost_per_hour', 35); // $35/hour default
         $agentCostPerMinute = $agentCostPerHour / 60;
 
         $weeklySavings = $savableMinutes * $agentCostPerMinute;

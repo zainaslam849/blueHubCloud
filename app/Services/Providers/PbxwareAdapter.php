@@ -85,8 +85,8 @@ class PbxwareAdapter implements ProviderAdapterInterface
     {
         $out = [];
 
-        $apiKey = env('PBXWARE_API_KEY');
-        $baseUrl = env('PBXWARE_BASE_URL');
+        $apiKey = config('services.pbxware.api_key');
+        $baseUrl = config('services.pbxware.base_url');
 
         if ($apiKey !== null && trim((string) $apiKey) !== '') {
             $out['api_key'] = (string) $apiKey;

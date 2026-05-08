@@ -104,10 +104,10 @@ class PbxwareClient
             Log::error('PbxwareClient: ' . $msg, [
                 'secret' => $this->secretName,
                 'env_present' => [
-                    'PBXWARE_API_KEY' => env('PBXWARE_API_KEY') ? true : false,
-                    'PBXWARE_BASE_URL' => env('PBXWARE_BASE_URL') ? true : false,
-                    'PBXWARE_SERVER_ID' => env('PBXWARE_SERVER_ID') ? true : false,
-                    'PBXWARE_TIMEOUT' => env('PBXWARE_TIMEOUT') !== null,
+                    'PBXWARE_API_KEY' => config('services.pbxware.api_key') ? true : false,
+                    'PBXWARE_BASE_URL' => config('services.pbxware.base_url') ? true : false,
+                    'PBXWARE_SERVER_ID' => config('services.pbxware.server_id') ? true : false,
+                    'PBXWARE_TIMEOUT' => config('services.pbxware.timeout') !== null,
                 ],
                 'error' => $e->getMessage(),
             ]);
@@ -118,15 +118,17 @@ class PbxwareClient
     /**
      * ENV fallback credential loader.
      * Only used when Secrets Manager is missing/unavailable or incomplete.
+     * Reads via config('services.pbxware.*') so values are honored under
+     * `php artisan config:cache`.
      */
     protected function getEnvCredentials(): array
     {
         $out = [];
 
-        $apiKey = env('PBXWARE_API_KEY');
-        $baseUrl = env('PBXWARE_BASE_URL');
-        $serverId = env('PBXWARE_SERVER_ID');
-        $timeout = env('PBXWARE_TIMEOUT');
+        $apiKey = config('services.pbxware.api_key');
+        $baseUrl = config('services.pbxware.base_url');
+        $serverId = config('services.pbxware.server_id');
+        $timeout = config('services.pbxware.timeout');
 
         if ($apiKey !== null && trim((string) $apiKey) !== '') {
             $out['api_key'] = (string) $apiKey;

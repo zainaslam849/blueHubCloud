@@ -8,7 +8,9 @@ defineProps<Props>();
 </script>
 
 <template>
-    <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium">
+    <span
+        class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
+    >
         <slot />
     </span>
 </template>

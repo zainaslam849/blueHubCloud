@@ -25,7 +25,7 @@ class AwsSecretResolver
 
         return Cache::remember($cacheKey, $this->ttlSeconds, function () use ($secretName) {
             try {
-                $region = Config::get('services.pbxware.aws_region') ?: env('AWS_DEFAULT_REGION');
+                $region = Config::get('services.pbxware.aws_region') ?: Config::get('services.aws.region');
                 $client = new SecretsManagerClient([
                     'version' => 'latest',
                     'region' => $region,
