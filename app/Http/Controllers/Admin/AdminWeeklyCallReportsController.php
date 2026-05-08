@@ -8,6 +8,7 @@ use App\Models\CategoryAnalyticsReport;
 use App\Models\ExtensionPerformanceReport;
 use App\Models\RingGroupPerformanceReport;
 use App\Models\WeeklyCallReport;
+use App\Services\Admin\WeeklyCallReportListPresenter;
 use App\Services\AdvancedReportGenerationService;
 use App\Services\WeeklyCallReportQueryService;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,10 @@ use Illuminate\Support\Facades\Log;
 
 class AdminWeeklyCallReportsController extends Controller
 {
+    public function __construct(
+        private readonly WeeklyCallReportListPresenter $listPresenter,
+    ) {}
+
     public function index(Request $request, WeeklyCallReportQueryService $service): JsonResponse
     {
         $validated = $request->validate([
@@ -25,89 +30,17 @@ class AdminWeeklyCallReportsController extends Controller
         ]);
 
         // If company_id provided, use service method; otherwise get all reports
-        if (!empty($validated['company_id'])) {
+        if (! empty($validated['company_id'])) {
             $reports = $service->getByCompanyId((int) $validated['company_id']);
         } else {
-            // Get all reports across all companies
-            $reports = WeeklyCallReport::query()
-                ->leftJoin('companies', 'companies.id', '=', 'weekly_call_reports.company_id')
-                ->orderByDesc('week_start_date')
-                ->get([
-                    'weekly_call_reports.id',
-                    'weekly_call_reports.company_id',
-                    'weekly_call_reports.server_id',
-                    'weekly_call_reports.company_pbx_account_id',
-                    'weekly_call_reports.week_start_date',
-                    'weekly_call_reports.week_end_date',
-                    'weekly_call_reports.total_calls',
-                    'weekly_call_reports.answered_calls',
-                    'weekly_call_reports.missed_calls',
-                    'weekly_call_reports.calls_with_transcription',
-                    'weekly_call_reports.total_call_duration_seconds',
-                    'weekly_call_reports.avg_call_duration_seconds',
-                    'weekly_call_reports.first_call_at',
-                    'weekly_call_reports.last_call_at',
-                    'weekly_call_reports.created_at',
-                    'weekly_call_reports.updated_at',
-                    'companies.name as company_name',
-                ])
-                ->map(function ($r) {
-                    if (is_object($r) && method_exists($r, 'toArray')) {
-                        $arr = $r->toArray();
-                    } else {
-                        $arr = (array) $r;
-                    }
-                    $arr['company'] = ['name' => $arr['company_name'] ?? null];
-                    return $arr;
-                })
-                ->values();
+            $reports = $service->getAll();
         }
 
-        $reports = $reports->values();
-
-        $mapped = $reports->map(function ($r) {
-            $total = (int) ($r['total_calls'] ?? 0);
-            $answered = (int) ($r['answered_calls'] ?? 0);
-
-            $weekStart = $r['week_start_date'] ?? null;
-            $weekEnd = $r['week_end_date'] ?? null;
-
-            if (is_object($weekStart) && method_exists($weekStart, 'toDateString')) {
-                $weekStart = $weekStart->toDateString();
-            }
-
-            if (is_object($weekEnd) && method_exists($weekEnd, 'toDateString')) {
-                $weekEnd = $weekEnd->toDateString();
-            }
-
-            $companyName = $r['company']['name'] ?? $r['company_name'] ?? null;
-
-            return [
-                'id' => $r['id'] ?? null,
-
-                // Company (both object and flat name for compatibility)
-                'company' => ['name' => $companyName],
-                'company_name' => $companyName,
-
-                // Week range (both snake_case and camelCase)
-                'week_start_date' => $weekStart,
-                'week_end_date' => $weekEnd,
-                'weekStartDate' => $weekStart,
-                'weekEndDate' => $weekEnd,
-
-                // Metrics (both snake_case and camelCase)
-                'total_calls' => $total,
-                'answered_calls' => $answered,
-                'missed_calls' => (int) ($r['missed_calls'] ?? 0),
-                'totalCalls' => $total,
-                'answeredCalls' => $answered,
-                'missedCalls' => (int) ($r['missed_calls'] ?? 0),
-
-                // Derived metric
-                'answer_rate' => $total > 0 ? round(($answered / $total) * 100) : 0,
-                'answerRate' => $total > 0 ? (int) round(($answered / $total) * 100) : 0,
-            ];
-        })->values()->all();
+        $mapped = $reports
+            ->values()
+            ->map(fn ($r) => $this->listPresenter->toIndexRow((array) $r))
+            ->values()
+            ->all();
 
         return response()->json(['data' => $mapped]);
     }
