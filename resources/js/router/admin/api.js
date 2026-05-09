@@ -2,6 +2,7 @@ import axios from "axios";
 
 const tokenEl = () => document.querySelector('meta[name="csrf-token"]');
 const getCsrfToken = () => tokenEl()?.getAttribute("content") || "";
+const isOnAdminLoginPage = () => window.location.pathname === "/admin/login";
 
 const adminApi = axios.create({
     baseURL: "/admin/api",
@@ -42,6 +43,10 @@ adminApi.interceptors.response.use(
         // On 401 (session expired) redirect to admin login so the user can
         // re-authenticate, preserving the current path as the redirect target.
         if (error.response?.status === 401) {
+            if (typeof window !== "undefined" && isOnAdminLoginPage()) {
+                return Promise.reject(error);
+            }
+
             const returnPath = encodeURIComponent(
                 window.location.pathname + window.location.search,
             );
@@ -96,7 +101,12 @@ adminApi.interceptors.response.use(
                     refreshError.response?.status === 401 ||
                     refreshError.response?.status === 403
                 ) {
-                    window.location.href = "/admin/login";
+                    if (
+                        typeof window !== "undefined" &&
+                        !isOnAdminLoginPage()
+                    ) {
+                        window.location.href = "/admin/login";
+                    }
                 }
                 return Promise.reject(refreshError);
             } finally {
