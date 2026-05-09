@@ -109,13 +109,12 @@
 
 <script setup>
 import { ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 
 import adminApi, { setCsrfToken } from "../../router/admin/api";
 import { setAdminUser } from "../../router/admin/auth";
 
 const router = useRouter();
-const route = useRoute();
 
 const email = ref("");
 const password = ref("");
@@ -123,47 +122,6 @@ const remember = ref(false);
 const showPassword = ref(false);
 const error = ref("");
 const loading = ref(false);
-
-function normalizeAdminRedirect(rawRedirect) {
-    if (typeof rawRedirect !== "string" || rawRedirect.trim().length === 0) {
-        return "/dashboard";
-    }
-
-    const value = rawRedirect.trim();
-
-    // Handle absolute URLs safely and only allow same-origin admin targets.
-    if (/^https?:\/\//i.test(value)) {
-        try {
-            const url = new URL(value);
-            if (url.origin !== window.location.origin) {
-                return "/dashboard";
-            }
-
-            const adminBase = "/admin";
-            if (!url.pathname.startsWith(adminBase)) {
-                return "/dashboard";
-            }
-
-            const inAppPath =
-                url.pathname.slice(adminBase.length) || "/dashboard";
-            return `${inAppPath}${url.search || ""}${url.hash || ""}`;
-        } catch {
-            return "/dashboard";
-        }
-    }
-
-    // If redirect contains '/admin/...', convert it to the in-app route path.
-    if (value.startsWith("/admin/")) {
-        return value.slice("/admin".length) || "/dashboard";
-    }
-
-    // Allow in-app absolute paths only.
-    if (value.startsWith("/")) {
-        return value;
-    }
-
-    return "/dashboard";
-}
 
 function getAuthErrorMessage(e) {
     const status = e?.response?.status;
@@ -207,8 +165,7 @@ async function submit() {
 
         setAdminUser(res?.data?.user ?? null);
 
-        const redirect = normalizeAdminRedirect(route.query.redirect);
-        await router.replace(redirect);
+        await router.replace("/dashboard");
     } catch (e) {
         error.value = getAuthErrorMessage(e);
     } finally {

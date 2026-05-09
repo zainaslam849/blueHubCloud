@@ -12,6 +12,12 @@ class AuthController extends Controller
     {
         $user = Auth::guard('admin')->user();
 
+        if (! $user) {
+            return response()->json([
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
         return response()->json([
             'user' => [
                 'id' => $user->id,
@@ -28,6 +34,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
+            'remember' => ['sometimes', 'boolean'],
         ]);
 
         $credentials = [
@@ -35,7 +42,9 @@ class AuthController extends Controller
             'password' => $validated['password'],
         ];
 
-        if (! Auth::guard('admin')->attempt($credentials, false)) {
+        $remember = (bool) ($validated['remember'] ?? false);
+
+        if (! Auth::guard('admin')->attempt($credentials, $remember)) {
             return response()->json([
                 'message' => 'Invalid credentials.',
             ], 422);
@@ -62,6 +71,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role,
             ],
+            'csrf_token' => csrf_token(),
         ]);
     }
 

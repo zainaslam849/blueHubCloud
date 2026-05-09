@@ -6,7 +6,7 @@ const router = createRouter({
     routes: [
         {
             path: "/",
-            redirect: { name: "admin.login" },
+            redirect: { name: "admin.dashboard" },
         },
         {
             path: "/login",
@@ -121,6 +121,17 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to) => {
+    if (to.name === "admin.login") {
+        const shouldForceCheck = getAdminAccess() === "unknown";
+        const user = await getAdminUser(shouldForceCheck);
+
+        if (user) {
+            return { name: "admin.dashboard" };
+        }
+
+        return true;
+    }
+
     const isPublic = Boolean(to.meta?.public);
 
     if (isPublic) {
