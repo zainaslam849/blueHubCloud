@@ -4,6 +4,18 @@ const tokenEl = () => document.querySelector('meta[name="csrf-token"]');
 const getCsrfToken = () => tokenEl()?.getAttribute("content") || "";
 const isOnAdminLoginPage = () => window.location.pathname === "/admin/login";
 
+const redirectToAdminLogin = () => {
+    if (typeof window === "undefined" || isOnAdminLoginPage()) {
+        return;
+    }
+
+    const returnPath = encodeURIComponent(
+        window.location.pathname + window.location.search,
+    );
+
+    window.location.assign(`/admin/login?redirect=${returnPath}`);
+};
+
 const adminApi = axios.create({
     baseURL: "/admin/api",
     withCredentials: true,
@@ -43,14 +55,7 @@ adminApi.interceptors.response.use(
         // On 401 (session expired) redirect to admin login so the user can
         // re-authenticate, preserving the current path as the redirect target.
         if (error.response?.status === 401) {
-            if (typeof window !== "undefined" && isOnAdminLoginPage()) {
-                return Promise.reject(error);
-            }
-
-            const returnPath = encodeURIComponent(
-                window.location.pathname + window.location.search,
-            );
-            window.location.href = `/admin/login?redirect=${returnPath}`;
+            redirectToAdminLogin();
             return Promise.reject(error);
         }
 
@@ -101,12 +106,7 @@ adminApi.interceptors.response.use(
                     refreshError.response?.status === 401 ||
                     refreshError.response?.status === 403
                 ) {
-                    if (
-                        typeof window !== "undefined" &&
-                        !isOnAdminLoginPage()
-                    ) {
-                        window.location.href = "/admin/login";
-                    }
+                    redirectToAdminLogin();
                 }
                 return Promise.reject(refreshError);
             } finally {
