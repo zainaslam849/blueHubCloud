@@ -39,6 +39,16 @@ adminApi.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
+        // On 401 (session expired) redirect to admin login so the user can
+        // re-authenticate, preserving the current path as the redirect target.
+        if (error.response?.status === 401) {
+            const returnPath = encodeURIComponent(
+                window.location.pathname + window.location.search,
+            );
+            window.location.href = `/admin/login?redirect=${returnPath}`;
+            return Promise.reject(error);
+        }
+
         // Check if error is 419 (CSRF token mismatch)
         if (error.response?.status === 419 && !originalRequest._retry) {
             if (isRefreshingToken) {

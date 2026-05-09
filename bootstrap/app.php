@@ -12,6 +12,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Trust all reverse proxies so X-Forwarded-Proto/Host/IP headers are
+        // respected and $request->fullUrl() returns the correct HTTPS scheme.
+        // Without this, session redirects generated server-side use http://
+        // while the browser is on https://, causing mixed-content blocks.
+        $middleware->trustProxies(
+            at: '*',
+            headers: \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR
+                | \Illuminate\Http\Request::HEADER_X_FORWARDED_HOST
+                | \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT
+                | \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO,
+        );
+
         $middleware->alias([
             'pbx.apiKey' => \App\Http\Middleware\ApiKeyAuth::class,
             'pbx_auth' => \App\Http\Middleware\ApiKeyAuth::class,
