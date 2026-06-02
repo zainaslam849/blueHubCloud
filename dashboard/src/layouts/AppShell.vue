@@ -12,10 +12,26 @@ import { http } from "../api/http";
 const route = useRoute();
 const router = useRouter();
 
-const navOpen = ref(false);
+const navOpen      = ref(false);
 const navCollapsed = ref(false);
-const logoUrl = ref("");
-const appName = ref("BlueHub");
+const logoUrl      = ref("");      // default / fallback
+const logoLightUrl = ref("");      // light logo (for dark backgrounds)
+const logoDarkUrl  = ref("");      // dark logo (for light backgrounds)
+const appName      = ref("BlueHub");
+
+// Resolve correct URL based on current document theme
+function fixUrl(url: string) {
+    return url.replace(/([^:])\/\/+/g, "$1/");
+}
+function resolvedLogoUrl(): string {
+    const isDark = document.documentElement.dataset.theme === "dark";
+    if (isDark && logoLightUrl.value) return logoLightUrl.value;
+    if (!isDark && logoDarkUrl.value)  return logoDarkUrl.value;
+    return logoUrl.value; // fallback
+}
+
+// Reactive logo that updates when theme changes (via MutationObserver)
+const activeLogoUrl = ref("");
 
 provideToasts();
 
@@ -23,14 +39,20 @@ onMounted(async () => {
     try {
         const res = await http.get("/api/v1/settings/branding");
         const data = res.data?.data || {};
-        if (data.logo_url) {
-            // Normalise any double-slash outside the protocol (http://host//path → http://host/path)
-            logoUrl.value = data.logo_url.replace(/([^:])\/\/+/g, "$1/");
-        }
-        if (data.site_name) appName.value = data.site_name;
+        if (data.logo_url)       logoUrl.value      = fixUrl(data.logo_url);
+        if (data.logo_light_url) logoLightUrl.value = fixUrl(data.logo_light_url);
+        if (data.logo_dark_url)  logoDarkUrl.value  = fixUrl(data.logo_dark_url);
+        if (data.site_name)      appName.value      = data.site_name;
+        activeLogoUrl.value = resolvedLogoUrl();
     } catch {
         // use defaults
     }
+
+    // Watch for theme changes on <html data-theme>
+    const observer = new MutationObserver(() => {
+        activeLogoUrl.value = resolvedLogoUrl();
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 });
 
 const pageTitle = computed(() => {
@@ -65,7 +87,7 @@ async function handleSignOut() {
         <SidebarNav
             :open="navOpen"
             :collapsed="navCollapsed"
-            :logo-url="logoUrl"
+            :logo-url="activeLogoUrl"
             :app-name="appName"
             @navigate="closeNav"
             @toggle-collapsed="toggleCollapsed"

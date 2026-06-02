@@ -72,37 +72,57 @@
                             </p>
                         </div>
 
-                        <div class="settings-upload-grid">
-                            <div class="settings-upload">
+                        <div class="settings-upload-grid settings-upload-grid--logos">
+
+                            <!-- Light logo (for dark backgrounds / dark theme) -->
+                            <div class="settings-upload settings-upload--dark-bg">
+                                <div class="settings-upload__label--light">
+                                    <span class="settings-upload__badge settings-upload__badge--moon">🌙 Dark theme</span>
+                                    Light logo
+                                    <span class="settings-upload__hint">(white/light version for dark backgrounds)</span>
+                                </div>
+                                <label class="settings-upload__drop settings-upload__drop--dark">
+                                    <input
+                                        class="settings-upload__input"
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                                        @change="onLogoLightChange"
+                                    />
+                                    <span class="settings-upload__title settings-upload__title--light">Drop file or browse</span>
+                                    <span class="settings-upload__meta settings-upload__meta--light">PNG, SVG, WEBP · Max 2MB</span>
+                                </label>
+                                <div class="settings-upload__actions settings-upload__actions--light">
+                                    <span class="settings-upload__filename--light">{{ logoLightFileName }}</span>
+                                    <BaseButton v-if="logoLightPreviewUrl" variant="ghost" size="sm" @click="clearLogoLight">Remove</BaseButton>
+                                </div>
+                                <div v-if="logoLightPreviewUrl" class="settings-upload__preview settings-upload__preview--dark">
+                                    <img :src="logoLightPreviewUrl" alt="Light logo preview" />
+                                </div>
+                            </div>
+
+                            <!-- Dark logo (for light backgrounds / light theme) -->
+                            <div class="settings-upload settings-upload--light-bg">
                                 <div class="settings-upload__label">
-                                    Admin logo
+                                    <span class="settings-upload__badge settings-upload__badge--sun">☀️ Light theme</span>
+                                    Dark logo
+                                    <span class="settings-upload__hint">(dark/coloured version for light backgrounds)</span>
                                 </div>
                                 <label class="settings-upload__drop">
                                     <input
                                         class="settings-upload__input"
                                         type="file"
                                         accept="image/png,image/jpeg,image/svg+xml,image/webp"
-                                        @change="onLogoChange"
+                                        @change="onLogoDarkChange"
                                     />
-                                    <span class="settings-upload__title">
-                                        Drop file or browse
-                                    </span>
-                                    <span class="settings-upload__meta">
-                                        PNG, SVG, WEBP · Max 2MB
-                                    </span>
+                                    <span class="settings-upload__title">Drop file or browse</span>
+                                    <span class="settings-upload__meta">PNG, SVG, WEBP · Max 2MB</span>
                                 </label>
                                 <div class="settings-upload__actions">
-                                    <span class="settings-upload__filename">
-                                        {{ logoFileName }}
-                                    </span>
-                                    <BaseButton
-                                        v-if="logoPreviewUrl"
-                                        variant="ghost"
-                                        size="sm"
-                                        @click="clearLogo"
-                                    >
-                                        Remove
-                                    </BaseButton>
+                                    <span class="settings-upload__filename">{{ logoDarkFileName }}</span>
+                                    <BaseButton v-if="logoDarkPreviewUrl" variant="ghost" size="sm" @click="clearLogoDark">Remove</BaseButton>
+                                </div>
+                                <div v-if="logoDarkPreviewUrl" class="settings-upload__preview settings-upload__preview--light">
+                                    <img :src="logoDarkPreviewUrl" alt="Dark logo preview" />
                                 </div>
                             </div>
 
@@ -316,12 +336,18 @@ import { BaseButton } from "../../components/admin/base";
 import adminApi from "../../router/admin/api";
 
 const siteName = ref("");
-const logoFile = ref(null);
-const faviconFile = ref(null);
-const logoPreviewUrl = ref("");
-const faviconPreviewUrl = ref("");
-const logoClear = ref(false);
-const faviconClear = ref(false);
+const logoFile       = ref(null);
+const logoLightFile  = ref(null);
+const logoDarkFile   = ref(null);
+const faviconFile    = ref(null);
+const logoPreviewUrl      = ref("");
+const logoLightPreviewUrl = ref("");
+const logoDarkPreviewUrl  = ref("");
+const faviconPreviewUrl   = ref("");
+const logoClear      = ref(false);
+const logoLightClear = ref(false);
+const logoDarkClear  = ref(false);
+const faviconClear   = ref(false);
 
 const saving = ref(false);
 const settingsError = ref("");
@@ -338,6 +364,16 @@ const passwordSuccess = ref(false);
 const logoFileName = computed(() => {
     if (logoFile.value?.name) return logoFile.value.name;
     if (logoPreviewUrl.value) return "Current logo";
+    return "No file selected";
+});
+const logoLightFileName = computed(() => {
+    if (logoLightFile.value?.name) return logoLightFile.value.name;
+    if (logoLightPreviewUrl.value) return "Current light logo";
+    return "No file selected";
+});
+const logoDarkFileName = computed(() => {
+    if (logoDarkFile.value?.name) return logoDarkFile.value.name;
+    if (logoDarkPreviewUrl.value) return "Current dark logo";
     return "No file selected";
 });
 
@@ -360,9 +396,11 @@ async function loadSettings() {
     try {
         const res = await adminApi.get("/settings");
         const data = res?.data?.data || {};
-        siteName.value = data.site_name ?? "";
-        logoPreviewUrl.value = data.admin_logo_url ?? "";
-        faviconPreviewUrl.value = data.admin_favicon_url ?? "";
+        siteName.value             = data.site_name ?? "";
+        logoPreviewUrl.value      = data.admin_logo_url ?? "";
+        logoLightPreviewUrl.value = data.admin_logo_light_url ?? "";
+        logoDarkPreviewUrl.value  = data.admin_logo_dark_url ?? "";
+        faviconPreviewUrl.value   = data.admin_favicon_url ?? "";
     } catch (e) {
         settingsError.value =
             e?.response?.data?.message || "Failed to load settings.";
@@ -382,6 +420,20 @@ function onLogoChange(event) {
     revokePreview(logoPreviewUrl.value);
     logoPreviewUrl.value = file ? URL.createObjectURL(file) : "";
 }
+function onLogoLightChange(event) {
+    const file = event?.target?.files?.[0] || null;
+    logoLightFile.value = file;
+    logoLightClear.value = false;
+    revokePreview(logoLightPreviewUrl.value);
+    logoLightPreviewUrl.value = file ? URL.createObjectURL(file) : "";
+}
+function onLogoDarkChange(event) {
+    const file = event?.target?.files?.[0] || null;
+    logoDarkFile.value = file;
+    logoDarkClear.value = false;
+    revokePreview(logoDarkPreviewUrl.value);
+    logoDarkPreviewUrl.value = file ? URL.createObjectURL(file) : "";
+}
 
 function onFaviconChange(event) {
     const file = event?.target?.files?.[0] || null;
@@ -396,6 +448,18 @@ function clearLogo() {
     logoFile.value = null;
     logoPreviewUrl.value = "";
     logoClear.value = true;
+}
+function clearLogoLight() {
+    revokePreview(logoLightPreviewUrl.value);
+    logoLightFile.value = null;
+    logoLightPreviewUrl.value = "";
+    logoLightClear.value = true;
+}
+function clearLogoDark() {
+    revokePreview(logoDarkPreviewUrl.value);
+    logoDarkFile.value = null;
+    logoDarkPreviewUrl.value = "";
+    logoDarkClear.value = true;
 }
 
 function clearFavicon() {
@@ -414,18 +478,14 @@ async function saveSettings() {
     try {
         const formData = new FormData();
         formData.append("site_name", siteName.value || "");
-        if (logoFile.value) {
-            formData.append("admin_logo", logoFile.value);
-        }
-        if (faviconFile.value) {
-            formData.append("admin_favicon", faviconFile.value);
-        }
-        if (logoClear.value) {
-            formData.append("admin_logo_clear", "1");
-        }
-        if (faviconClear.value) {
-            formData.append("admin_favicon_clear", "1");
-        }
+        if (logoFile.value)      formData.append("admin_logo",             logoFile.value);
+        if (logoLightFile.value) formData.append("admin_logo_light",       logoLightFile.value);
+        if (logoDarkFile.value)  formData.append("admin_logo_dark",        logoDarkFile.value);
+        if (faviconFile.value)   formData.append("admin_favicon",          faviconFile.value);
+        if (logoClear.value)      formData.append("admin_logo_clear",       "1");
+        if (logoLightClear.value) formData.append("admin_logo_light_clear", "1");
+        if (logoDarkClear.value)  formData.append("admin_logo_dark_clear",  "1");
+        if (faviconClear.value)   formData.append("admin_favicon_clear",    "1");
 
         const res = await adminApi.post("/settings", formData, {
             headers: { "Content-Type": "multipart/form-data" },
@@ -435,10 +495,15 @@ async function saveSettings() {
         logoFile.value = null;
         faviconFile.value = null;
         revokePreview(logoPreviewUrl.value);
+        revokePreview(logoLightPreviewUrl.value);
+        revokePreview(logoDarkPreviewUrl.value);
         revokePreview(faviconPreviewUrl.value);
-        logoPreviewUrl.value = data.admin_logo_url || "";
-        faviconPreviewUrl.value = data.admin_favicon_url || "";
-        logoClear.value = false;
+        logoFile.value = null; logoLightFile.value = null; logoDarkFile.value = null;
+        logoPreviewUrl.value      = data.admin_logo_url       || "";
+        logoLightPreviewUrl.value = data.admin_logo_light_url || "";
+        logoDarkPreviewUrl.value  = data.admin_logo_dark_url  || "";
+        faviconPreviewUrl.value   = data.admin_favicon_url    || "";
+        logoClear.value = false; logoLightClear.value = false; logoDarkClear.value = false;
         faviconClear.value = false;
         settingsSuccess.value = true;
 
@@ -718,6 +783,125 @@ onBeforeUnmount(() => {
     border-radius: 16px;
     border: 1px solid var(--border-soft);
     background: var(--bg-surface-2);
+}
+
+/* Logo grid — 2 equal columns */
+.settings-upload-grid--logos {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* Dark background upload box (for light/white logo) */
+.settings-upload--dark-bg {
+    background: #12172a;
+    border-color: rgba(255,255,255,.15);
+}
+.settings-upload--light-bg {
+    background: #f5f7fb;
+    border-color: rgba(0,0,0,.12);
+    color: #0b1220;
+}
+
+/* Force ALL text inside the light box to be dark regardless of theme */
+.settings-upload--light-bg .settings-upload__label,
+.settings-upload--light-bg .settings-upload__label * { color: #0b1220 !important; }
+.settings-upload--light-bg .settings-upload__hint   { color: rgba(0,0,0,.55) !important; opacity: 1; }
+.settings-upload--light-bg .settings-upload__title  { color: #0b1220 !important; }
+.settings-upload--light-bg .settings-upload__meta   { color: rgba(0,0,0,.45) !important; }
+.settings-upload--light-bg .settings-upload__filename { color: rgba(0,0,0,.55) !important; }
+.settings-upload--light-bg .settings-upload__actions { color: rgba(0,0,0,.55); }
+.settings-upload--light-bg .settings-upload__drop {
+    border-color: rgba(0,0,0,.18) !important;
+    background: rgba(0,0,0,.03) !important;
+}
+.settings-upload--light-bg .settings-upload__drop:hover {
+    border-color: rgba(0,0,0,.35) !important;
+    background: rgba(0,0,0,.06) !important;
+}
+
+/* Labels inside dark box must be light */
+.settings-upload__label--light {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: rgba(255,255,255,.9);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.settings-upload__label--light .settings-upload__hint {
+    color: rgba(255,255,255,.5);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11px;
+    margin-left: 0;
+}
+
+/* Drop zone inside dark box */
+.settings-upload__drop--dark {
+    border-color: rgba(255,255,255,.2) !important;
+    background: rgba(255,255,255,.04) !important;
+}
+.settings-upload__drop--dark:hover {
+    border-color: rgba(255,255,255,.45) !important;
+    background: rgba(255,255,255,.08) !important;
+}
+.settings-upload__title--light { color: rgba(255,255,255,.85) !important; }
+.settings-upload__meta--light  { color: rgba(255,255,255,.45) !important; }
+
+/* Actions row inside dark box */
+.settings-upload__actions--light { color: rgba(255,255,255,.7); }
+.settings-upload__filename--light {
+    font-size: 12px;
+    color: rgba(255,255,255,.6);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Theme badges */
+.settings-upload__badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-bottom: 4px;
+    width: fit-content;
+}
+.settings-upload__badge--moon {
+    background: rgba(139,92,246,.2);
+    color: #a78bfa;
+    border: 1px solid rgba(139,92,246,.3);
+}
+.settings-upload__badge--sun {
+    background: rgba(245,158,11,.12);
+    color: #d97706;
+    border: 1px solid rgba(245,158,11,.25);
+}
+
+.settings-upload__hint {
+    font-size: 11px;
+    font-weight: 400;
+    opacity: .65;
+    margin-left: 4px;
+}
+
+.settings-upload__preview {
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60px;
+}
+.settings-upload__preview--dark  { background: #060a17; border: 1px solid rgba(255,255,255,.1); }
+.settings-upload__preview--light { background: #ffffff; border: 1px solid rgba(0,0,0,.1); }
+.settings-upload__preview img {
+    max-height: 48px;
+    max-width: 100%;
+    object-fit: contain;
 }
 
 .settings-upload__label {

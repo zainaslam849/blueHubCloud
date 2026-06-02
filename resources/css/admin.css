@@ -1482,6 +1482,18 @@ body.admin-body {
     z-index: 1;
 }
 
+.admin-auth__brand {
+    margin-bottom: 8px;
+}
+
+.admin-auth__logo {
+    height: 52px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
+    display: block;
+}
+
 .admin-auth__kicker {
     margin: 0;
     font-size: 12px;

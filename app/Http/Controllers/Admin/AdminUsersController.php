@@ -64,6 +64,7 @@ class AdminUsersController extends Controller
             ->findOrFail($id);
 
         $purchases = \App\Models\PlanPurchase::where('user_id', $id)
+            ->whereIn('status', ['completed', 'failed', 'refunded'])
             ->with('plan:id,name,minute_limit')
             ->orderByDesc('created_at')
             ->get()

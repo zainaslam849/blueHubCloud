@@ -21,7 +21,7 @@
             :items="navItems"
             :collapsed="sidebarCollapsed"
             :app-name="appName"
-            :logo-url="logoUrl"
+            :logo-url="activeLogoUrl"
             @toggle-collapsed="toggleSidebar"
         />
 
@@ -169,10 +169,21 @@ const pageTitle = computed(() => {
     return "Dashboard";
 });
 
-const appName = ref("BlueHubCloud");
-const logoUrl = ref("");
-const faviconUrl = ref("");
+const appName      = ref("BlueHubCloud");
+const logoUrl      = ref("");
+const logoLightUrl = ref("");
+const logoDarkUrl  = ref("");
+const faviconUrl   = ref("");
 let brandingRequestId = 0;
+
+// Reactive logo based on current admin theme
+const activeLogoUrl = ref("");
+function refreshActiveLogo() {
+    const isDark = document.documentElement.dataset.theme === "dark";
+    if (isDark && logoLightUrl.value) { activeLogoUrl.value = logoLightUrl.value; return; }
+    if (!isDark && logoDarkUrl.value) { activeLogoUrl.value = logoDarkUrl.value;  return; }
+    activeLogoUrl.value = logoUrl.value;
+}
 
 function normalizeAssetUrl(value) {
     if (!value || typeof value !== "string") {
@@ -241,11 +252,15 @@ async function applyBrandingSettings(data) {
 
     appName.value = data.site_name || appName.value || "BlueHubCloud";
 
-    const normalizedLogo = normalizeAssetUrl(data.admin_logo_url);
-    const normalizedFavicon = normalizeAssetUrl(data.admin_favicon_url);
+    const normalizedLogo      = normalizeAssetUrl(data.admin_logo_url);
+    const normalizedLogoLight = normalizeAssetUrl(data.admin_logo_light_url);
+    const normalizedLogoDark  = normalizeAssetUrl(data.admin_logo_dark_url);
+    const normalizedFavicon   = normalizeAssetUrl(data.admin_favicon_url);
 
-    const [safeLogoUrl, safeFaviconUrl] = await Promise.all([
+    const [safeLogoUrl, safeLogoLightUrl, safeLogoDarkUrl, safeFaviconUrl] = await Promise.all([
         verifyAssetUrl(normalizedLogo),
+        verifyAssetUrl(normalizedLogoLight),
+        verifyAssetUrl(normalizedLogoDark),
         verifyAssetUrl(normalizedFavicon),
     ]);
 
@@ -253,8 +268,11 @@ async function applyBrandingSettings(data) {
         return;
     }
 
-    logoUrl.value = safeLogoUrl;
-    faviconUrl.value = safeFaviconUrl;
+    logoUrl.value      = safeLogoUrl;
+    logoLightUrl.value = safeLogoLightUrl;
+    logoDarkUrl.value  = safeLogoDarkUrl;
+    faviconUrl.value   = safeFaviconUrl;
+    refreshActiveLogo();
     applyBranding();
 }
 
@@ -276,6 +294,10 @@ async function handleSettingsUpdated(event) {
 onMounted(() => {
     loadSettings();
     window.addEventListener("admin-settings-updated", handleSettingsUpdated);
+
+    // Watch theme changes to swap logo variant
+    const themeObserver = new MutationObserver(refreshActiveLogo);
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
     // Router loading bar
     removeBeforeGuard = router.beforeEach((to, from) => {

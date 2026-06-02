@@ -3,6 +3,9 @@ import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { login as apiLogin } from "../api/auth";
 import { auth } from "../composables/useAuth";
+import { useBranding } from "../composables/useBranding";
+
+const { siteName, activeLogo } = useBranding();
 
 const router = useRouter();
 const route = useRoute();
@@ -59,9 +62,11 @@ async function onSubmit() {
         <div class="authCard">
             <header class="authHeader">
                 <div class="brandLine">
-                    <div class="brandMark" aria-hidden="true"></div>
-                    <div>
-                        <div class="brandName">BlueHub</div>
+                    <div class="brandMark" :class="{ 'brandMark--hasLogo': !!activeLogo }" aria-hidden="true">
+                        <img v-if="activeLogo" :src="activeLogo" :alt="siteName || 'Logo'" class="brandLogo" />
+                    </div>
+                    <div v-if="!activeLogo">
+                        <div class="brandName">{{ siteName || 'BlueHub' }}</div>
                         <div class="brandSub">SaaS Reporting</div>
                     </div>
                 </div>
@@ -156,6 +161,26 @@ async function onSubmit() {
     border-radius: 12px;
     border: 1px solid var(--border);
     background: var(--surface-2);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.brandMark--hasLogo {
+    width: auto;
+    height: 44px;
+    min-width: 44px;
+    max-width: 160px;
+    background: transparent;
+    border: none;
+}
+.brandLogo {
+    height: 100%;
+    width: auto;
+    max-width: 160px;
+    object-fit: contain;
+    display: block;
 }
 
 .brandName {

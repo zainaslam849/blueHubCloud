@@ -237,20 +237,19 @@ Route::prefix('api/v1')->group(function () {
     // Public branding – logo/name for the user SPA
     Route::get('/settings/branding', function () {
         $settings = \App\Models\AppSetting::query()->first();
-        $rawLogo = $settings?->admin_logo_url;
-        $logoUrl = null;
-        if ($rawLogo) {
-            if (str_starts_with($rawLogo, 'http')) {
-                $logoUrl = $rawLogo;
-            } else {
-                // Strip any leading slash so asset() doesn't produce a double-slash URL
-                $logoUrl = asset(ltrim($rawLogo, '/'));
-            }
-        }
+
+        $resolveUrl = function (?string $raw): ?string {
+            if (!$raw) return null;
+            if (str_starts_with($raw, 'http')) return $raw;
+            return asset(ltrim($raw, '/'));
+        };
+
         return response()->json([
             'data' => [
-                'site_name' => $settings?->site_name ?? config('app.name'),
-                'logo_url'  => $logoUrl,
+                'site_name'      => $settings?->site_name ?? config('app.name'),
+                'logo_url'       => $resolveUrl($settings?->admin_logo_url),
+                'logo_light_url' => $resolveUrl($settings?->admin_logo_light_url),
+                'logo_dark_url'  => $resolveUrl($settings?->admin_logo_dark_url),
             ],
         ]);
     });

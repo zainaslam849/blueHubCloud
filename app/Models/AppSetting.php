@@ -11,6 +11,8 @@ class AppSetting extends Model
     protected $fillable = [
         'site_name',
         'admin_logo_url',
+        'admin_logo_light_url',
+        'admin_logo_dark_url',
         'admin_favicon_url',
         'smtp_host',
         'smtp_port',

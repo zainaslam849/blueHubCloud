@@ -26,13 +26,17 @@ class AdminSettingsController extends Controller
     public function show(): JsonResponse
     {
         $settings = AppSetting::query()->first();
-        $adminLogoUrl = $this->sanitizeAssetUrl($settings?->admin_logo_url);
-        $adminFaviconUrl = $this->sanitizeAssetUrl($settings?->admin_favicon_url);
+        $adminLogoUrl      = $this->sanitizeAssetUrl($settings?->admin_logo_url);
+        $adminLogoLightUrl = $this->sanitizeAssetUrl($settings?->admin_logo_light_url);
+        $adminLogoDarkUrl  = $this->sanitizeAssetUrl($settings?->admin_logo_dark_url);
+        $adminFaviconUrl   = $this->sanitizeAssetUrl($settings?->admin_favicon_url);
 
         return response()->json([
             'data' => [
                 'site_name'                 => $settings?->site_name,
                 'admin_logo_url'            => $adminLogoUrl,
+                'admin_logo_light_url'      => $adminLogoLightUrl,
+                'admin_logo_dark_url'       => $adminLogoDarkUrl,
                 'admin_favicon_url'         => $adminFaviconUrl,
                 'smtp_host'                 => $settings?->smtp_host,
                 'smtp_port'                 => $settings?->smtp_port,
@@ -171,6 +175,14 @@ class AdminSettingsController extends Controller
             $this->deleteStoredFile($settings->admin_logo_url);
             $settings->admin_logo_url = null;
         }
+        if ($request->boolean('admin_logo_light_clear')) {
+            $this->deleteStoredFile($settings->admin_logo_light_url);
+            $settings->admin_logo_light_url = null;
+        }
+        if ($request->boolean('admin_logo_dark_clear')) {
+            $this->deleteStoredFile($settings->admin_logo_dark_url);
+            $settings->admin_logo_dark_url = null;
+        }
 
         if ($request->boolean('admin_favicon_clear')) {
             $this->deleteStoredFile($settings->admin_favicon_url);
@@ -181,6 +193,14 @@ class AdminSettingsController extends Controller
             $this->deleteStoredFile($settings->admin_logo_url);
             $settings->admin_logo_url = $this->storeAssetAndGetUrl($request, 'admin_logo');
         }
+        if ($request->hasFile('admin_logo_light')) {
+            $this->deleteStoredFile($settings->admin_logo_light_url);
+            $settings->admin_logo_light_url = $this->storeAssetAndGetUrl($request, 'admin_logo_light');
+        }
+        if ($request->hasFile('admin_logo_dark')) {
+            $this->deleteStoredFile($settings->admin_logo_dark_url);
+            $settings->admin_logo_dark_url = $this->storeAssetAndGetUrl($request, 'admin_logo_dark');
+        }
 
         if ($request->hasFile('admin_favicon')) {
             $this->deleteStoredFile($settings->admin_favicon_url);
@@ -189,14 +209,13 @@ class AdminSettingsController extends Controller
 
         $settings->save();
 
-        $adminLogoUrl = $this->sanitizeAssetUrl($settings->admin_logo_url);
-        $adminFaviconUrl = $this->sanitizeAssetUrl($settings->admin_favicon_url);
-
         return response()->json([
             'data' => [
-                'site_name' => $settings->site_name,
-                'admin_logo_url' => $adminLogoUrl,
-                'admin_favicon_url' => $adminFaviconUrl,
+                'site_name'            => $settings->site_name,
+                'admin_logo_url'       => $this->sanitizeAssetUrl($settings->admin_logo_url),
+                'admin_logo_light_url' => $this->sanitizeAssetUrl($settings->admin_logo_light_url),
+                'admin_logo_dark_url'  => $this->sanitizeAssetUrl($settings->admin_logo_dark_url),
+                'admin_favicon_url'    => $this->sanitizeAssetUrl($settings->admin_favicon_url),
             ],
         ]);
     }

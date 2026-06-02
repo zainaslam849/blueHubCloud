@@ -2,6 +2,9 @@
 import { ref, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { register as apiRegister, verifyEmail as apiVerify, resendVerification } from "../api/auth";
+import { useBranding } from "../composables/useBranding";
+
+const { siteName, activeLogo } = useBranding();
 import { auth } from "../composables/useAuth";
 
 const router = useRouter();
@@ -100,9 +103,11 @@ async function onResend() {
         <div class="authCard">
             <header class="authHeader">
                 <div class="brandLine">
-                    <div class="brandMark" aria-hidden="true"></div>
-                    <div>
-                        <div class="brandName">BlueHub</div>
+                    <div class="brandMark" :class="{ 'brandMark--hasLogo': !!activeLogo }" aria-hidden="true">
+                        <img v-if="activeLogo" :src="activeLogo" :alt="siteName || 'Logo'" class="brandLogo" />
+                    </div>
+                    <div v-if="!activeLogo">
+                        <div class="brandName">{{ siteName || 'BlueHub' }}</div>
                         <div class="brandSub">SaaS Reporting</div>
                     </div>
                 </div>
@@ -228,7 +233,15 @@ async function onResend() {
     border-radius: 12px;
     border: 1px solid var(--border);
     background: var(--surface-2);
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
 }
+.brandMark--hasLogo {
+    width: auto; height: 44px; min-width: 44px; max-width: 160px;
+    background: transparent; border: none;
+}
+.brandLogo { height: 100%; width: auto; max-width: 160px; object-fit: contain; display: block; }
 .brandName { font-weight: 800; }
 .brandSub { opacity: 0.7; font-size: 0.95rem; }
 

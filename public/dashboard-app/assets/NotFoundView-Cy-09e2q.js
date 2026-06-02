@@ -1,1 +1,0 @@
-import{M as e,S as t,u as n,y as r}from"./main-CEzaJZvR.js";var i={},a={style:{padding:`24px`,"max-width":`960px`,margin:`0 auto`}};function o(n,i){return e(),t(`main`,a,[...i[0]||=[r(`h1`,null,`Not Found`,-1),r(`p`,null,`The page you requested doesn’t exist.`,-1)]])}var s=n(i,[[`render`,o]]);export{s as default};

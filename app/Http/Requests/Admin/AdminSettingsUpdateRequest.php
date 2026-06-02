@@ -15,10 +15,14 @@ class AdminSettingsUpdateRequest extends FormRequest
     {
         return [
             'site_name' => ['nullable', 'string', 'max:120'],
-            'admin_logo' => ['nullable', 'file', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
-            'admin_favicon' => ['nullable', 'file', 'mimes:png,ico,svg', 'max:1024'],
-            'admin_logo_clear' => ['nullable', 'boolean'],
-            'admin_favicon_clear' => ['nullable', 'boolean'],
+            'admin_logo'              => ['nullable', 'file', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
+            'admin_logo_light'        => ['nullable', 'file', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
+            'admin_logo_dark'         => ['nullable', 'file', 'mimes:png,jpg,jpeg,svg,webp', 'max:2048'],
+            'admin_favicon'           => ['nullable', 'file', 'mimes:png,ico,svg', 'max:1024'],
+            'admin_logo_clear'        => ['nullable', 'boolean'],
+            'admin_logo_light_clear'  => ['nullable', 'boolean'],
+            'admin_logo_dark_clear'   => ['nullable', 'boolean'],
+            'admin_favicon_clear'     => ['nullable', 'boolean'],
         ];
     }
 }

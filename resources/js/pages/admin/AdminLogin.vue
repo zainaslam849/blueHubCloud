@@ -2,7 +2,10 @@
     <div class="admin-auth">
         <section class="admin-auth__card admin-auth__card--enterprise">
             <header class="admin-auth__header">
-                <p class="admin-auth__kicker">BlueHubCloud</p>
+                <div class="admin-auth__brand">
+                    <img v-if="activeLogo" :src="activeLogo" :alt="siteName" class="admin-auth__logo" />
+                    <span v-else class="admin-auth__kicker">{{ siteName }}</span>
+                </div>
                 <h1 class="admin-auth__title">Admin sign in</h1>
                 <p class="admin-auth__hint">
                     Use an admin account to continue.
@@ -108,11 +111,51 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import adminApi, { setCsrfToken } from "../../router/admin/api";
 import { setAdminUser } from "../../router/admin/auth";
+import {
+    applyResolvedTheme, getThemePreference, resolveTheme,
+} from "../../admin/theme";
+
+// Apply theme immediately on the login page too
+applyResolvedTheme(resolveTheme(getThemePreference()));
+
+// Branding
+const activeLogo = ref("");
+const siteName   = ref("BlueHubCloud");
+
+function pickLogo(data) {
+    const isDark = document.documentElement.dataset.theme === "dark";
+    if (isDark && data.admin_logo_light_url) return normalizeAdminUrl(data.admin_logo_light_url);
+    if (!isDark && data.admin_logo_dark_url) return normalizeAdminUrl(data.admin_logo_dark_url);
+    return normalizeAdminUrl(data.admin_logo_url);
+}
+function normalizeAdminUrl(url) {
+    if (!url) return "";
+    return url.replace(/([^:])\/\/+/g, "$1/");
+}
+
+let _brandingData = null;
+let _observer = null;
+
+onMounted(async () => {
+    try {
+        const res = await adminApi.get("/settings");
+        _brandingData = res?.data?.data || {};
+        siteName.value = _brandingData.site_name || "BlueHubCloud";
+        activeLogo.value = pickLogo(_brandingData);
+    } catch { /* ignore */ }
+
+    _observer = new MutationObserver(() => {
+        if (_brandingData) activeLogo.value = pickLogo(_brandingData);
+    });
+    _observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+});
+
+onUnmounted(() => { _observer?.disconnect(); });
 
 const router = useRouter();
 
