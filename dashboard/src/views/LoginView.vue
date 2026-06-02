@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { login as apiLogin } from "../api/auth";
 import { auth } from "../composables/useAuth";
 
 const router = useRouter();
@@ -9,22 +10,48 @@ const route = useRoute();
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
+const error = ref<string | null>(null);
+const isSuspended = ref(false);
 
 async function onSubmit() {
+    error.value = null;
+    isSuspended.value = false;
     loading.value = true;
 
     try {
-        // UI-only: replace with Laravel auth later.
-        auth.setToken("demo-token");
+        const user = await apiLogin(email.value, password.value);
+        auth.setUser(user);
         const redirect =
             typeof route.query.redirect === "string"
                 ? route.query.redirect
                 : "/dashboard";
         await router.replace(redirect);
+    } catch (e: unknown) {
+        const resp = (e as { response?: { status?: number; data?: { message?: string; code?: string; email?: string } } })?.response;
+        const status = resp?.status;
+        const code = resp?.data?.code;
+        const message = resp?.data?.message;
+
+        if (code === "account_suspended") {
+            isSuspended.value = true;
+            error.value = message ?? "Your account has been suspended. Please contact support.";
+        } else if (code === "email_not_verified") {
+            // Auto-redirect to the verify step on the register page
+            await router.replace({ name: "register", query: { verify: resp?.data?.email ?? email.value } });
+            return;
+        } else if (status === 422) {
+            error.value = "Invalid email or password.";
+        } else if (status === 403) {
+            error.value = "This account does not have user access.";
+        } else {
+            error.value = "Unable to sign in. Please try again.";
+        }
     } finally {
         loading.value = false;
     }
 }
+
+
 </script>
 
 <template>
@@ -44,6 +71,17 @@ async function onSubmit() {
             </header>
 
             <form class="form" @submit.prevent="onSubmit">
+                <!-- Suspension banner -->
+                <div v-if="isSuspended" class="suspendBanner">
+                    <div class="suspendBanner__icon">🚫</div>
+                    <div class="suspendBanner__body">
+                        <strong>Account Suspended</strong>
+                        <p>{{ error }}</p>
+                    </div>
+                </div>
+                <!-- Generic error -->
+                <div v-else-if="error" class="errorBanner">{{ error }}</div>
+
                 <label class="field">
                     <span>Email</span>
                     <input
@@ -76,7 +114,10 @@ async function onSubmit() {
             </form>
 
             <footer class="foot">
-                <span class="muted">UI-only layout • no backend calls</span>
+                <span class="muted">
+                    Don't have an account?
+                    <router-link :to="{ name: 'register' }">Create one</router-link>
+                </span>
             </footer>
         </div>
     </main>
@@ -146,6 +187,30 @@ async function onSubmit() {
 .input {
     /* global .input */
 }
+
+.errorBanner {
+    background: color-mix(in srgb, var(--error, #e53e3e) 15%, transparent);
+    border: 1px solid var(--error, #e53e3e);
+    border-radius: 8px;
+    padding: var(--space-3) var(--space-4);
+    font-size: 0.9rem;
+    color: var(--error, #e53e3e);
+}
+
+
+.suspendBanner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: color-mix(in srgb, #f97316 12%, transparent);
+    border: 1px solid color-mix(in srgb, #f97316 40%, transparent);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.suspendBanner__icon { font-size: 22px; flex-shrink: 0; line-height: 1; }
+.suspendBanner__body { display: flex; flex-direction: column; gap: 4px; }
+.suspendBanner__body strong { font-size: 0.95rem; color: #ea580c; }
+.suspendBanner__body p { margin: 0; font-size: 0.85rem; color: #c2410c; line-height: 1.5; }
 
 .foot {
     margin-top: var(--space-5);

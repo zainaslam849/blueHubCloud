@@ -305,6 +305,7 @@
                     </div>
                 </div>
             </section>
+
         </div>
     </div>
 </template>
@@ -332,6 +333,7 @@ const newPasswordConfirm = ref("");
 const passwordSaving = ref(false);
 const passwordError = ref("");
 const passwordSuccess = ref(false);
+
 
 const logoFileName = computed(() => {
     if (logoFile.value?.name) return logoFile.value.name;
@@ -484,6 +486,7 @@ async function savePassword() {
         passwordSaving.value = false;
     }
 }
+
 
 onMounted(() => {
     loadSettings();
@@ -696,6 +699,16 @@ onBeforeUnmount(() => {
 .settings-upload-grid {
     display: grid;
     gap: 16px;
+}
+
+.smtp-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 600px) {
+    .smtp-grid { grid-template-columns: 1fr; }
 }
 
 .settings-upload {

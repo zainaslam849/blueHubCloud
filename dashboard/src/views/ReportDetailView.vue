@@ -130,7 +130,7 @@ const goToAiRegeneration = (): void => {
 onMounted(async () => {
     try {
         const response = await http.get(
-            `/admin/api/weekly-call-reports/${reportId.value}`,
+            `/api/v1/reports/${reportId.value}`,
         );
         reportData.value = response.data?.data ?? response.data;
     } catch (err: any) {

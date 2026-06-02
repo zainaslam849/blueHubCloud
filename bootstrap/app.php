@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Exclude Stripe webhook from CSRF verification — Stripe sends raw POST with its own signature
+        $middleware->validateCsrfTokens(except: [
+            'stripe/webhook',
+        ]);
         // Trust all reverse proxies so X-Forwarded-Proto/Host/IP headers are
         // respected and $request->fullUrl() returns the correct HTTPS scheme.
         // Without this, session redirects generated server-side use http://
@@ -29,6 +33,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'pbx_auth' => \App\Http\Middleware\ApiKeyAuth::class,
             'admin' => \App\Http\Middleware\AdminOnly::class,
             'admin.guest' => \App\Http\Middleware\AdminGuestOnly::class,
+            'user' => \App\Http\Middleware\UserOnly::class,
+            'user.guest' => \App\Http\Middleware\UserGuestOnly::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

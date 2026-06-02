@@ -38,6 +38,7 @@ class WeeklyCallReport extends Model
         'error_message',
         'top_extensions',
         'top_call_topics',
+        'minutes_consumed',
     ];
 
     protected $casts = [
@@ -57,6 +58,7 @@ class WeeklyCallReport extends Model
         'avg_call_duration_seconds' => 'integer',
         'ai_incomplete' => 'boolean',
         'ai_incomplete_call_count' => 'integer',
+        'minutes_consumed' => 'integer',
         'metrics' => 'array',
         'top_extensions' => 'array',
         'top_call_topics' => 'array',

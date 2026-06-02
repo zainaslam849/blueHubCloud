@@ -31,9 +31,100 @@ class AdminSettingsController extends Controller
 
         return response()->json([
             'data' => [
-                'site_name' => $settings?->site_name,
-                'admin_logo_url' => $adminLogoUrl,
-                'admin_favicon_url' => $adminFaviconUrl,
+                'site_name'                 => $settings?->site_name,
+                'admin_logo_url'            => $adminLogoUrl,
+                'admin_favicon_url'         => $adminFaviconUrl,
+                'smtp_host'                 => $settings?->smtp_host,
+                'smtp_port'                 => $settings?->smtp_port,
+                'smtp_encryption'           => $settings?->smtp_encryption ?? 'tls',
+                'smtp_username'             => $settings?->smtp_username,
+                'smtp_from_address'         => $settings?->smtp_from_address,
+                'smtp_from_name'            => $settings?->smtp_from_name,
+                'admin_notification_email'  => $settings?->admin_notification_email,
+                // password is not returned for security
+            ],
+        ]);
+    }
+
+    public function updateSmtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'smtp_host'                => ['nullable', 'string', 'max:255'],
+            'smtp_port'                => ['nullable', 'integer', 'min:1', 'max:65535'],
+            'smtp_encryption'          => ['nullable', 'string', 'in:tls,ssl,starttls,'],
+            'smtp_username'            => ['nullable', 'string', 'max:255'],
+            'smtp_password'            => ['nullable', 'string', 'max:255'],
+            'smtp_from_address'        => ['nullable', 'email', 'max:255'],
+            'smtp_from_name'           => ['nullable', 'string', 'max:255'],
+            'admin_notification_email' => ['nullable', 'email', 'max:255'],
+        ]);
+
+        $settings = AppSetting::query()->first() ?? new AppSetting();
+
+        foreach (['smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_username', 'smtp_from_address', 'smtp_from_name', 'admin_notification_email'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $settings->$field = $validated[$field] ?: null;
+            }
+        }
+
+        // Only overwrite password if a new one was submitted
+        if (! empty($validated['smtp_password'])) {
+            $settings->smtp_password = $validated['smtp_password'];
+        }
+
+        $settings->save();
+
+        return response()->json([
+            'message' => 'Email settings saved.',
+            'data' => [
+                'smtp_host'                => $settings->smtp_host,
+                'smtp_port'                => $settings->smtp_port,
+                'smtp_encryption'          => $settings->smtp_encryption,
+                'smtp_username'            => $settings->smtp_username,
+                'smtp_from_address'        => $settings->smtp_from_address,
+                'smtp_from_name'           => $settings->smtp_from_name,
+                'admin_notification_email' => $settings->admin_notification_email,
+            ],
+        ]);
+    }
+
+    public function updateStripe(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'stripe_public_key'     => ['nullable', 'string', 'max:255'],
+            'stripe_secret_key'     => ['nullable', 'string', 'max:500'],
+            'stripe_webhook_secret' => ['nullable', 'string', 'max:500'],
+            'stripe_test_mode'      => ['sometimes', 'boolean'],
+        ]);
+
+        $settings = AppSetting::query()->first() ?? new AppSetting();
+
+        if (array_key_exists('stripe_public_key', $validated)) {
+            $settings->stripe_public_key = $validated['stripe_public_key'] ?: null;
+        }
+        if (! empty($validated['stripe_secret_key'])) {
+            $settings->stripe_secret_key = $validated['stripe_secret_key'];
+        }
+        if (! empty($validated['stripe_webhook_secret'])) {
+            $settings->stripe_webhook_secret = $validated['stripe_webhook_secret'];
+        }
+        if (array_key_exists('stripe_test_mode', $validated)) {
+            $settings->stripe_test_mode = (bool) $validated['stripe_test_mode'];
+        }
+
+        $settings->save();
+
+        return response()->json(['message' => 'Stripe settings saved.']);
+    }
+
+    public function showStripe(): JsonResponse
+    {
+        $settings = AppSetting::query()->first();
+        return response()->json([
+            'data' => [
+                'stripe_public_key' => $settings?->stripe_public_key,
+                'stripe_test_mode'  => $settings?->stripe_test_mode ?? true,
+                // secret keys are never returned
             ],
         ]);
     }

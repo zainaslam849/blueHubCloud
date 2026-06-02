@@ -1,37 +1,54 @@
 <script setup lang="ts">
 import Card from "../components/ui/Card.vue";
 import PageHeader from "../components/ui/PageHeader.vue";
+import { auth } from "../composables/useAuth";
+import { logout as apiLogout } from "../api/auth";
+import { useRouter } from "vue-router";
 
-const profileRows = [
-    { label: "Company", value: "BlueHub" },
-    { label: "Plan", value: "Standard" },
-    { label: "Status", value: "Active" },
-] as const;
+const router = useRouter();
+const user = auth.state;
+
+async function handleLogout() {
+    try {
+        await apiLogout();
+    } finally {
+        auth.logout();
+        await router.push({ name: "login" });
+    }
+}
 </script>
 
 <template>
     <div>
         <PageHeader
             title="Account"
-            description="Account settings layout (UI-only)."
+            description="Your account settings and details."
         />
 
         <section class="grid">
             <Card title="Profile">
                 <div class="kv">
-                    <template v-for="r in profileRows" :key="r.label">
-                        <div class="k">{{ r.label }}</div>
-                        <div class="v">{{ r.value }}</div>
-                    </template>
+                    <div class="k">Name</div>
+                    <div class="v">{{ user.user?.name ?? '—' }}</div>
+
+                    <div class="k">Email</div>
+                    <div class="v">{{ user.user?.email ?? '—' }}</div>
+
+                    <div class="k">Company</div>
+                    <div class="v">{{ user.user?.company_name ?? 'Not assigned yet' }}</div>
+
+                    <div class="k">Role</div>
+                    <div class="v">{{ user.user?.role ?? '—' }}</div>
                 </div>
             </Card>
 
-            <Card title="Security" subtitle="Placeholder">
-                <p class="muted">Password, SSO, and access controls go here.</p>
+            <Card title="Security" subtitle="Session management">
+                <p class="muted">
+                    You are signed in. Click below to sign out of your account.
+                </p>
                 <div class="actions">
-                    <button class="btn" type="button">Reset password</button>
-                    <button class="btn btn--secondary" type="button">
-                        Configure SSO
+                    <button class="btn btn--secondary" type="button" @click="handleLogout">
+                        Sign out
                     </button>
                 </div>
             </Card>
@@ -52,13 +69,8 @@ const profileRows = [
     gap: 10px;
 }
 
-.k {
-    opacity: 0.75;
-}
-
-.v {
-    font-weight: 750;
-}
+.k { opacity: 0.75; }
+.v { font-weight: 750; }
 
 .muted {
     margin: 0;
@@ -73,12 +85,7 @@ const profileRows = [
 }
 
 @media (max-width: 960px) {
-    .grid {
-        grid-template-columns: 1fr;
-    }
-
-    .kv {
-        grid-template-columns: 1fr;
-    }
+    .grid { grid-template-columns: 1fr; }
+    .kv { grid-template-columns: 1fr; }
 }
 </style>

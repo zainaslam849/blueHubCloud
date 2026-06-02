@@ -1,37 +1,53 @@
 import { reactive } from "vue";
+import { me as fetchMe } from "../api/auth";
 
-const STORAGE_TOKEN_KEY = "bhc.token";
+export type UserProfile = {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    company_id: number | null;
+    company_name: string | null;
+};
 
 type AuthState = {
-    token: string | null;
+    user: UserProfile | null;
+    checked: boolean;
 };
 
 const state = reactive<AuthState>({
-    token: localStorage.getItem(STORAGE_TOKEN_KEY),
+    user: null,
+    checked: false,
 });
 
 export const auth = {
     state,
 
     isAuthenticated(): boolean {
-        return Boolean(state.token);
+        return state.user !== null;
     },
 
-    getToken(): string | null {
-        return state.token;
-    },
-
-    setToken(token: string | null): void {
-        state.token = token;
-
-        if (token) {
-            localStorage.setItem(STORAGE_TOKEN_KEY, token);
-        } else {
-            localStorage.removeItem(STORAGE_TOKEN_KEY);
+    /**
+     * Call once on app mount to restore session state after a page refresh.
+     * Silently returns if the session cookie has expired (user stays on login).
+     */
+    async checkSession(): Promise<void> {
+        if (state.checked) return;
+        state.checked = true;
+        try {
+            const user = await fetchMe();
+            state.user = user;
+        } catch {
+            state.user = null;
         }
     },
 
+    setUser(user: UserProfile | null): void {
+        state.user = user;
+        state.checked = true;
+    },
+
     logout(): void {
-        auth.setToken(null);
+        state.user = null;
     },
 };

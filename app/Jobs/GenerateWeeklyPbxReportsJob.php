@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\CompanyMinuteBalance;
 use App\Models\PipelineRun;
 use App\Models\WeeklyCallReport;
 use App\Repositories\AiSettingsRepository;
@@ -260,6 +261,51 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
 
                 $avgDuration = $totalCalls > 0 ? intdiv($totalDuration, $totalCalls) : 0;
 
+                // --- MINUTE GATING ---
+                // Check if the company has enough minutes to generate this report.
+                // If not, park the report as pending_minutes — calls are NOT frozen yet.
+                $minutesRequired = (int) ceil($totalDuration / 60);
+                $balance = CompanyMinuteBalance::where('company_id', $companyId)->first();
+
+                if ($balance === null || $balance->available_minutes < $minutesRequired) {
+                    WeeklyCallReport::query()->updateOrCreate(
+                        [
+                            'company_id' => $companyId,
+                            'company_pbx_account_id' => (int) $weekly['company_pbx_account_id'],
+                            'week_start_date' => $weekStart->toDateString(),
+                        ],
+                        [
+                            'server_id' => $weekly['server_id'] ?? null,
+                            'week_end_date' => $weekEnd->toDateString(),
+                            'reporting_period_start' => $weekStart->toDateString(),
+                            'reporting_period_end' => $weekEnd->toDateString(),
+                            'total_calls' => $totalCalls,
+                            'answered_calls' => (int) $weekly['answered_calls'],
+                            'missed_calls' => (int) $weekly['missed_calls'],
+                            'calls_with_transcription' => (int) $weekly['calls_with_transcription'],
+                            'total_call_duration_seconds' => $totalDuration,
+                            'avg_call_duration_seconds' => $avgDuration,
+                            'status' => 'pending_minutes',
+                            'minutes_consumed' => null,
+                            'generated_at' => null,
+                        ],
+                    );
+
+                    Log::info('Weekly report parked: insufficient minutes', [
+                        'company_id' => $companyId,
+                        'week_start_date' => $weekStart->toDateString(),
+                        'minutes_required' => $minutesRequired,
+                        'available_minutes' => $balance?->available_minutes ?? 0,
+                    ]);
+
+                    continue; // Skip generation; calls remain unfrozen
+                }
+
+                // Atomically deduct minutes (DB-level increment is race-condition safe)
+                CompanyMinuteBalance::where('company_id', $companyId)
+                    ->increment('used_minutes', $minutesRequired);
+                // --- END MINUTE GATING ---
+
                 // Prepare top 10 DIDs by call volume
                 $didCounts = $weekly['did_counts'];
                 arsort($didCounts);
@@ -405,6 +451,7 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         'executive_summary' => $executiveSummary,
                         'status' => 'completed',
                         'generated_at' => now(),
+                        'minutes_consumed' => $minutesRequired,
                     ],
                 );
 

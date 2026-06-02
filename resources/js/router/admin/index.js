@@ -81,6 +81,12 @@ const router = createRouter({
             component: () => import("../../pages/admin/UsersPage.vue"),
         },
         {
+            path: "/users/:id",
+            name: "admin.users.detail",
+            meta: { title: "User Detail", breadcrumb: "User Detail" },
+            component: () => import("../../pages/admin/UserDetailPage.vue"),
+        },
+        {
             path: "/companies",
             name: "admin.companies",
             meta: { title: "Companies", breadcrumb: "Companies" },
@@ -93,10 +99,28 @@ const router = createRouter({
             component: () => import("../../pages/admin/SettingsPage.vue"),
         },
         {
+            path: "/settings/stripe",
+            name: "admin.settings.stripe",
+            meta: { title: "Stripe Settings", breadcrumb: "Stripe" },
+            component: () => import("../../pages/admin/StripeSettingsPage.vue"),
+        },
+        {
+            path: "/settings/email",
+            name: "admin.settings.email",
+            meta: { title: "Email / SMTP Settings", breadcrumb: "Email Settings" },
+            component: () => import("../../pages/admin/SmtpSettingsPage.vue"),
+        },
+        {
             path: "/settings/ai",
             name: "admin.settings.ai",
             meta: { title: "AI Settings", breadcrumb: "AI Settings" },
             component: () => import("../../pages/admin/AiSettingsPage.vue"),
+        },
+        {
+            path: "/plans",
+            name: "admin.plans",
+            meta: { title: "Plans", breadcrumb: "Plans" },
+            component: () => import("../../pages/admin/PlansPage.vue"),
         },
         {
             path: "/categories",

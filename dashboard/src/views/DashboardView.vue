@@ -1,200 +1,225 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { onMounted, ref } from "vue";
 import Card from "../components/ui/Card.vue";
-import DashboardSummaryCards from "../components/dashboard/DashboardSummaryCards.vue";
 import PageHeader from "../components/ui/PageHeader.vue";
-import TriggerIngestButton from "../components/admin/TriggerIngestButton.vue";
-import { getAiPendingStats } from "../api/aiProcessing";
+import { userApi } from "../api/user";
 
-// UI-only: demonstrate loading + empty states without backend calls.
-const demoState = ref<"loaded" | "loading" | "empty">("loaded");
-const loadingAiPending = ref(false);
-const aiPending = ref(0);
-const aiError = ref<string | null>(null);
+type MinuteBalance = {
+    plan_name: string | null;
+    purchased_minutes: number;
+    used_minutes: number;
+    available_minutes: number;
+};
 
-const router = useRouter();
+type RecentReport = {
+    id: number;
+    week_start_date: string;
+    week_end_date: string;
+    status: string;
+    total_calls: number;
+    answered_calls: number;
+    minutes_consumed: number | null;
+    generated_at: string | null;
+};
 
-const summaryData = {
-    totalCallsWeek: 1248,
-    totalMinutesProcessed: 6910,
-    reportsGenerated: 12,
-    currentProcessingJobs: 3,
-} as const;
+type DashboardData = {
+    company: { id: number; name: string; timezone: string; status: string } | null;
+    minute_balance: MinuteBalance | null;
+    recent_reports: RecentReport[];
+    message?: string;
+};
 
-const aiHealthText = computed(() => {
-    if (loadingAiPending.value) {
-        return "Loading";
-    }
+const loading = ref(true);
+const data = ref<DashboardData | null>(null);
+const error = ref<string | null>(null);
 
-    return aiPending.value > 0 ? "Action required" : "Healthy";
-});
-
-const aiHealthClass = computed(() =>
-    aiPending.value > 0 ? "health--warning" : "health--ok",
-);
-
-async function loadAiPending(): Promise<void> {
-    loadingAiPending.value = true;
-    aiError.value = null;
-
+async function load() {
+    loading.value = true;
+    error.value = null;
     try {
-        const stats = await getAiPendingStats({
-            steps: ["summary", "categories"],
-        });
-        aiPending.value = stats.total_pending;
+        const res = await userApi.get<DashboardData>("/dashboard");
+        data.value = res.data;
     } catch (e) {
-        aiError.value =
-            e instanceof Error ? e.message : "Failed to load AI pending stats";
+        error.value = e instanceof Error ? e.message : "Failed to load dashboard.";
     } finally {
-        loadingAiPending.value = false;
+        loading.value = false;
     }
 }
 
-onMounted(async () => {
-    await loadAiPending();
-});
+onMounted(load);
+
+function statusLabel(status: string): string {
+    const map: Record<string, string> = {
+        completed: "Completed",
+        pending: "Pending",
+        generating: "Generating",
+        failed: "Failed",
+        pending_minutes: "Awaiting minutes",
+    };
+    return map[status] ?? status;
+}
 </script>
 
 <template>
     <div class="page">
         <PageHeader
             title="Dashboard"
-            description="High-level reporting overview (UI-only)."
+            :description="data?.company ? `Welcome back — ${data.company.name}` : 'Your reporting overview'"
         />
 
-        <DashboardSummaryCards
-            :loading="demoState === 'loading'"
-            :data="demoState === 'loaded' ? summaryData : null"
-        />
-
-        <div class="demoRow" aria-label="Demo controls">
-            <button
-                class="btn btn--ghost"
-                type="button"
-                @click="demoState = 'loaded'"
-            >
-                Loaded
-            </button>
-            <button
-                class="btn btn--ghost"
-                type="button"
-                @click="demoState = 'loading'"
-            >
-                Loading
-            </button>
-            <button
-                class="btn btn--ghost"
-                type="button"
-                @click="demoState = 'empty'"
-            >
-                Empty
-            </button>
-            <div style="margin-left: 8px">
-                <TriggerIngestButton />
-            </div>
+        <div v-if="loading" class="skeleton-row">
+            <div class="sk-card"></div>
+            <div class="sk-card"></div>
+            <div class="sk-card"></div>
         </div>
 
-        <section class="grid2">
-            <Card title="Recent activity" subtitle="Placeholder feed">
-                <ul class="list">
-                    <li>Weekly report generated</li>
-                    <li>New calls ingested</li>
-                    <li>Transcription usage updated</li>
-                </ul>
-            </Card>
+        <div v-else-if="error" class="errorBanner">{{ error }}</div>
 
-            <Card title="Health" subtitle="Pipeline snapshot">
-                <div class="kv">
-                    <div class="k">AI pending calls</div>
-                    <div class="v">
-                        {{ loadingAiPending ? "..." : aiPending }}
+        <div v-else-if="data?.message && !data.company" class="infoBanner">
+            {{ data.message }}
+        </div>
+
+        <template v-else-if="data">
+            <!-- Minute balance summary -->
+            <section class="grid3" style="margin-bottom: var(--space-4)">
+                <Card title="Available minutes">
+                    <div class="bigStat">
+                        {{ data.minute_balance ? data.minute_balance.available_minutes.toLocaleString() : '—' }}
                     </div>
-                    <div class="k">AI processing health</div>
-                    <div class="v" :class="aiHealthClass">
-                        {{ aiHealthText }}
+                    <div class="statSub" v-if="data.minute_balance">
+                        of {{ data.minute_balance.purchased_minutes.toLocaleString() }} purchased ·
+                        {{ data.minute_balance.used_minutes.toLocaleString() }} used
                     </div>
+                    <div class="statSub" v-else>No plan assigned yet.</div>
+                </Card>
+
+                <Card title="Plan">
+                    <div class="bigStat">
+                        {{ data.minute_balance?.plan_name ?? '—' }}
+                    </div>
+                    <div class="statSub">Contact admin to purchase more minutes.</div>
+                </Card>
+
+                <Card title="Company">
+                    <div class="bigStat">{{ data.company?.name ?? '—' }}</div>
+                    <div class="statSub">
+                        <span :class="data.company?.status === 'active' ? 'ok' : 'warn'">
+                            {{ data.company?.status ?? 'unassigned' }}
+                        </span>
+                    </div>
+                </Card>
+            </section>
+
+            <!-- Recent reports -->
+            <Card title="Recent reports" subtitle="Last 5 reports">
+                <div v-if="data.recent_reports.length === 0" class="empty">
+                    No reports yet. Reports are generated weekly after calls are processed.
                 </div>
-                <p v-if="aiError" class="error-text">{{ aiError }}</p>
-                <div class="actions-row">
-                    <button
-                        class="btn btn--ghost"
-                        type="button"
-                        @click="loadAiPending"
+                <div v-else class="reportList">
+                    <div class="reportRow reportRow--head">
+                        <span>Week</span>
+                        <span>Calls</span>
+                        <span>Minutes</span>
+                        <span>Status</span>
+                    </div>
+                    <div
+                        v-for="r in data.recent_reports"
+                        :key="r.id"
+                        class="reportRow"
                     >
-                        Refresh pending
-                    </button>
-                    <button
-                        class="btn"
-                        type="button"
-                        @click="router.push({ name: 'ai-processing' })"
-                    >
-                        Manage AI processing
-                    </button>
+                        <span>{{ r.week_start_date }} → {{ r.week_end_date }}</span>
+                        <span>{{ r.answered_calls }} / {{ r.total_calls }}</span>
+                        <span>{{ r.minutes_consumed ?? '—' }}</span>
+                        <span :class="r.status === 'completed' ? 'ok' : r.status === 'pending_minutes' ? 'warn' : ''">
+                            {{ statusLabel(r.status) }}
+                        </span>
+                    </div>
                 </div>
             </Card>
-        </section>
+        </template>
     </div>
 </template>
 
 <style scoped>
-.demoRow {
-    margin: var(--space-4) 0 var(--space-6);
-    display: flex;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-}
-
-.grid2 {
+.grid3 {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-4);
 }
 
-.list {
-    margin: 0;
-    padding-left: 18px;
+.bigStat {
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.statSub {
+    margin-top: 6px;
+    opacity: 0.7;
+    font-size: 0.88rem;
+}
+
+.ok { color: #1f9d55; }
+.warn { color: #b7791f; }
+
+.errorBanner, .infoBanner {
+    border-radius: 10px;
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.errorBanner {
+    background: color-mix(in srgb, #e53e3e 12%, transparent);
+    border: 1px solid #e53e3e;
+    color: #e53e3e;
+}
+
+.infoBanner {
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border: 1px solid var(--border);
+}
+
+.skeleton-row {
     display: grid;
-    gap: 10px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
 }
 
-.kv {
+.sk-card {
+    height: 100px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.reportList {
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 10px;
+    gap: 8px;
 }
 
-.k {
-    opacity: 0.75;
+.reportRow {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: var(--space-3);
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
 }
 
-.v {
+.reportRow--head {
     font-weight: 700;
+    background: var(--surface-2);
 }
 
-.health--ok {
-    color: #1f9d55;
-}
-
-.health--warning {
-    color: #b7791f;
-}
-
-.actions-row {
-    margin-top: var(--space-3);
-    display: flex;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-}
-
-.error-text {
-    margin-top: 10px;
-    color: #a60020;
+.empty {
+    opacity: 0.65;
+    font-size: 0.9rem;
 }
 
 @media (max-width: 960px) {
-    .grid2 {
-        grid-template-columns: 1fr;
-    }
+    .grid3 { grid-template-columns: 1fr; }
+    .reportRow { grid-template-columns: 1fr; }
+    .reportRow--head { display: none; }
 }
 </style>

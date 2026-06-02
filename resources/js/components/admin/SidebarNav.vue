@@ -8,7 +8,7 @@
         <div class="admin-sidebar__brand metronic-brand">
             <div
                 class="admin-sidebar__logo metronic-logo"
-                :class="{ 'has-image': !!logoUrl }"
+                :class="{ 'has-image': !!logoUrl && !logoLoadFailed }"
                 aria-hidden="true"
             >
                 <img
@@ -22,10 +22,7 @@
                     {{ logoInitial }}
                 </span>
             </div>
-            <div v-if="!collapsed" class="admin-sidebar__brandText">
-                <div class="admin-sidebar__app">{{ appName }}</div>
-                <div class="admin-sidebar__area">Admin</div>
-            </div>
+
 
             <button
                 type="button"
@@ -35,18 +32,8 @@
                 @click="$emit('toggle-collapsed')"
             >
                 <span class="admin-icon metronic-chevron" aria-hidden="true">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <path
-                            d="M15 18l-6-6 6-6"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </span>
             </button>
@@ -557,6 +544,28 @@ const NavIcon = {
                                 d: "M7 13h6",
                                 stroke: "currentColor",
                                 "stroke-width": 1.8,
+                                "stroke-linecap": "round",
+                            }),
+                        ],
+                    );
+                case "plans":
+                    return h(
+                        "svg",
+                        {
+                            viewBox: "0 0 24 24",
+                            fill: "none",
+                            xmlns: "http://www.w3.org/2000/svg",
+                        },
+                        [
+                            h("circle", {
+                                cx: 12, cy: 12, r: 8,
+                                stroke: "currentColor",
+                                "stroke-width": 1.8,
+                            }),
+                            h("path", {
+                                d: "M12 7v1.5m0 7V17m0-7.5a2 2 0 0 0-2 2c0 1.1.9 2 2 2a2 2 0 0 1 2 2 2 2 0 0 1-2 2m0-8a2 2 0 0 1 2 2",
+                                stroke: "currentColor",
+                                "stroke-width": 1.7,
                                 "stroke-linecap": "round",
                             }),
                         ],

@@ -1,17 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import SidebarNav from "../components/layout/SidebarNav.vue";
 import TopBar from "../components/layout/TopBar.vue";
 import ToastViewport from "../components/toast/ToastViewport.vue";
 import { provideToasts } from "../composables/useToasts";
+import { logout as apiLogout } from "../api/auth";
+import { auth } from "../composables/useAuth";
+import { http } from "../api/http";
 
 const route = useRoute();
+const router = useRouter();
 
 const navOpen = ref(false);
 const navCollapsed = ref(false);
+const logoUrl = ref("");
+const appName = ref("BlueHub");
 
 provideToasts();
+
+onMounted(async () => {
+    try {
+        const res = await http.get("/api/v1/settings/branding");
+        const data = res.data?.data || {};
+        if (data.logo_url) {
+            // Normalise any double-slash outside the protocol (http://host//path → http://host/path)
+            logoUrl.value = data.logo_url.replace(/([^:])\/\/+/g, "$1/");
+        }
+        if (data.site_name) appName.value = data.site_name;
+    } catch {
+        // use defaults
+    }
+});
 
 const pageTitle = computed(() => {
     const metaTitle = route.meta.title;
@@ -29,6 +49,15 @@ function closeNav() {
 function toggleCollapsed() {
     navCollapsed.value = !navCollapsed.value;
 }
+
+async function handleSignOut() {
+    try {
+        await apiLogout();
+    } finally {
+        auth.logout();
+        await router.push({ name: "login" });
+    }
+}
 </script>
 
 <template>
@@ -36,8 +65,11 @@ function toggleCollapsed() {
         <SidebarNav
             :open="navOpen"
             :collapsed="navCollapsed"
+            :logo-url="logoUrl"
+            :app-name="appName"
             @navigate="closeNav"
             @toggle-collapsed="toggleCollapsed"
+            @sign-out="handleSignOut"
         />
 
         <div class="appMain">
@@ -63,15 +95,15 @@ function toggleCollapsed() {
 <style scoped>
 .appShell {
     min-height: 100vh;
-    display: grid;
-    grid-template-columns: 280px 1fr;
+    display: flex;
 }
 
 .appShell.collapsed {
-    grid-template-columns: 92px 1fr;
+    /* sidebar self-manages its width */
 }
 
 .appMain {
+    flex: 1;
     min-width: 0;
     display: grid;
     grid-template-rows: auto 1fr;

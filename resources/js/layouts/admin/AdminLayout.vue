@@ -403,6 +403,15 @@ const navItems = [
         featureKey: "admin_companies",
     },
     {
+        key: "plans",
+        label: "Plans",
+        icon: "plans",
+        to: { name: "admin.plans" },
+        requiredRoles: ["admin"],
+        requiredPermissions: ["admin.plans.view"],
+        featureKey: "admin_plans",
+    },
+    {
         key: "categories",
         label: "Categories",
         icon: "categories",
@@ -420,6 +429,16 @@ const navItems = [
                 key: "settings-general",
                 label: "General",
                 to: { name: "admin.settings" },
+            },
+            {
+                key: "settings-email",
+                label: "Email / SMTP",
+                to: { name: "admin.settings.email" },
+            },
+            {
+                key: "settings-stripe",
+                label: "Stripe",
+                to: { name: "admin.settings.stripe" },
             },
             {
                 key: "settings-ai",

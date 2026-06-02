@@ -449,6 +449,30 @@
                                 </span>
                             </div>
 
+                            <!-- Assign User -->
+                            <div class="admin-field">
+                                <label class="admin-field__label" for="company-assign-user">
+                                    Assign to User
+                                </label>
+                                <select
+                                    id="company-assign-user"
+                                    v-model="formData.user_id"
+                                    class="admin-input admin-input--select"
+                                >
+                                    <option value="">— No user assigned —</option>
+                                    <option
+                                        v-for="u in registeredUsers"
+                                        :key="u.id"
+                                        :value="u.id"
+                                    >
+                                        {{ u.name }} ({{ u.email }})
+                                    </option>
+                                </select>
+                                <p class="admin-field__help">
+                                    Link this company to a registered SaaS user so they see only this company's calls and reports.
+                                </p>
+                            </div>
+
                             <div class="admin-field">
                                 <label
                                     class="admin-field__label"
@@ -782,6 +806,7 @@ const formData = reactive({
     pbx_provider_id: "",
     server_id: "",
     tenant_code: "",
+    user_id: "",
 });
 
 const defaultFormData = {
@@ -792,7 +817,10 @@ const defaultFormData = {
     pbx_provider_id: "",
     server_id: "",
     tenant_code: "",
+    user_id: "",
 };
+
+const registeredUsers = ref([]);
 
 // Sync modal state
 const showSyncModal = ref(false);
@@ -902,11 +930,22 @@ watch(
     },
 );
 
+async function loadRegisteredUsers() {
+    if (registeredUsers.value.length) return;
+    try {
+        const res = await adminApi.get("/users", { params: { per_page: 200 } });
+        registeredUsers.value = res.data.data ?? [];
+    } catch {
+        // non-fatal
+    }
+}
+
 function openAddForm() {
     isEditing.value = false;
     Object.assign(formData, defaultFormData);
     validationErrors.value = {};
     currentAvailableTenants.value = [];
+    loadRegisteredUsers();
     showForm.value = true;
 }
 
@@ -919,8 +958,10 @@ function openEditForm(company) {
     formData.pbx_provider_id = company.pbx_provider_id || "";
     formData.server_id = company.server_id || "";
     formData.tenant_code = company.tenant_code || "";
+    formData.user_id = "";
     validationErrors.value = {};
     loadAvailableTenants(formData.pbx_provider_id);
+    loadRegisteredUsers();
     showForm.value = true;
 }
 
@@ -945,10 +986,24 @@ async function submitForm() {
             tenant_code: formData.tenant_code || null,
         };
 
+        let companyId;
         if (isEditing.value && formData.id) {
             await adminApi.put(`/companies/${formData.id}`, data);
+            companyId = formData.id;
         } else {
-            await adminApi.post("/companies", data);
+            const res = await adminApi.post("/companies", data);
+            companyId = res?.data?.data?.id;
+        }
+
+        // Assign user to company if selected
+        if (companyId && formData.user_id) {
+            try {
+                await adminApi.post(`/companies/${companyId}/assign-user`, {
+                    user_id: formData.user_id,
+                });
+            } catch {
+                // Non-fatal: company saved, user assignment failed silently
+            }
         }
 
         showToast(

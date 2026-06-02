@@ -8,13 +8,17 @@ use App\Http\Requests\Admin\StoreCompanyRequest;
 use App\Http\Requests\Admin\SyncTenantsRequest;
 use App\Http\Requests\Admin\UpdateCompanyRequest;
 use App\Models\Company;
+use App\Models\CompanyMinuteBalance;
 use App\Models\CompanyPbxAccount;
 use App\Models\Call;
 use App\Models\CallCategory;
+use App\Models\Plan;
 use App\Models\PbxProvider;
 use App\Models\PbxwareTenant;
+use App\Models\User;
 use App\Models\WeeklyCallReport;
 use App\Services\PbxwareClient;
+use App\Services\PendingMinutesReportService;
 use App\Support\ApiResponse;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Http\JsonResponse;
@@ -550,6 +554,78 @@ class AdminCompaniesController extends Controller
                 'reports' => $reportCount,
                 'categories' => $categoriesCount,
                 'pbx_accounts' => $pbxAccountsCount,
+            ],
+        ]);
+    }
+
+    /**
+     * Assign a user (role=user) to a company.
+     * POST /admin/api/companies/{id}/assign-user
+     */
+    public function assignUser(Request $request, int $id): JsonResponse
+    {
+        $company = Company::findOrFail($id);
+
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $user = User::findOrFail($validated['user_id']);
+
+        if (! $user->isUser()) {
+            return response()->json([
+                'message' => 'Only users with role "user" can be assigned to a company.',
+            ], 422);
+        }
+
+        $user->update(['company_id' => $company->id]);
+
+        return response()->json([
+            'message' => 'User assigned to company successfully.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'company_id' => $user->company_id,
+            ],
+        ]);
+    }
+
+    /**
+     * Assign a plan to a company (additive minute top-up).
+     * POST /admin/api/companies/{id}/assign-plan
+     */
+    public function assignPlan(Request $request, int $id, PendingMinutesReportService $pendingService): JsonResponse
+    {
+        $company = Company::findOrFail($id);
+
+        $validated = $request->validate([
+            'plan_id' => ['required', 'integer', 'exists:plans,id'],
+        ]);
+
+        $plan = Plan::findOrFail($validated['plan_id']);
+
+        $balance = CompanyMinuteBalance::firstOrCreate(
+            ['company_id' => $company->id],
+            ['plan_id' => $plan->id, 'purchased_minutes' => 0, 'used_minutes' => 0]
+        );
+
+        // Additive top-up — increment purchased_minutes by the plan's allowance
+        $balance->increment('purchased_minutes', $plan->minute_limit);
+        $balance->update(['plan_id' => $plan->id]);
+        $balance->refresh();
+
+        // Convert any reports that were waiting for minutes
+        $pendingService->convertPending($company->id);
+
+        return response()->json([
+            'message' => "Plan \"{$plan->name}\" assigned. {$plan->minute_limit} minutes added.",
+            'balance' => [
+                'plan_id' => $balance->plan_id,
+                'plan_name' => $plan->name,
+                'purchased_minutes' => $balance->purchased_minutes,
+                'used_minutes' => $balance->used_minutes,
+                'available_minutes' => $balance->available_minutes,
             ],
         ]);
     }

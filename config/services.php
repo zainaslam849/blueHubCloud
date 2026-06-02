@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'stripe' => [
+        'public_key'      => env('STRIPE_PUBLIC_KEY', ''),
+        'secret'          => env('STRIPE_SECRET_KEY', ''),
+        'webhook_secret'  => env('STRIPE_WEBHOOK_SECRET', ''),
+    ],
+
     'reports' => [
         'storage_disk' => env('REPORTS_STORAGE_DISK', 'local'),
         'signed_url_minutes' => env('REPORTS_SIGNED_URL_MINUTES', 60),

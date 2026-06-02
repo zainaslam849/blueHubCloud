@@ -303,10 +303,11 @@ body.admin-body {
 .admin-sidebar__brand {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 10px;
+    gap: 10px;
+    padding: 10px 12px;
     border-radius: 14px;
     border: 1px solid transparent;
+    min-height: 100px;
 }
 
 .admin-sidebar__collapseBtn {
@@ -346,7 +347,11 @@ body.admin-body {
 
 .admin-sidebar.is-collapsed .admin-sidebar__brand {
     padding: 10px 8px;
-    justify-content: center;
+    justify-content: space-between;
+}
+
+.admin-sidebar.is-collapsed .admin-sidebar__logo {
+    margin: 0 auto;
 }
 
 /* Metronic Admin Sidebar Enhancements */
@@ -361,38 +366,54 @@ body.admin-body {
     gap: 10px !important;
 }
 
-.metronic-logo {
+.metronic-logo:not(.has-image) {
     background: linear-gradient(135deg, #22d3ee 0%, #6366f1 100%) !important;
+    width: var(--sidebar-logo-size) !important;
+    height: var(--sidebar-logo-size) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35);
+}
+
+.metronic-logo {
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
     font-weight: 700;
     font-size: 1.2rem;
-    width: var(--sidebar-logo-size) !important;
-    height: var(--sidebar-logo-size) !important;
-    border-radius: 8px !important;
     flex-shrink: 0;
     overflow: hidden;
 }
 
-.metronic-logo.has-image {
-    background: var(--bg-surface-2) !important;
-}
-
 .admin-sidebar__logo.has-image {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-soft);
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 80px;
 }
 
 .admin-sidebar__logoImg {
     width: 100%;
     height: 100%;
     object-fit: contain;
+    object-position: center center;
     display: block;
-    padding: 6px;
     background: transparent;
-    filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.15));
+}
+
+/* Collapsed: fixed square so only the icon part shows */
+.admin-sidebar.is-collapsed .admin-sidebar__logo.has-image {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+}
+
+.admin-sidebar.is-collapsed .admin-sidebar__logoImg {
+    object-position: center center;
 }
 
 .admin-sidebar__logoInitial {
@@ -462,10 +483,16 @@ body.admin-body {
     justify-items: center;
 }
 
-.admin-sidebar__logo {
+.admin-sidebar__logo:not(.has-image) {
     width: var(--sidebar-logo-size);
     height: var(--sidebar-logo-size);
     border-radius: 12px;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.admin-sidebar__logo:not(.has-image) {
     background:
         radial-gradient(
             16px 16px at 30% 30%,
@@ -478,9 +505,6 @@ body.admin-body {
             var(--admin-logo-grad-2)
         );
     box-shadow: 0 0 0 1px var(--admin-border);
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
 }
 
 @media (max-width: 1200px) {
@@ -516,6 +540,18 @@ body.admin-body {
 .admin-sidebar__area {
     font-size: 12px;
     color: var(--admin-muted);
+}
+
+.admin-sidebar__appName {
+    flex: 1;
+    min-width: 0;
+    font-weight: 650;
+    font-size: 14px;
+    letter-spacing: 0.01em;
+    color: var(--admin-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .admin-nav {
@@ -1860,9 +1896,16 @@ html[data-theme="dark"] .admin-status-badge--inactive {
     width: 14px;
     height: 14px;
     border-radius: 999px;
-    border: 2px solid var(--accent-hover-ring);
-    border-top-color: var(--text-on-accent);
-    animation: admin-spin 900ms linear infinite;
+    flex-shrink: 0;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    animation: admin-spin 700ms linear infinite;
+}
+
+.admin-btn--secondary .admin-btn__spinner,
+.admin-btn--ghost .admin-btn__spinner {
+    border-color: rgba(0, 0, 0, 0.12);
+    border-top-color: var(--text-primary);
 }
 
 @keyframes admin-spin {
@@ -5618,13 +5661,11 @@ html[data-theme="dark"] .admin-callDetailStat__icon {
 }
 
 /* ---------- Logo Glow Upgrade ---------- */
-.metronic-logo {
+.metronic-logo:not(.has-image) {
     position: relative !important;
-    background: linear-gradient(135deg, #22d3ee 0%, #6366f1 100%) !important;
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.35) !important;
 }
 
-.metronic-logo::after {
+.metronic-logo:not(.has-image)::after {
     content: "" !important;
     position: absolute !important;
     inset: 0 !important;

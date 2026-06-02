@@ -1,0 +1,318 @@
+{
+  "_Card-CokszWgB.js": {
+    "file": "assets/Card-CokszWgB.js",
+    "name": "Card",
+    "imports": [
+      "src/main.ts"
+    ],
+    "css": [
+      "assets/Card-DYvPAcOW.css"
+    ]
+  },
+  "_Card-DYvPAcOW.css": {
+    "file": "assets/Card-DYvPAcOW.css",
+    "src": "_Card-DYvPAcOW.css"
+  },
+  "_PageHeader-CDPGRBH1.js": {
+    "file": "assets/PageHeader-CDPGRBH1.js",
+    "name": "PageHeader",
+    "imports": [
+      "src/main.ts"
+    ],
+    "css": [
+      "assets/PageHeader-D9mRS8b5.css"
+    ]
+  },
+  "_PageHeader-D9mRS8b5.css": {
+    "file": "assets/PageHeader-D9mRS8b5.css",
+    "src": "_PageHeader-D9mRS8b5.css"
+  },
+  "_adminApi-BFKcr3Ee.js": {
+    "file": "assets/adminApi-BFKcr3Ee.js",
+    "name": "adminApi",
+    "imports": [
+      "src/main.ts"
+    ]
+  },
+  "_user-Bt-uLHJZ.js": {
+    "file": "assets/user-Bt-uLHJZ.js",
+    "name": "user",
+    "imports": [
+      "src/main.ts"
+    ]
+  },
+  "src/layouts/AppShell.vue": {
+    "file": "assets/AppShell-Bs60RHDC.js",
+    "name": "AppShell",
+    "src": "src/layouts/AppShell.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ],
+    "css": [
+      "assets/AppShell-CHqEMcWC.css"
+    ]
+  },
+  "src/main.ts": {
+    "file": "assets/main-CEzaJZvR.js",
+    "name": "main",
+    "src": "src/main.ts",
+    "isEntry": true,
+    "dynamicImports": [
+      "src/views/LoginView.vue",
+      "src/views/RegisterView.vue",
+      "src/layouts/AppShell.vue",
+      "src/views/DashboardView.vue",
+      "src/views/ReportsView.vue",
+      "src/views/ReportDetailView.vue",
+      "src/views/AiProcessingView.vue",
+      "src/views/AccountView.vue",
+      "src/views/UsageView.vue",
+      "src/views/CompaniesView.vue",
+      "src/views/PbxAccountsView.vue",
+      "src/views/PlansView.vue",
+      "src/views/AdminUsersView.vue",
+      "src/views/PlanSelectView.vue",
+      "src/views/BillingView.vue",
+      "src/views/PurchaseSuccessView.vue",
+      "src/views/AdminPurchasesView.vue",
+      "src/views/NotFoundView.vue"
+    ],
+    "css": [
+      "assets/main-BYzT0bPc.css"
+    ]
+  },
+  "src/views/AccountView.vue": {
+    "file": "assets/AccountView-D5DLih8y.js",
+    "name": "AccountView",
+    "src": "src/views/AccountView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/AccountView-bmtgjfYX.css"
+    ]
+  },
+  "src/views/AdminPurchasesView.vue": {
+    "file": "assets/AdminPurchasesView-pqBvyPxW.js",
+    "name": "AdminPurchasesView",
+    "src": "src/views/AdminPurchasesView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/AdminPurchasesView-DRyLfzN0.css"
+    ]
+  },
+  "src/views/AdminUsersView.vue": {
+    "file": "assets/AdminUsersView-DPl57Rll.js",
+    "name": "AdminUsersView",
+    "src": "src/views/AdminUsersView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_adminApi-BFKcr3Ee.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/AdminUsersView-DMY8olEF.css"
+    ]
+  },
+  "src/views/AiProcessingView.vue": {
+    "file": "assets/AiProcessingView-CvgrXWT9.js",
+    "name": "AiProcessingView",
+    "src": "src/views/AiProcessingView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_adminApi-BFKcr3Ee.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/AiProcessingView-DypBM83e.css"
+    ]
+  },
+  "src/views/BillingView.vue": {
+    "file": "assets/BillingView-Q60EeD4I.js",
+    "name": "BillingView",
+    "src": "src/views/BillingView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_user-Bt-uLHJZ.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/BillingView-YLs2JC5f.css"
+    ]
+  },
+  "src/views/CompaniesView.vue": {
+    "file": "assets/CompaniesView-B_cY7wLv.js",
+    "name": "CompaniesView",
+    "src": "src/views/CompaniesView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_adminApi-BFKcr3Ee.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/CompaniesView-BcqYPxka.css"
+    ]
+  },
+  "src/views/DashboardView.vue": {
+    "file": "assets/DashboardView-DoHVk744.js",
+    "name": "DashboardView",
+    "src": "src/views/DashboardView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_user-Bt-uLHJZ.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/DashboardView-0DXnHZRf.css"
+    ]
+  },
+  "src/views/LoginView.vue": {
+    "file": "assets/LoginView-CrEVOCqU.js",
+    "name": "LoginView",
+    "src": "src/views/LoginView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ],
+    "css": [
+      "assets/LoginView-mxSMfnRI.css"
+    ]
+  },
+  "src/views/NotFoundView.vue": {
+    "file": "assets/NotFoundView-Cy-09e2q.js",
+    "name": "NotFoundView",
+    "src": "src/views/NotFoundView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ]
+  },
+  "src/views/PbxAccountsView.vue": {
+    "file": "assets/PbxAccountsView-Bz7TjBGB.js",
+    "name": "PbxAccountsView",
+    "src": "src/views/PbxAccountsView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_adminApi-BFKcr3Ee.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/PbxAccountsView-Ddzjywib.css"
+    ]
+  },
+  "src/views/PlanSelectView.vue": {
+    "file": "assets/PlanSelectView-BCv6elBt.js",
+    "name": "PlanSelectView",
+    "src": "src/views/PlanSelectView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_user-Bt-uLHJZ.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/PlanSelectView-DkzLda3X.css"
+    ]
+  },
+  "src/views/PlansView.vue": {
+    "file": "assets/PlansView-BrQbPE2o.js",
+    "name": "PlansView",
+    "src": "src/views/PlansView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_adminApi-BFKcr3Ee.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/PlansView-DyvFjIuC.css"
+    ]
+  },
+  "src/views/PurchaseSuccessView.vue": {
+    "file": "assets/PurchaseSuccessView-CL9DZXFy.js",
+    "name": "PurchaseSuccessView",
+    "src": "src/views/PurchaseSuccessView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_user-Bt-uLHJZ.js"
+    ],
+    "css": [
+      "assets/PurchaseSuccessView-DqNGLYm0.css"
+    ]
+  },
+  "src/views/RegisterView.vue": {
+    "file": "assets/RegisterView-dgM5ECBg.js",
+    "name": "RegisterView",
+    "src": "src/views/RegisterView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ],
+    "css": [
+      "assets/RegisterView-jyTYj8yX.css"
+    ]
+  },
+  "src/views/ReportDetailView.vue": {
+    "file": "assets/ReportDetailView-Ca7EN4ua.js",
+    "name": "ReportDetailView",
+    "src": "src/views/ReportDetailView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts"
+    ],
+    "css": [
+      "assets/ReportDetailView-eEUZZ4Lh.css"
+    ]
+  },
+  "src/views/ReportsView.vue": {
+    "file": "assets/ReportsView-B0UVnHqR.js",
+    "name": "ReportsView",
+    "src": "src/views/ReportsView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_user-Bt-uLHJZ.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/ReportsView-DJZxnXrh.css"
+    ]
+  },
+  "src/views/UsageView.vue": {
+    "file": "assets/UsageView-DqV_vtHr.js",
+    "name": "UsageView",
+    "src": "src/views/UsageView.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.ts",
+      "_user-Bt-uLHJZ.js",
+      "_Card-CokszWgB.js",
+      "_PageHeader-CDPGRBH1.js"
+    ],
+    "css": [
+      "assets/UsageView-Dc40GbiI.css"
+    ]
+  }
+}
