@@ -214,6 +214,37 @@ class AwsSecretsService
         unset($this->cache[$secretName]);
     }
 
+    /**
+     * Schedule a secret for deletion (7-day recovery window, so an
+     * accidental server deletion is restorable from the AWS console).
+     * Requires IAM permission secretsmanager:DeleteSecret.
+     *
+     * @throws \RuntimeException on AWS failure (except when already gone)
+     */
+    public function delete(string $secretName): void
+    {
+        try {
+            $this->client->deleteSecret([
+                'SecretId' => $secretName,
+                'RecoveryWindowInDays' => 7,
+            ]);
+            Log::info('AwsSecretsService: secret scheduled for deletion', ['secret' => $secretName]);
+        } catch (AwsException $e) {
+            if ($e->getAwsErrorCode() === 'ResourceNotFoundException') {
+                return;
+            }
+
+            Log::error('AwsSecretsService: deleteSecret failed', [
+                'secret' => $secretName,
+                'aws_error_code' => $e->getAwsErrorCode(),
+                'message' => $e->getMessage(),
+            ]);
+            throw new \RuntimeException("Failed to delete secret '{$secretName}': " . $e->getMessage(), 0, $e);
+        }
+
+        unset($this->cache[$secretName]);
+    }
+
     private function redactForLog(array $value): array
     {
         $out = [];

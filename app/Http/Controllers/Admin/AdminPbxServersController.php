@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StorePbxServerRequest;
 use App\Http\Requests\Admin\UpdatePbxServerRequest;
 use App\Models\PbxProvider;
+use App\Models\TenantSyncSetting;
 use App\Services\AwsSecretsService;
 use App\Services\Pbx\PbxClientResolver;
 use App\Services\Pbx\PbxCredentialResolver;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -73,9 +75,35 @@ class AdminPbxServersController extends Controller
             'status' => $validated['status'] ?? 'active',
         ]);
 
+        // Schedule ongoing tenant sync for the new server and fetch its
+        // tenants immediately so counts/companies appear without a manual
+        // sync step. A sync failure (bad key, PBX down) must not block
+        // server creation — the admin can still use Test Connection.
+        $syncMessage = '';
+        if ($server->status === 'active') {
+            TenantSyncSetting::updateOrCreate(
+                ['pbx_provider_id' => $server->id],
+                ['enabled' => true, 'frequency' => 'daily']
+            );
+
+            try {
+                Artisan::call('pbx:sync-tenants', ['--provider-id' => $server->id]);
+                $tenantCount = $server->pbxwareTenants()->count();
+                $syncMessage = $tenantCount > 0
+                    ? " Found {$tenantCount} tenant(s); matching companies were created on the Companies page."
+                    : ' Tenant sync ran but found no tenants — use Test Connection to verify the API key.';
+            } catch (\Throwable $e) {
+                Log::warning('AdminPbxServersController: initial tenant sync failed', [
+                    'pbx_provider_id' => $server->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $syncMessage = ' Initial tenant sync failed — use Test Connection to verify the API key, then trigger sync from Settings → Tenant Sync.';
+            }
+        }
+
         return response()->json([
-            'data' => $this->presentServer($server),
-            'message' => 'PBX server created successfully.',
+            'data' => $this->presentServer($server->fresh()),
+            'message' => 'PBX server created successfully.' . $syncMessage,
         ], 201);
     }
 
@@ -159,9 +187,27 @@ class AdminPbxServersController extends Controller
         }
 
         if ($server->company_pbx_accounts_count === 0 && $server->pbxware_tenants_count === 0) {
+            $secretName = trim((string) $server->secret_name);
             $server->delete();
 
-            return response()->json(['message' => 'PBX server deleted.']);
+            // Clean up the app-created secret. Only pbxware/servers/* secrets
+            // are ever deleted — manually referenced/legacy secrets are left
+            // alone. AWS keeps a 7-day recovery window.
+            $secretMessage = '';
+            if (str_starts_with($secretName, 'pbxware/servers/')) {
+                try {
+                    app(AwsSecretsService::class)->delete($secretName);
+                    $secretMessage = ' Its API key secret was scheduled for deletion in AWS (7-day recovery window).';
+                } catch (\Throwable $e) {
+                    Log::warning('AdminPbxServersController: failed to delete server secret', [
+                        'secret' => $secretName,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $secretMessage = ' Note: its API key secret could not be removed from AWS Secrets Manager — delete it manually or grant secretsmanager:DeleteSecret.';
+                }
+            }
+
+            return response()->json(['message' => 'PBX server deleted.' . $secretMessage]);
         }
 
         $server->update(['status' => 'inactive']);
