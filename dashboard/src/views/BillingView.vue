@@ -6,6 +6,7 @@ import { userApi } from "../api/user";
 type Purchase = {
     id: number;
     plan_name: string;
+    credits_added: number;
     minutes_added: number;
     amount_paid: string;
     currency: string;
@@ -14,9 +15,33 @@ type Purchase = {
     created_at: string;
 };
 
+type AutoTopup = {
+    enabled: boolean;
+    threshold: number | null;
+    credits: number | null;
+    has_payment_method: boolean;
+    paused_at: string | null;
+    failure_count: number;
+};
+
 const purchases = ref<Purchase[]>([]);
 const loading   = ref(true);
 const error     = ref<string | null>(null);
+
+// ── Auto top-up state ────────────────────────────────────────────────────────
+const autoTopup      = ref<AutoTopup | null>(null);
+const balance        = ref<number>(0);
+const atForm         = ref({ enabled: false, threshold: 5, credits: 100 });
+const atSaving       = ref(false);
+const atError        = ref<string | null>(null);
+const atNotice       = ref<string | null>(null);
+const cardSetupOpen  = ref(false);
+const cardSetupBusy  = ref(false);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let stripe: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let cardElement: any = null;
+let setupClientSecret: string | null = null;
 
 async function load() {
     loading.value = true;
@@ -31,6 +56,100 @@ async function load() {
     }
 }
 
+async function loadAutoTopup() {
+    try {
+        const res = await userApi.get<{ credits: number; auto_topup: AutoTopup }>("/plan");
+        autoTopup.value = res.data.auto_topup;
+        balance.value = res.data.credits;
+        atForm.value.enabled = res.data.auto_topup.enabled;
+        if (res.data.auto_topup.threshold !== null) atForm.value.threshold = Number(res.data.auto_topup.threshold);
+        if (res.data.auto_topup.credits !== null) atForm.value.credits = Number(res.data.auto_topup.credits);
+    } catch {
+        // Non-fatal: the history table still works.
+    }
+}
+
+function loadStripeJs(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((window as any).Stripe) return resolve();
+        const script = document.createElement("script");
+        script.src = "https://js.stripe.com/v3";
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Failed to load Stripe.js"));
+        document.head.appendChild(script);
+    });
+}
+
+async function startCardSetup() {
+    atError.value = null;
+    atNotice.value = null;
+    cardSetupBusy.value = true;
+    try {
+        const res = await userApi.post<{ client_secret: string; publishable_key: string }>(
+            "/auto-topup/setup-intent",
+            {},
+        );
+        setupClientSecret = res.data.client_secret;
+        await loadStripeJs();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        stripe = (window as any).Stripe(res.data.publishable_key);
+        cardSetupOpen.value = true;
+        // Wait for the card container to render before mounting.
+        await new Promise((r) => setTimeout(r, 0));
+        const elements = stripe.elements();
+        cardElement = elements.create("card");
+        cardElement.mount("#at-card-element");
+    } catch (e: unknown) {
+        atError.value =
+            (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+            "Could not start card setup.";
+    } finally {
+        cardSetupBusy.value = false;
+    }
+}
+
+async function confirmCardSetup() {
+    if (!stripe || !cardElement || !setupClientSecret) return;
+    atError.value = null;
+    cardSetupBusy.value = true;
+    try {
+        const result = await stripe.confirmCardSetup(setupClientSecret, {
+            payment_method: { card: cardElement },
+        });
+        if (result.error) {
+            atError.value = result.error.message ?? "Card setup failed.";
+            return;
+        }
+        await saveAutoTopup(result.setupIntent.payment_method as string);
+        cardSetupOpen.value = false;
+    } finally {
+        cardSetupBusy.value = false;
+    }
+}
+
+async function saveAutoTopup(paymentMethodId?: string) {
+    atSaving.value = true;
+    atError.value = null;
+    atNotice.value = null;
+    try {
+        const res = await userApi.post<{ message: string; data: AutoTopup }>("/auto-topup", {
+            enabled: atForm.value.enabled,
+            threshold: atForm.value.threshold,
+            credits: atForm.value.credits,
+            payment_method_id: paymentMethodId ?? null,
+        });
+        atNotice.value = res.data.message;
+        await loadAutoTopup();
+    } catch (e: unknown) {
+        atError.value =
+            (e as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+            "Failed to save auto top-up settings.";
+    } finally {
+        atSaving.value = false;
+    }
+}
+
 function formatDate(iso: string | null): string {
     if (!iso) return "—";
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -40,15 +159,85 @@ function formatAmount(amount: string, currency: string): string {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(amount));
 }
 
-onMounted(load);
+onMounted(() => {
+    load();
+    loadAutoTopup();
+});
 </script>
 
 <template>
     <div class="page">
         <PageHeader
-            title="Billing History"
-            description="All your plan purchases and payment history."
+            title="Billing"
+            description="Credit purchases, payment history and auto top-up."
         />
+
+        <!-- Auto top-up -->
+        <div class="atCard">
+            <div class="atCard__head">
+                <div>
+                    <p class="atCard__title">Auto Top-up</p>
+                    <p class="atCard__sub">
+                        Automatically purchase credits when your balance drops
+                        below a threshold, so weekly reports keep running.
+                    </p>
+                </div>
+                <label class="atToggle">
+                    <input type="checkbox" v-model="atForm.enabled" />
+                    <span>{{ atForm.enabled ? "On" : "Off" }}</span>
+                </label>
+            </div>
+
+            <div v-if="atError" class="blError" style="margin-bottom: 12px">
+                <span>{{ atError }}</span>
+            </div>
+            <div v-if="atNotice" class="atNotice">{{ atNotice }}</div>
+            <div v-if="autoTopup?.paused_at" class="blError" style="margin-bottom: 12px">
+                <span>
+                    Auto top-up is paused after repeated payment failures.
+                    Update your card and save to re-enable it.
+                </span>
+            </div>
+
+            <div class="atGrid">
+                <label class="atField">
+                    <span>When credits fall below</span>
+                    <input type="number" min="0" v-model.number="atForm.threshold" />
+                </label>
+                <label class="atField">
+                    <span>Purchase this many credits</span>
+                    <input type="number" min="1" v-model.number="atForm.credits" />
+                </label>
+            </div>
+
+            <div class="atActions">
+                <button
+                    class="blBtn blBtn--outline"
+                    :disabled="cardSetupBusy"
+                    @click="startCardSetup"
+                >
+                    {{ autoTopup?.has_payment_method ? "Update Card" : "Add Card" }}
+                </button>
+                <button
+                    class="blBtn"
+                    :disabled="atSaving"
+                    @click="saveAutoTopup()"
+                >
+                    {{ atSaving ? "Saving…" : "Save Settings" }}
+                </button>
+            </div>
+
+            <div v-show="cardSetupOpen" class="atCardSetup">
+                <div id="at-card-element" class="atCardElement"></div>
+                <button
+                    class="blBtn"
+                    :disabled="cardSetupBusy"
+                    @click="confirmCardSetup"
+                >
+                    {{ cardSetupBusy ? "Saving…" : "Save Card" }}
+                </button>
+            </div>
+        </div>
 
         <div v-if="error" class="blError">
             <svg viewBox="0 0 20 20" fill="currentColor" class="blError__icon">
@@ -60,7 +249,7 @@ onMounted(load);
         <!-- Skeleton -->
         <div v-if="loading" class="blTable">
             <div class="blTable__head">
-                <span>Plan</span><span>Minutes</span><span>Amount</span><span>Status</span><span>Date</span>
+                <span>Plan</span><span>Credits</span><span>Amount</span><span>Status</span><span>Date</span>
             </div>
             <div v-for="i in 4" :key="i" class="blRow blRow--sk">
                 <div class="blSk blSk--lg"></div>
@@ -89,7 +278,7 @@ onMounted(load);
         <div v-else class="blTable">
             <div class="blTable__head">
                 <span>Plan</span>
-                <span>Minutes</span>
+                <span>Credits</span>
                 <span>Amount</span>
                 <span>Status</span>
                 <span>Date</span>
@@ -97,7 +286,7 @@ onMounted(load);
 
             <div v-for="p in purchases" :key="p.id" class="blRow">
                 <span class="blRow__plan">{{ p.plan_name }}</span>
-                <span class="blRow__minutes">{{ p.minutes_added.toLocaleString() }} min</span>
+                <span class="blRow__minutes">{{ Number(p.credits_added ?? 0).toLocaleString() }} cr</span>
                 <span class="blRow__amount">{{ formatAmount(p.amount_paid, p.currency) }}</span>
                 <span
                     class="blStatus"
@@ -235,6 +424,55 @@ onMounted(load);
     transition: opacity 150ms;
 }
 .blBtn:hover { opacity: .88; }
+.blBtn--outline {
+    background: transparent;
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+}
+.blBtn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Auto top-up */
+.atCard {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    margin-bottom: var(--space-6);
+}
+.atCard__head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: var(--space-4); margin-bottom: var(--space-4);
+}
+.atCard__title { margin: 0; font-weight: 700; font-size: var(--text-lg); }
+.atCard__sub { margin: 4px 0 0; color: var(--color-muted); font-size: var(--text-sm); }
+.atToggle { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.atNotice {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-success) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-success) 25%, transparent);
+    color: var(--color-success);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-3);
+}
+.atGrid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-4); }
+.atField { display: grid; gap: 6px; font-size: var(--text-sm); color: var(--color-muted); }
+.atField input {
+    height: 38px; padding: 0 var(--space-3);
+    border: 1px solid var(--color-border); border-radius: var(--radius-md);
+    background: var(--color-surface-2); color: var(--color-text);
+}
+.atActions { display: flex; gap: var(--space-3); }
+.atActions .blBtn { border: none; cursor: pointer; }
+.atCardSetup { margin-top: var(--space-4); display: grid; gap: var(--space-3); }
+.atCardSetup .blBtn { border: none; cursor: pointer; width: fit-content; }
+.atCardElement {
+    padding: var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: #fff;
+}
+@media (max-width: 640px) { .atGrid { grid-template-columns: 1fr; } }
 
 @media (max-width: 640px) {
     .blTable__head { display: none; }

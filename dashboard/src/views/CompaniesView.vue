@@ -18,13 +18,6 @@ interface UnassignedUser {
     email: string;
 }
 
-interface Plan {
-    id: number;
-    name: string;
-    minute_limit: number;
-    price: string;
-}
-
 const companies = ref<Company[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -36,15 +29,6 @@ const unassignedUsers = ref<UnassignedUser[]>([]);
 const selectedUserId = ref<number | null>(null);
 const assignUserLoading = ref(false);
 const assignUserError = ref<string | null>(null);
-
-// Assign Plan modal
-const showAssignPlan = ref(false);
-const assignPlanCompany = ref<Company | null>(null);
-const plans = ref<Plan[]>([]);
-const selectedPlanId = ref<number | null>(null);
-const assignPlanLoading = ref(false);
-const assignPlanError = ref<string | null>(null);
-const assignPlanSuccess = ref<string | null>(null);
 
 async function fetchCompanies() {
     loading.value = true;
@@ -89,39 +73,6 @@ async function submitAssignUser() {
     }
 }
 
-async function openAssignPlan(company: Company) {
-    assignPlanCompany.value = company;
-    selectedPlanId.value = null;
-    assignPlanError.value = null;
-    assignPlanSuccess.value = null;
-    plans.value = [];
-    showAssignPlan.value = true;
-    try {
-        const res = await adminApi.get("/plans");
-        plans.value = res.data.data.filter((p: Plan & { is_active?: boolean }) => p.is_active !== false);
-    } catch {
-        assignPlanError.value = "Failed to load plans.";
-    }
-}
-
-async function submitAssignPlan() {
-    if (!assignPlanCompany.value || !selectedPlanId.value) return;
-    assignPlanLoading.value = true;
-    assignPlanError.value = null;
-    assignPlanSuccess.value = null;
-    try {
-        const res = await adminApi.post(`/companies/${assignPlanCompany.value.id}/assign-plan`, {
-            plan_id: selectedPlanId.value,
-        });
-        assignPlanSuccess.value = res.data.message ?? "Plan assigned successfully.";
-        setTimeout(() => { showAssignPlan.value = false; }, 1500);
-    } catch (err: unknown) {
-        assignPlanError.value = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to assign plan.";
-    } finally {
-        assignPlanLoading.value = false;
-    }
-}
-
 onMounted(fetchCompanies);
 </script>
 
@@ -161,9 +112,6 @@ onMounted(fetchCompanies);
 
                         <button class="btn btn--ghost" type="button" @click="openAssignUser(company)">
                             Assign User
-                        </button>
-                        <button class="btn btn--ghost" type="button" @click="openAssignPlan(company)">
-                            Assign Plan
                         </button>
                     </div>
                 </div>
@@ -209,41 +157,6 @@ onMounted(fetchCompanies);
             </div>
         </div>
 
-        <!-- Assign Plan Modal -->
-        <div v-if="showAssignPlan" class="overlay" @click.self="showAssignPlan = false">
-            <div class="modal">
-                <h2 class="modalTitle">Assign Plan — {{ assignPlanCompany?.name }}</h2>
-
-                <div v-if="assignPlanError" class="errText">{{ assignPlanError }}</div>
-                <div v-if="assignPlanSuccess" class="successText">{{ assignPlanSuccess }}</div>
-
-                <div v-if="plans.length === 0 && !assignPlanError" class="emptyState">
-                    No active plans found. <router-link :to="{ name: 'plans' }">Create one first.</router-link>
-                </div>
-
-                <label v-else class="field">
-                    <span>Select plan (minutes will be added)</span>
-                    <select v-model="selectedPlanId" class="input">
-                        <option :value="null" disabled>— choose —</option>
-                        <option v-for="p in plans" :key="p.id" :value="p.id">
-                            {{ p.name }} — {{ p.minute_limit.toLocaleString() }} min @ ${{ p.price }}
-                        </option>
-                    </select>
-                </label>
-
-                <div class="modalActions">
-                    <button class="btn btn--ghost" type="button" @click="showAssignPlan = false">Cancel</button>
-                    <button
-                        class="btn btn--primary"
-                        type="button"
-                        :disabled="!selectedPlanId || assignPlanLoading"
-                        @click="submitAssignPlan"
-                    >
-                        {{ assignPlanLoading ? 'Assigning…' : 'Add minutes' }}
-                    </button>
-                </div>
-            </div>
-        </div>
     </div>
 </template>
 

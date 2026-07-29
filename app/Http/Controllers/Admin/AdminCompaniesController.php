@@ -8,18 +8,16 @@ use App\Http\Requests\Admin\StoreCompanyRequest;
 use App\Http\Requests\Admin\SyncTenantsRequest;
 use App\Http\Requests\Admin\UpdateCompanyRequest;
 use App\Models\Company;
-use App\Models\CompanyMinuteBalance;
 use App\Models\CompanyPbxAccount;
 use App\Models\Call;
 use App\Models\CallCategory;
-use App\Models\Plan;
 use App\Models\PbxProvider;
 use App\Models\PbxwareTenant;
 use App\Models\User;
 use App\Models\WeeklyCallReport;
 use App\Services\PbxwareClient;
-use App\Services\PendingMinutesReportService;
 use App\Support\ApiResponse;
+use Carbon\CarbonImmutable;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,14 +29,8 @@ use Illuminate\Support\Str;
 
 class AdminCompaniesController extends Controller
 {
-    protected PbxwareClient $pbxwareClient;
-
-    public function __construct(PbxwareClient $pbxwareClient)
-    {
-        // Resolved via the container so test doubles and config-aware
-        // construction (Secrets Manager wiring) are honored consistently.
-        $this->pbxwareClient = $pbxwareClient;
-    }
+    // No constructor-injected PBX client: clients are per-server now and are
+    // built only inside the actions that talk to a PBX.
 
     /**
      * List all companies with their PBX account info - with pagination, search, and sorting
@@ -60,7 +52,7 @@ class AdminCompaniesController extends Controller
         $query = Company::query()
             ->when($includeDeleted, fn ($q) => $q->withTrashed())
             ->with('companyPbxAccounts.pbxProvider:id,name')
-            ->select('id', 'name', 'status', 'timezone', 'created_at', 'deleted_at');
+            ->select('id', 'name', 'status', 'timezone', 'monthly_call_limit', 'call_limit_used', 'call_limit_expires_at', 'created_at', 'deleted_at');
 
         // Apply search
         if (!empty($search)) {
@@ -106,6 +98,11 @@ class AdminCompaniesController extends Controller
                 'package_name' => $account?->package_name,
                 'pbx_provider_id' => $account?->pbx_provider_id,
                 'pbx_provider_name' => $account?->pbxProvider?->name,
+                'monthly_call_limit' => $company->monthly_call_limit,
+                'call_limit_used' => (int) $company->call_limit_used,
+                'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
+                'call_limit_expires_at' => $company->call_limit_expires_at?->toDateString(),
+                'call_limit_period_completed' => $company->isCallLimitPeriodCompleted(),
                 'created_at' => $company->created_at?->toISOString(),
                 'deleted_at' => $company->deleted_at?->toISOString(),
             ];
@@ -165,6 +162,8 @@ class AdminCompaniesController extends Controller
             'name' => $validated['name'],
             'timezone' => $validated['timezone'] ?? 'UTC',
             'status' => $validated['status'] ?? 'active',
+            'monthly_call_limit' => $validated['monthly_call_limit'] ?? null,
+            'call_limit_expires_at' => $validated['call_limit_expires_at'] ?? null,
         ]);
 
         // If server_id provided, link the PBX account
@@ -219,8 +218,9 @@ class AdminCompaniesController extends Controller
         $validated = $request->validated();
 
         try {
-            // Fetch tenants from PBXware
-            $tenants = $this->pbxwareClient->fetchTenantList();
+            // Fetch tenants from the selected server using its own credentials.
+            $server = PbxProvider::findOrFail($validated['pbx_provider_id']);
+            $tenants = \App\Services\Pbx\PbxClientResolver::resolve($server)->fetchTenantList();
 
             if (empty($tenants)) {
                 return response()->json([
@@ -305,9 +305,23 @@ class AdminCompaniesController extends Controller
                 $tenantName = $tenantData['name'] ?? null;
                 if (is_string($tenantName) && trim($tenantName) !== '') {
                     $tenantName = trim($tenantName);
-                    
-                    // Check for company including soft-deleted ones
-                    $company = Company::withTrashed()->where('name', $tenantName)->first();
+
+                    // Company resolution is SERVER-SCOPED: a same-named tenant
+                    // on a different server must become a separate company.
+                    $mappedAccount = CompanyPbxAccount::where('pbx_provider_id', $pbxProviderId)
+                        ->where('server_id', (string) $serverId)
+                        ->first();
+
+                    if ($mappedAccount) {
+                        $company = Company::withTrashed()->find($mappedAccount->company_id);
+                    } else {
+                        $company = Company::withTrashed()
+                            ->where('name', $tenantName)
+                            ->whereHas('companyPbxAccounts', function ($query) use ($pbxProviderId) {
+                                $query->where('pbx_provider_id', $pbxProviderId);
+                            })
+                            ->first();
+                    }
 
                     // Skip if company is soft-deleted
                     if ($company && $company->trashed()) {
@@ -315,7 +329,7 @@ class AdminCompaniesController extends Controller
                         continue;
                     }
 
-                    // Create new company only if it doesn't exist at all
+                    // No company on this server matches: create a fresh one
                     if (! $company) {
                         $company = Company::create([
                             'name' => $tenantName,
@@ -323,6 +337,12 @@ class AdminCompaniesController extends Controller
                             'status' => 'inactive',
                         ]);
                         $createdCompanies++;
+                        Log::info('Auto-created company during tenant sync', [
+                            'company_id' => $company->id,
+                            'name' => $tenantName,
+                            'pbx_provider_id' => $pbxProviderId,
+                            'server_id' => (string) $serverId,
+                        ]);
                     }
                     // If company exists, keep its current status - don't change it
 
@@ -339,8 +359,10 @@ class AdminCompaniesController extends Controller
                             ->where('company_id', '!=', $company->id)
                             ->exists();
 
+                        // tenant_code uniqueness is scoped per server.
                         $tenantCodeTaken = ! empty($tenantCode)
                             ? CompanyPbxAccount::where('tenant_code', $tenantCode)
+                                ->where('pbx_provider_id', $pbxProviderId)
                                 ->where('server_id', '!=', (string) $serverId)
                                 ->exists()
                             : false;
@@ -439,6 +461,12 @@ class AdminCompaniesController extends Controller
             'name' => $validated['name'] ?? $company->name,
             'timezone' => $validated['timezone'] ?? $company->timezone,
             'status' => $validated['status'] ?? $company->status,
+            'monthly_call_limit' => array_key_exists('monthly_call_limit', $validated)
+                ? $validated['monthly_call_limit']
+                : $company->monthly_call_limit,
+            'call_limit_expires_at' => array_key_exists('call_limit_expires_at', $validated)
+                ? $validated['call_limit_expires_at']
+                : $company->call_limit_expires_at,
         ]);
 
         if (array_key_exists('server_id', $validated)) {
@@ -592,40 +620,56 @@ class AdminCompaniesController extends Controller
     }
 
     /**
-     * Assign a plan to a company (additive minute top-up).
-     * POST /admin/api/companies/{id}/assign-plan
+     * Renew a company's call-limit period: reset usage to 0 and set the next expiry.
+     * POST /admin/api/companies/{id}/renew-limit
      */
-    public function assignPlan(Request $request, int $id, PendingMinutesReportService $pendingService): JsonResponse
+    public function renewLimit(Request $request, int $id): JsonResponse
     {
         $company = Company::findOrFail($id);
+        $this->authorize('update', $company);
 
         $validated = $request->validate([
-            'plan_id' => ['required', 'integer', 'exists:plans,id'],
+            'expires_at' => ['required', 'date'],
+            // Optionally adjust the allowance at renewal time.
+            'monthly_call_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
         ]);
 
-        $plan = Plan::findOrFail($validated['plan_id']);
-
-        $balance = CompanyMinuteBalance::firstOrCreate(
-            ['company_id' => $company->id],
-            ['plan_id' => $plan->id, 'purchased_minutes' => 0, 'used_minutes' => 0]
-        );
-
-        // Additive top-up — increment purchased_minutes by the plan's allowance
-        $balance->increment('purchased_minutes', $plan->minute_limit);
-        $balance->update(['plan_id' => $plan->id]);
-        $balance->refresh();
-
-        // Convert any reports that were waiting for minutes
-        $pendingService->convertPending($company->id);
+        $company->call_limit_used = 0;
+        $company->call_limit_expires_at = $validated['expires_at'];
+        if (array_key_exists('monthly_call_limit', $validated)) {
+            $company->monthly_call_limit = $validated['monthly_call_limit'];
+        }
+        $company->save();
 
         return response()->json([
-            'message' => "Plan \"{$plan->name}\" assigned. {$plan->minute_limit} minutes added.",
-            'balance' => [
-                'plan_id' => $balance->plan_id,
-                'plan_name' => $plan->name,
-                'purchased_minutes' => $balance->purchased_minutes,
-                'used_minutes' => $balance->used_minutes,
-                'available_minutes' => $balance->available_minutes,
+            'message' => 'Call limit renewed.',
+            'data' => [
+                'monthly_call_limit' => $company->monthly_call_limit,
+                'call_limit_used' => (int) $company->call_limit_used,
+                'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
+                'call_limit_expires_at' => $company->call_limit_expires_at?->toDateString(),
+                'call_limit_period_completed' => $company->isCallLimitPeriodCompleted(),
+            ],
+        ]);
+    }
+
+    /**
+     * Suggested next expiry date for the renew dialog (today + 30 days, company TZ).
+     * GET /admin/api/companies/{id}/renew-suggestion
+     */
+    public function renewSuggestion(int $id): JsonResponse
+    {
+        $company = Company::findOrFail($id);
+        $this->authorize('view', $company);
+
+        $tz = $company->timezone ?: 'UTC';
+        $suggested = CarbonImmutable::now($tz)->addDays(30)->toDateString();
+
+        return response()->json([
+            'data' => [
+                'suggested_expires_at' => $suggested,
+                'current_expires_at' => $company->call_limit_expires_at?->toDateString(),
+                'monthly_call_limit' => $company->monthly_call_limit,
             ],
         ]);
     }

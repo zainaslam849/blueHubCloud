@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Models\CompanyMinuteBalance;
+use App\Models\CompanyWeeklyFetch;
 use App\Models\WeeklyCallReport;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -19,15 +19,14 @@ class UserDashboardController extends Controller
         if (! $companyId) {
             return response()->json([
                 'company' => null,
-                'minute_balance' => null,
+                'call_limit' => null,
+                'weekly_history' => [],
                 'recent_reports' => [],
                 'message' => 'Your account is pending company assignment. Contact your administrator.',
             ]);
         }
 
-        $balance = CompanyMinuteBalance::with('plan')
-            ->where('company_id', $companyId)
-            ->first();
+        $company = $user->company;
 
         $recentReports = WeeklyCallReport::where('company_id', $companyId)
             ->orderByDesc('week_start_date')
@@ -44,7 +43,32 @@ class UserDashboardController extends Controller
                 'generated_at' => $r->generated_at?->toIso8601String(),
             ]);
 
-        $company = $user->company;
+        // Per-week usage history (drives the "process remaining" smart buttons).
+        // Map each week to whether a completed report already exists for it.
+        $reportWeeks = WeeklyCallReport::where('company_id', $companyId)
+            ->pluck('status', 'week_start_date');
+
+        $weeklyHistory = CompanyWeeklyFetch::where('company_id', $companyId)
+            ->orderByDesc('week_start_date')
+            ->limit(26)
+            ->get()
+            ->map(function (CompanyWeeklyFetch $w) use ($reportWeeks) {
+                $weekKey = $w->week_start_date?->toDateString();
+                $reportStatus = $weekKey ? ($reportWeeks[$weekKey] ?? null) : null;
+
+                return [
+                    'id' => $w->id,
+                    'week_start_date' => $weekKey,
+                    'week_end_date' => $w->week_end_date?->toDateString(),
+                    'calls_available' => $w->calls_available,
+                    'calls_fetched' => $w->calls_fetched,
+                    'calls_blocked' => $w->calls_blocked,
+                    'status' => $w->status,
+                    'report_available' => $reportStatus === 'completed',
+                    'last_attempted_at' => $w->last_attempted_at?->toIso8601String(),
+                    'completed_at' => $w->completed_at?->toIso8601String(),
+                ];
+            });
 
         return response()->json([
             'company' => $company ? [
@@ -53,12 +77,14 @@ class UserDashboardController extends Controller
                 'timezone' => $company->timezone,
                 'status' => $company->status,
             ] : null,
-            'minute_balance' => $balance ? [
-                'plan_name' => $balance->plan?->name,
-                'purchased_minutes' => $balance->purchased_minutes,
-                'used_minutes' => $balance->used_minutes,
-                'available_minutes' => $balance->available_minutes,
+            'call_limit' => $company ? [
+                'monthly_call_limit'   => $company->monthly_call_limit,
+                'call_limit_used'      => (int) $company->call_limit_used,
+                'remaining'            => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
+                'expires_at'           => $company->call_limit_expires_at?->toDateString(),
+                'period_completed'     => $company->isCallLimitPeriodCompleted(),
             ] : null,
+            'weekly_history' => $weeklyHistory,
             'recent_reports' => $recentReports,
         ]);
     }

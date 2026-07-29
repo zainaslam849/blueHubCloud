@@ -22,6 +22,8 @@ class UpdateCompanyRequest extends FormRequest
             'server_id' => ['sometimes', 'string', 'max:100'],
             'pbx_provider_id' => ['sometimes', 'integer', 'exists:pbx_providers,id'],
             'tenant_code' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'monthly_call_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'call_limit_expires_at' => ['sometimes', 'nullable', 'date'],
         ];
     }
 }

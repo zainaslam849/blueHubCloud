@@ -425,13 +425,13 @@ const navItems = [
         featureKey: "admin_companies",
     },
     {
-        key: "plans",
-        label: "Plans",
-        icon: "plans",
-        to: { name: "admin.plans" },
+        key: "pbxServers",
+        label: "PBX Servers",
+        icon: "companies",
+        to: { name: "admin.pbx-servers" },
         requiredRoles: ["admin"],
-        requiredPermissions: ["admin.plans.view"],
-        featureKey: "admin_plans",
+        requiredPermissions: ["admin.pbxServers.view"],
+        featureKey: "admin_pbx_servers",
     },
     {
         key: "categories",
@@ -441,6 +441,15 @@ const navItems = [
         requiredRoles: ["admin"],
         requiredPermissions: ["admin.categories.view"],
         featureKey: "admin_categories",
+    },
+    {
+        key: "plans",
+        label: "Plans",
+        icon: "jobs",
+        to: { name: "admin.plans" },
+        requiredRoles: ["admin"],
+        requiredPermissions: ["admin.plans.view"],
+        featureKey: "admin_plans",
     },
     {
         key: "settings",
@@ -453,19 +462,29 @@ const navItems = [
                 to: { name: "admin.settings" },
             },
             {
-                key: "settings-email",
-                label: "Email / SMTP",
-                to: { name: "admin.settings.email" },
-            },
-            {
                 key: "settings-stripe",
                 label: "Stripe",
                 to: { name: "admin.settings.stripe" },
             },
             {
+                key: "settings-credits",
+                label: "Credits",
+                to: { name: "admin.settings.credits" },
+            },
+            {
+                key: "settings-email",
+                label: "Email / SMTP",
+                to: { name: "admin.settings.email" },
+            },
+            {
                 key: "settings-ai",
                 label: "AI Settings",
                 to: { name: "admin.settings.ai" },
+            },
+            {
+                key: "settings-automation",
+                label: "Automation",
+                to: { name: "admin.settings.automation" },
             },
             {
                 key: "settings-tenant-sync",
@@ -479,3 +498,11 @@ const navItems = [
     },
 ];
 </script>
+
+<style scoped>
+/* Prevent any page from causing horizontal scroll on mobile */
+.admin-content {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+</style>

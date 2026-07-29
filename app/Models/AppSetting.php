@@ -26,11 +26,21 @@ class AppSetting extends Model
         'stripe_secret_key',
         'stripe_webhook_secret',
         'stripe_test_mode',
+        'weekly_run_enabled',
+        'weekly_run_day',
+        'weekly_run_time',
+        'weekly_run_timezone',
+        'credit_price_usd',
+        'credits_per_minute',
     ];
 
     protected $casts = [
-        'smtp_port'        => 'integer',
-        'stripe_test_mode' => 'boolean',
+        'smtp_port'          => 'integer',
+        'stripe_test_mode'   => 'boolean',
+        'weekly_run_enabled' => 'boolean',
+        'weekly_run_day'     => 'integer',
+        'credit_price_usd'   => 'decimal:2',
+        'credits_per_minute' => 'decimal:4',
     ];
 
     protected $hidden = ['smtp_password', 'stripe_secret_key', 'stripe_webhook_secret'];

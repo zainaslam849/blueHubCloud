@@ -16,6 +16,7 @@ class PlanPurchase extends Model
         'amount_paid',
         'currency',
         'minutes_added',
+        'credits_added',
         'plan_name',
         'plan_price',
         'status',
@@ -27,6 +28,7 @@ class PlanPurchase extends Model
         'amount_paid'      => 'decimal:2',
         'plan_price'       => 'decimal:2',
         'minutes_added'    => 'integer',
+        'credits_added'    => 'decimal:4',
         'purchased_at'     => 'datetime',
         'stripe_metadata'  => 'array',
     ];

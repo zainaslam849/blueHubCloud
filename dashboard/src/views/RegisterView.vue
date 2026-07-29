@@ -73,7 +73,7 @@ async function onVerify() {
     try {
         const user = await apiVerify(pendingEmail.value, code.value.trim());
         auth.setUser(user);
-        await router.replace("/select-plan");
+        await router.replace("/dashboard");
     } catch (e: unknown) {
         const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
         verifyError.value = msg ?? "The verification code is invalid or has expired.";

@@ -26,33 +26,34 @@ class MockPbxwareClient
         //   csv[6] = status
         //   csv[7] = uniqueid
         $header = [
-            'col0',
-            'col1',
-            'date_time_epoch',
-            'col3',
+            'From',
+            'To',
+            'Date/Time',
+            'Duration',
             'col4',
             'col5',
-            'status',
-            'uniqueid',
-            'col8',
-            'col9',
+            'Status',
+            'Unique ID',
+            'Recording Path',
+            'Recording Available',
         ];
 
         $csv = [];
         for ($i = 1; $i <= 3; $i++) {
-            $epoch = $now - (60 * $i);
+            $epoch = $now - (3600 * $i);
             $uniqueid = "mock-uniqueid-{$i}";
             $csv[] = [
-                '',
-                '',
+                '100',
+                '200',
                 $epoch,
+                // 90s, 180s, 270s — exercises prorated credit deduction.
+                (string) (90 * $i),
                 '',
                 '',
-                '',
-                '8',
+                'ANSWERED',
                 $uniqueid,
-                '',
-                '',
+                "/recordings/{$uniqueid}.wav",
+                '1',
             ];
         }
 
@@ -74,6 +75,26 @@ class MockPbxwareClient
     }
 
     /**
+     * Authoritative-contract helper: pbxware.tenant.list returns tenants
+     * keyed by their PBX tenant id (server_id).
+     */
+    public function fetchTenantList(): array
+    {
+        return [
+            '2' => [
+                'name' => 'Mock Tenant Alpha',
+                'tenantcode' => 'mockalpha',
+                'package' => 'Mock Package',
+            ],
+            '3' => [
+                'name' => 'Mock Tenant Beta',
+                'tenantcode' => 'mockbeta',
+                'package' => 'Mock Package',
+            ],
+        ];
+    }
+
+    /**
      * Dynamic PBXware-style action fetch for mock mode.
      * Returns JSON arrays/objects or plain text matching the real client.
      */
@@ -85,6 +106,10 @@ class MockPbxwareClient
 
         if ($action === 'pbxware.transcription.get') {
             return $this->fetchTranscription($params);
+        }
+
+        if ($action === 'pbxware.tenant.list') {
+            return $this->fetchTenantList();
         }
 
         // Unknown action

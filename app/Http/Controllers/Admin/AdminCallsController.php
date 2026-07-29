@@ -314,7 +314,7 @@ class AdminCallsController extends Controller
             ], 422);
         }
 
-        $adapter = app(PbxwareAdapter::class);
+        $adapter = new PbxwareAdapter($call->companyPbxAccount?->pbxProvider);
 
         try {
             $transcriptionData = $adapter->fetchTranscription(

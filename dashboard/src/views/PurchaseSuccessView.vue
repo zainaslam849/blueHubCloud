@@ -6,6 +6,7 @@ import { userApi } from "../api/user";
 type VerifyResult = {
     status: string;
     plan_name: string;
+    credits_added: number;
     minutes_added: number;
     amount_paid: string;
 };
@@ -41,7 +42,7 @@ async function verify() {
     }
 
     // Still not completed — show a pending message
-    result.value  = { status: "pending", plan_name: "", minutes_added: 0, amount_paid: "0" };
+    result.value  = { status: "pending", plan_name: "", credits_added: 0, minutes_added: 0, amount_paid: "0" };
     loading.value = false;
 }
 
@@ -82,7 +83,7 @@ onMounted(verify);
                 </svg>
             </div>
             <p class="psTitle">Payment received — processing…</p>
-            <p class="psSub">Your payment was successful. Minutes will be credited to your account within a few minutes. Check your billing history for status updates.</p>
+            <p class="psSub">Your payment was successful. Credits will be added to your account within a few minutes. Check your billing history for status updates.</p>
             <div class="psActions">
                 <button class="psBtn psBtn--primary" @click="router.replace('/billing')">View Billing History</button>
             </div>
@@ -97,7 +98,7 @@ onMounted(verify);
                 </svg>
             </div>
             <p class="psTitle">Payment successful!</p>
-            <p class="psSub">Your plan has been activated and minutes have been added to your account.</p>
+            <p class="psSub">Your credits have been added to your account.</p>
 
             <div class="psDetails">
                 <div class="psDetail">
@@ -105,8 +106,8 @@ onMounted(verify);
                     <span class="psDetail__value">{{ result?.plan_name }}</span>
                 </div>
                 <div class="psDetail">
-                    <span class="psDetail__label">Minutes Added</span>
-                    <span class="psDetail__value">{{ result?.minutes_added.toLocaleString() }}</span>
+                    <span class="psDetail__label">Credits Added</span>
+                    <span class="psDetail__value">{{ Number(result?.credits_added ?? 0).toLocaleString() }}</span>
                 </div>
                 <div class="psDetail">
                     <span class="psDetail__label">Amount Paid</span>

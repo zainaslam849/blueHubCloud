@@ -85,8 +85,8 @@
                             <circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/>
                             <path d="M10 6v4l2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                         </svg>
-                        <span class="minutePill__val">{{ plan.minute_limit.toLocaleString() }}</span>
-                        <span class="minutePill__label">minutes</span>
+                        <span class="minutePill__val">{{ Number(plan.credits ?? 0).toLocaleString() }}</span>
+                        <span class="minutePill__label">credits</span>
                     </div>
                 </div>
 
@@ -166,25 +166,25 @@
                                 <p v-if="formErrors.name" class="pField__errMsg">{{ formErrors.name[0] }}</p>
                             </div>
 
-                            <!-- Minutes -->
+                            <!-- Credits -->
                             <div class="pField">
-                                <label class="pField__label" for="plan-minutes">
-                                    Minutes Included <span class="pField__req">*</span>
+                                <label class="pField__label" for="plan-credits">
+                                    Credits Included <span class="pField__req">*</span>
                                 </label>
                                 <div class="pField__inputWrap">
                                     <input
-                                        id="plan-minutes"
-                                        v-model.number="form.minute_limit"
+                                        id="plan-credits"
+                                        v-model.number="form.credits"
                                         class="pField__input"
-                                        :class="{ 'pField__input--err': formErrors.minute_limit }"
+                                        :class="{ 'pField__input--err': formErrors.credits }"
                                         type="number"
                                         min="1"
-                                        placeholder="500"
+                                        placeholder="100"
                                     />
-                                    <span class="pField__unit">min</span>
+                                    <span class="pField__unit">cr</span>
                                 </div>
-                                <p v-if="formErrors.minute_limit" class="pField__errMsg">{{ formErrors.minute_limit[0] }}</p>
-                                <p v-else class="pField__hint">Call minutes credited to the company when this plan is purchased.</p>
+                                <p v-if="formErrors.credits" class="pField__errMsg">{{ formErrors.credits[0] }}</p>
+                                <p v-else class="pField__hint">Credits added to the company balance when this plan is purchased.</p>
                             </div>
 
                             <!-- Pricing row -->
@@ -331,7 +331,7 @@ const formErrors = ref({});
 const form = reactive({
     id: null,
     name: "",
-    minute_limit: 500,
+    credits: 100,
     price: "",
     sale_price: "",
     is_active: true,
@@ -390,7 +390,7 @@ function formatDate(iso) {
 function resetForm() {
     form.id = null;
     form.name = "";
-    form.minute_limit = 500;
+    form.credits = 100;
     form.price = "";
     form.sale_price = "";
     form.is_active = true;
@@ -407,7 +407,7 @@ function openEdit(plan) {
     isEditing.value = true;
     form.id = plan.id;
     form.name = plan.name;
-    form.minute_limit = plan.minute_limit;
+    form.credits = Number(plan.credits ?? 0);
     form.price = plan.price ?? "";
     form.sale_price = plan.sale_price ?? "";
     form.is_active = plan.is_active;
@@ -433,14 +433,14 @@ function validateForm() {
         errors.name = ["Plan name cannot exceed 255 characters."];
     }
 
-    // Minutes
-    const minutes = Number(form.minute_limit);
-    if (!form.minute_limit && form.minute_limit !== 0) {
-        errors.minute_limit = ["Minutes included is required."];
-    } else if (!Number.isInteger(minutes) || minutes < 1) {
-        errors.minute_limit = ["Minutes must be a whole number greater than 0."];
-    } else if (minutes > 1_000_000) {
-        errors.minute_limit = ["Minutes cannot exceed 1,000,000."];
+    // Credits
+    const credits = Number(form.credits);
+    if (!form.credits && form.credits !== 0) {
+        errors.credits = ["Credits included is required."];
+    } else if (isNaN(credits) || credits < 1) {
+        errors.credits = ["Credits must be a number greater than 0."];
+    } else if (credits > 1_000_000) {
+        errors.credits = ["Credits cannot exceed 1,000,000."];
     }
 
     // Regular price
@@ -489,7 +489,7 @@ async function submitForm() {
         const saleTrimmed = String(form.sale_price ?? "").trim();
         const payload = {
             name: String(form.name).trim(),
-            minute_limit: Number(form.minute_limit),
+            credits: Number(form.credits),
             price: form.price,
             sale_price: saleTrimmed !== "" ? saleTrimmed : null,
             is_active: form.is_active,

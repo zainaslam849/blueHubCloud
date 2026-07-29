@@ -3,13 +3,18 @@
 namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
-use App\Models\CompanyMinuteBalance;
+use App\Models\CompanyCreditBalance;
+use App\Services\Billing\CreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
+/**
+ * Credit balance summary for the logged-in user's company.
+ * (Endpoint kept at /api/v1/plan for the existing usage screen.)
+ */
 class UserPlanController extends Controller
 {
-    public function show(): JsonResponse
+    public function show(CreditService $creditService): JsonResponse
     {
         $user = Auth::guard('web')->user();
 
@@ -17,24 +22,28 @@ class UserPlanController extends Controller
             return response()->json(['message' => 'No company assigned to your account yet.'], 404);
         }
 
-        $balance = CompanyMinuteBalance::with('plan')
-            ->where('company_id', $user->company_id)
-            ->first();
+        $balanceRow = CompanyCreditBalance::firstOrCreate(
+            ['company_id' => $user->company_id],
+            ['balance' => 0]
+        );
 
-        if (! $balance) {
-            return response()->json(['message' => 'No plan assigned yet. Contact your administrator.'], 404);
-        }
+        $creditsPerMinute = $creditService->creditsPerMinute();
 
         return response()->json([
-            'plan' => $balance->plan ? [
-                'id' => $balance->plan->id,
-                'name' => $balance->plan->name,
-                'minute_limit' => $balance->plan->minute_limit,
-                'price' => $balance->plan->price,
-            ] : null,
-            'purchased_minutes' => $balance->purchased_minutes,
-            'used_minutes' => $balance->used_minutes,
-            'available_minutes' => $balance->available_minutes,
+            'credits' => (float) $balanceRow->balance,
+            'credit_price_usd' => $creditService->creditPriceUsd(),
+            'credits_per_minute' => $creditsPerMinute,
+            'minutes_available' => $creditsPerMinute > 0
+                ? round((float) $balanceRow->balance / $creditsPerMinute, 1)
+                : null,
+            'auto_topup' => [
+                'enabled' => (bool) $balanceRow->auto_topup_enabled,
+                'threshold' => $balanceRow->auto_topup_threshold,
+                'credits' => $balanceRow->auto_topup_credits,
+                'has_payment_method' => $balanceRow->stripe_payment_method_id !== null,
+                'paused_at' => $balanceRow->auto_topup_paused_at?->toISOString(),
+                'failure_count' => (int) $balanceRow->auto_topup_failure_count,
+            ],
         ]);
     }
 }

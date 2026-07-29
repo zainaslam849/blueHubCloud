@@ -13,6 +13,7 @@ class PipelineRun extends Model
         'range_from',
         'range_to',
         'status',
+        'trigger_type',
         'current_stage',
         'resume_count',
         'triggered_by_user_id',

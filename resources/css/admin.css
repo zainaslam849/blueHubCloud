@@ -6112,3 +6112,19 @@ html[data-theme="dark"] .admin-callDetailStat__icon {
         font-size: 16px;
     }
 }
+
+/* ── Company call-limit cell ─────────────────────────────────────────── */
+.cmpLimit { display: flex; flex-direction: column; gap: 3px; }
+.cmpLimit__nums { font-weight: 600; font-size: 13px; }
+.cmpLimit__exp { font-size: 11px; opacity: .6; }
+.cmpLimit__badge { width: fit-content; }
+.cmpLimit__renew {
+    margin-top: 4px; width: fit-content;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    color: var(--accent, #3b82f6);
+    background: var(--accent-hover-bg, rgba(59,130,246,.1));
+    border: 1px solid var(--accent-border, rgba(59,130,246,.25));
+    border-radius: 6px; padding: 2px 8px;
+    transition: background .15s;
+}
+.cmpLimit__renew:hover { background: rgba(59,130,246,.18); }

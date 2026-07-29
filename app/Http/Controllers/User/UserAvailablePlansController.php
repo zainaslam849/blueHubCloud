@@ -28,6 +28,7 @@ class UserAvailablePlansController extends Controller
             ->map(fn (Plan $p) => [
                 'id'               => $p->id,
                 'name'             => $p->name,
+                'credits'          => $p->credits,
                 'minute_limit'     => $p->minute_limit,
                 'price'            => $p->price,
                 'sale_price'       => $p->sale_price,

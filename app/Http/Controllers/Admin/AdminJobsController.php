@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\AdminTestPipelineJob;
+use App\Models\AppSetting;
 use App\Models\Call;
+use App\Models\Company;
 use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\Schema;
@@ -147,6 +150,7 @@ class AdminJobsController extends Controller
                     'range_from' => $rangeFrom,
                     'range_to' => $rangeTo,
                     'status' => $run->status,
+                    'trigger_type' => $run->trigger_type ?? 'manual',
                     'current_stage' => $run->current_stage,
                     'resume_count' => (int) ($run->resume_count ?? 0),
                     'started_at' => $run->started_at?->toIso8601String(),
@@ -201,7 +205,87 @@ class AdminJobsController extends Controller
                     'enabled' => $queueConnection === 'redis',
                     'running' => $workerHealth['horizon_running'],
                 ],
+                'automation' => $this->buildAutomationStatus($workerHealth['horizon_running']),
             ],
+        ]);
+    }
+
+    /**
+     * POST /admin/api/jobs/pipeline/run-now
+     * Immediately triggers the weekly pipeline for all active companies (manual, unlimited).
+     */
+    public function runPipelineNow(): JsonResponse
+    {
+        if (! Schema::hasTable('pipeline_runs')) {
+            return response()->json(['message' => 'Pipeline tables not ready. Run migrations first.'], 422);
+        }
+
+        $now = CarbonImmutable::now('UTC');
+        $weekFrom = $now->startOfWeek(CarbonImmutable::MONDAY)->toDateString();
+        $weekTo   = $now->endOfWeek(CarbonImmutable::SUNDAY)->toDateString();
+
+        // Guard: don't dispatch if any run for this week is already active.
+        $alreadyActive = PipelineRun::query()
+            ->whereIn('status', ['running', 'queued'])
+            ->where('range_from', '>=', $weekFrom)
+            ->exists();
+
+        if ($alreadyActive) {
+            return response()->json([
+                'message' => 'A pipeline for this week is already running or queued. Wait for it to finish before starting a new one.',
+            ], 409);
+        }
+
+        $companies = Company::query()
+            ->where('status', 'active')
+            ->whereNotNull('id')
+            ->get(['id', 'name']);
+
+        $dispatched = 0;
+        foreach ($companies as $company) {
+            $activeKey = $this->buildActiveKey((int) $company->id, $weekFrom, $weekTo);
+
+            $peer = PipelineRun::query()
+                ->where('active_key', $activeKey)
+                ->whereNotIn('status', ['failed', 'completed', 'cancelled'])
+                ->exists();
+
+            if ($peer) {
+                continue;
+            }
+
+            $run = PipelineRun::create([
+                'company_id'    => $company->id,
+                'range_from'    => $weekFrom,
+                'range_to'      => $weekTo,
+                'status'        => 'queued',
+                'trigger_type'  => 'manual',
+                'active_key'    => $activeKey,
+                'started_at'    => now(),
+                'metrics'       => ['source' => 'run-now', 'max_calls' => null],
+            ]);
+
+            AdminTestPipelineJob::dispatch(
+                (int) $company->id,
+                $weekFrom,
+                $weekTo,
+                500,
+                500,
+                'default',
+                $run->id,
+                true,
+                null,   // maxCalls — unlimited for manual runs
+                false,  // trackCompanyLimit — manual runs don't touch usage counter
+            )->onQueue('default');
+
+            $dispatched++;
+        }
+
+        return response()->json([
+            'message' => $dispatched > 0
+                ? "Pipeline dispatched for {$dispatched} " . ($dispatched === 1 ? 'company' : 'companies') . '.'
+                : 'No active companies found to process.',
+            'data' => ['dispatched' => $dispatched],
         ]);
     }
 
@@ -632,6 +716,68 @@ class AdminJobsController extends Controller
             'status_command' => 'php artisan queue:monitor default',
             'start_command' => 'php artisan queue:work --queue=default',
             'restart_command' => 'php artisan queue:restart',
+        ];
+    }
+
+    private function buildAutomationStatus(?bool $horizonRunning): array
+    {
+        // Scheduler heartbeat — already written every minute by Kernel.php
+        $schedulerLast = Cache::get('system:scheduler:last_run');
+        $schedulerOk   = false;
+        if ($schedulerLast) {
+            try {
+                $schedulerOk = now()->parse($schedulerLast)->diffInSeconds(now()) < 120;
+            } catch (\Throwable) {}
+        }
+
+        // Weekly pipeline settings from app_settings
+        $settings = null;
+        try {
+            $settings = AppSetting::first();
+        } catch (\Throwable) {}
+
+        $weeklyEnabled  = (bool) ($settings?->weekly_run_enabled ?? true);
+        $weeklyDay      = max(0, min(6, (int) ($settings?->weekly_run_day ?? 1)));
+        $weeklyTime     = (string) ($settings?->weekly_run_time ?? '02:00');
+        $weeklyTz       = (string) ($settings?->weekly_run_timezone ?? 'UTC');
+
+        $dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        $weeklySchedule = ($dayNames[$weeklyDay] ?? 'Monday') . ' at ' . $weeklyTime . ' ' . $weeklyTz;
+
+        // Next occurrence
+        $nextRun = null;
+        if ($weeklyEnabled) {
+            try {
+                $tz   = new \DateTimeZone($weeklyTz);
+                $now  = CarbonImmutable::now($tz);
+                $candidate = $now->startOfWeek(CarbonImmutable::SUNDAY)
+                    ->addDays($weeklyDay)
+                    ->setTimeFromTimeString($weeklyTime);
+                if ($candidate->lte($now)) {
+                    $candidate = $candidate->addWeek();
+                }
+                $nextRun = $candidate->toIso8601String();
+            } catch (\Throwable) {}
+        }
+
+        // Last scheduled run
+        $lastRun = null;
+        try {
+            $lastRun = PipelineRun::query()
+                ->where('trigger_type', 'scheduled')
+                ->latest('id')
+                ->first(['status', 'started_at', 'finished_at']);
+        } catch (\Throwable) {}
+
+        return [
+            'scheduler_ok'          => $schedulerOk,
+            'scheduler_last_run'    => $schedulerLast,
+            'horizon_running'       => $horizonRunning,
+            'weekly_run_enabled'    => $weeklyEnabled,
+            'weekly_run_schedule'   => $weeklySchedule,
+            'next_weekly_run'       => $nextRun,
+            'last_weekly_run_at'    => $lastRun?->started_at?->toIso8601String(),
+            'last_weekly_run_status'=> $lastRun?->status,
         ];
     }
 

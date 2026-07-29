@@ -38,6 +38,18 @@ class AdminTestPipelineJob implements ShouldQueue
         public string $pipelineQueue = 'default',
         public ?int $pipelineRunId = null,
         public bool $isResume = false,
+        // Maximum NEW calls to ingest this run (null = unlimited). Legacy
+        // call-count cap; the weekly run uses the credit budget instead.
+        public ?int $maxCalls = null,
+        // When true, record per-week fetch overflow after discovery. Off for
+        // admin manual/test runs.
+        public bool $trackCompanyLimit = false,
+        // Credit budget in seconds of call time (null = unlimited). Shared
+        // across all of the company's PBX accounts within this run.
+        public ?int $maxSeconds = null,
+        // When true, each NEW call deducts prorated credits from the
+        // company's balance during ingest.
+        public bool $deductCredits = false,
     ) {}
 
     public function handle(): void
@@ -88,6 +100,11 @@ class AdminTestPipelineJob implements ShouldQueue
                 'ingest_accounts' => $accounts->count(),
                 'calls_created' => 0,
                 'calls_skipped_existing' => 0,
+                'calls_available_new' => 0,
+                'calls_blocked_by_limit' => 0,
+                'calls_blocked_by_credits' => 0,
+                'seconds_consumed' => 0,
+                'credits_deducted' => 0.0,
                 'split_window_retries' => 0,
                 'strict_lossless_discovery' => true,
                 'transcription_inline_attempts' => 0,
@@ -97,17 +114,40 @@ class AdminTestPipelineJob implements ShouldQueue
                 'transcription_inline_not_found' => 0,
             ];
 
+            // Remaining caps shrink as each account creates calls, so the
+            // per-company limits are honored across multiple PBX accounts
+            // (possibly on different servers) within a single run.
+            $remainingCap = $this->maxCalls;
+            $remainingSeconds = $this->maxSeconds;
+
             foreach ($accounts as $account) {
-                Log::info('AdminTestPipelineJob - Dispatching ingest for account', ['account_id' => $account->id]);
-                $ingestResult = IngestPbxCallsJob::dispatchSync(
+                Log::info('AdminTestPipelineJob - Dispatching ingest for account', [
+                    'account_id' => $account->id,
+                    'remaining_cap' => $remainingCap,
+                    'remaining_seconds' => $remainingSeconds,
+                ]);
+                // Invoke handle() directly: dispatchSync() on a ShouldQueue job
+                // returns the sync-queue push result (0), NOT handle()'s
+                // metrics array, which silently discarded all discovery
+                // accounting. Direct invocation is still synchronous.
+                $ingestResult = (new IngestPbxCallsJob(
                     $this->companyId,
                     $account->id,
-                    ['from' => $from, 'to' => $to]
-                );
+                    ['from' => $from, 'to' => $to],
+                    $remainingCap,
+                    $remainingSeconds,
+                    $this->deductCredits
+                ))->handle();
 
                 if (is_array($ingestResult)) {
-                    $discoveryMetrics['calls_created'] += (int) ($ingestResult['calls_created'] ?? 0);
+                    $created = (int) ($ingestResult['calls_created'] ?? 0);
+                    $discoveryMetrics['calls_created'] += $created;
                     $discoveryMetrics['calls_skipped_existing'] += (int) ($ingestResult['calls_skipped_existing'] ?? 0);
+                    $discoveryMetrics['calls_available_new'] += (int) ($ingestResult['calls_available_new'] ?? 0);
+                    $discoveryMetrics['calls_blocked_by_limit'] += (int) ($ingestResult['calls_blocked_by_limit'] ?? 0);
+                    $discoveryMetrics['calls_blocked_by_credits'] += (int) ($ingestResult['calls_blocked_by_credits'] ?? 0);
+                    $discoveryMetrics['seconds_consumed'] += (int) ($ingestResult['seconds_consumed'] ?? 0);
+                    $discoveryMetrics['credits_deducted'] += (float) ($ingestResult['credits_deducted'] ?? 0);
                     $discoveryMetrics['split_window_retries'] += (int) ($ingestResult['split_window_retries'] ?? 0);
                     $discoveryMetrics['strict_lossless_discovery'] =
                         $discoveryMetrics['strict_lossless_discovery']
@@ -117,7 +157,20 @@ class AdminTestPipelineJob implements ShouldQueue
                     $discoveryMetrics['transcription_async_verification_candidates'] += (int) ($ingestResult['transcription_async_verification_candidates'] ?? 0);
                     $discoveryMetrics['transcription_skipped_no_recording'] += (int) ($ingestResult['transcription_skipped_no_recording'] ?? 0);
                     $discoveryMetrics['transcription_inline_not_found'] += (int) ($ingestResult['transcription_inline_not_found'] ?? 0);
+
+                    if ($remainingCap !== null) {
+                        $remainingCap = max(0, $remainingCap - $created);
+                    }
+                    if ($remainingSeconds !== null) {
+                        $remainingSeconds = max(0, $remainingSeconds - (int) ($ingestResult['seconds_consumed'] ?? 0));
+                    }
                 }
+            }
+
+            // Record company-limit usage + per-week overflow when running as a tracked
+            // (weekly / user-resume) pipeline. Admin manual runs skip this entirely.
+            if ($this->trackCompanyLimit) {
+                $this->recordCompanyLimitUsage($from, $to, $discoveryMetrics);
             }
 
             $this->completeStage(self::STAGE_CALL_DISCOVERY, $discoveryMetrics);
@@ -247,6 +300,70 @@ class AdminTestPipelineJob implements ShouldQueue
             'status' => 'failed',
             'error_message' => $exception->getMessage(),
             'finished_at' => now(),
+        ]);
+    }
+
+    /**
+     * Record the company's monthly call-limit usage and per-week overflow after
+     * a tracked discovery stage (weekly auto-run or user-initiated resume).
+     */
+    private function recordCompanyLimitUsage(string $from, string $to, array $discoveryMetrics): void
+    {
+        $created   = (int) ($discoveryMetrics['calls_created'] ?? 0);
+        $available = (int) ($discoveryMetrics['calls_available_new'] ?? 0);
+        $blocked   = (int) ($discoveryMetrics['calls_blocked_by_limit'] ?? 0);
+
+        // Legacy call-count metering only: when a call-count cap was set,
+        // keep the consumed counter accurate. Credit-metered runs deduct
+        // per call at ingest instead.
+        if ($created > 0 && $this->maxCalls !== null) {
+            \App\Models\Company::query()
+                ->where('id', $this->companyId)
+                ->increment('call_limit_used', $created);
+        }
+
+        $weekStart = CarbonImmutable::parse($from, 'UTC')->toDateString();
+        $weekEnd   = CarbonImmutable::parse($to, 'UTC')->toDateString();
+
+        $existing = \App\Models\CompanyWeeklyFetch::query()
+            ->where('company_id', $this->companyId)
+            ->where('week_start_date', $weekStart)
+            ->first();
+
+        // Merge with any prior run for the same week (e.g. a resume after raising
+        // the limit) so totals reflect cumulative fetched/blocked for that week.
+        $priorFetched = $existing?->calls_fetched ?? 0;
+        $totalFetched = $priorFetched + $created;
+        $totalAvailable = max($available, $existing?->calls_available ?? 0, $totalFetched + $blocked);
+        $totalBlocked = max(0, $totalAvailable - $totalFetched);
+
+        $status = $totalBlocked > 0
+            ? \App\Models\CompanyWeeklyFetch::STATUS_PARTIAL
+            : \App\Models\CompanyWeeklyFetch::STATUS_COMPLETE;
+
+        \App\Models\CompanyWeeklyFetch::query()->updateOrCreate(
+            [
+                'company_id' => $this->companyId,
+                'week_start_date' => $weekStart,
+            ],
+            [
+                'week_end_date'     => $weekEnd,
+                'calls_available'   => $totalAvailable,
+                'calls_fetched'     => $totalFetched,
+                'calls_blocked'     => $totalBlocked,
+                'status'            => $status,
+                'last_attempted_at' => now(),
+                'completed_at'      => $totalBlocked > 0 ? null : now(),
+            ],
+        );
+
+        Log::info('AdminTestPipelineJob - recorded company limit usage', [
+            'company_id' => $this->companyId,
+            'week_start' => $weekStart,
+            'created' => $created,
+            'available' => $totalAvailable,
+            'blocked' => $totalBlocked,
+            'status' => $status,
         ]);
     }
 

@@ -83,7 +83,8 @@ class FetchTranscriptionsJob implements ShouldQueue
                 'event' => 'stage_start',
             ]);
 
-            $adapter = app(PbxwareAdapter::class);
+            // One adapter per PBX server; calls in a batch can span servers.
+            $adapters = [];
 
             $promotedCount = $this->promotePendingAnsweredCandidates();
 
@@ -109,6 +110,7 @@ class FetchTranscriptionsJob implements ShouldQueue
             }
 
             $calls = $callsQuery
+                ->with('companyPbxAccount.pbxProvider')
                 ->orderBy('id')
                 ->limit(self::BATCH_SIZE)
                 ->get();
@@ -140,7 +142,12 @@ class FetchTranscriptionsJob implements ShouldQueue
 
             $batchOutcomes = [];
             foreach ($calls as $call) {
-                $batchOutcomes[] = $this->processCall($call, $adapter);
+                $server = $call->companyPbxAccount?->pbxProvider;
+                $adapterKey = $server?->id ?? 0;
+                if (! array_key_exists($adapterKey, $adapters)) {
+                    $adapters[$adapterKey] = new PbxwareAdapter($server);
+                }
+                $batchOutcomes[] = $this->processCall($call, $adapters[$adapterKey]);
             }
 
             // If most calls in this batch returned an explicit PBX "no transcription found",

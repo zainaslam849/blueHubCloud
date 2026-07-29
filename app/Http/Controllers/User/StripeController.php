@@ -4,9 +4,12 @@ namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
-use App\Models\CompanyMinuteBalance;
+use App\Models\Company;
+use App\Models\CompanyCreditBalance;
+use App\Models\CreditTransaction;
 use App\Models\Plan;
 use App\Models\PlanPurchase;
+use App\Services\Billing\CreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -68,7 +71,16 @@ class StripeController extends Controller
 
         $appUrl = rtrim(config('app.url'), '/');
 
-        $session = \Stripe\Checkout\Session::create([
+        $creditsIncluded = (float) ($plan->credits ?? 0);
+
+        // Reuse the company's Stripe customer when one exists so saved cards
+        // accumulate under one customer.
+        $balanceRow = CompanyCreditBalance::firstOrCreate(
+            ['company_id' => $user->company_id],
+            ['balance' => 0]
+        );
+
+        $sessionParams = [
             'payment_method_types' => ['card'],
             'mode'                 => 'payment',
             'line_items' => [[
@@ -77,7 +89,7 @@ class StripeController extends Controller
                     'unit_amount'  => $priceInCents,
                     'product_data' => [
                         'name'        => $plan->name,
-                        'description' => "{$plan->minute_limit} call minutes included",
+                        'description' => rtrim(rtrim(number_format($creditsIncluded, 2), '0'), '.') . ' credits included',
                     ],
                 ],
                 'quantity' => 1,
@@ -89,8 +101,20 @@ class StripeController extends Controller
                 'company_id' => $user->company_id,
                 'plan_id'    => $plan->id,
             ],
-            'customer_email' => $user->email,
-        ]);
+            // Save the card for off-session auto top-ups.
+            'payment_intent_data' => [
+                'setup_future_usage' => 'off_session',
+            ],
+        ];
+
+        if ($balanceRow->stripe_customer_id) {
+            $sessionParams['customer'] = $balanceRow->stripe_customer_id;
+        } else {
+            $sessionParams['customer_creation'] = 'always';
+            $sessionParams['customer_email'] = $user->email;
+        }
+
+        $session = \Stripe\Checkout\Session::create($sessionParams);
 
         // Create a pending purchase record
         PlanPurchase::create([
@@ -100,7 +124,8 @@ class StripeController extends Controller
             'stripe_session_id'=> $session->id,
             'amount_paid'      => $plan->effective_price,
             'currency'         => 'usd',
-            'minutes_added'    => $plan->minute_limit,
+            'minutes_added'    => 0,
+            'credits_added'    => $creditsIncluded,
             'plan_name'        => $plan->name,
             'plan_price'       => $plan->effective_price,
             'status'           => 'pending',
@@ -164,10 +189,11 @@ class StripeController extends Controller
         $purchase->refresh();
 
         return response()->json([
-            'status'       => $purchase->status,
-            'plan_name'    => $purchase->plan_name,
-            'minutes_added'=> $purchase->minutes_added,
-            'amount_paid'  => $purchase->amount_paid,
+            'status'        => $purchase->status,
+            'plan_name'     => $purchase->plan_name,
+            'credits_added' => $purchase->credits_added,
+            'minutes_added' => $purchase->minutes_added,
+            'amount_paid'   => $purchase->amount_paid,
         ]);
     }
 
@@ -191,28 +217,74 @@ class StripeController extends Controller
     private function fulfilPurchase(PlanPurchase $purchase, ?string $paymentIntentId = null): void
     {
         DB::transaction(function () use ($purchase, $paymentIntentId) {
-            // Add minutes to company balance
-            CompanyMinuteBalance::updateOrCreate(
-                ['company_id' => $purchase->company_id],
-                ['plan_id' => $purchase->plan_id, 'purchased_minutes' => 0, 'used_minutes' => 0]
-            );
-
-            CompanyMinuteBalance::where('company_id', $purchase->company_id)
-                ->increment('purchased_minutes', $purchase->minutes_added);
-
-            // Mark purchase as completed
+            // Mark purchase as completed first so the ledger reference is final.
             $purchase->update([
                 'status'                   => 'completed',
                 'purchased_at'             => now(),
                 'stripe_payment_intent_id' => $paymentIntentId ?? $purchase->stripe_payment_intent_id,
             ]);
 
+            // Credit the company ledger (idempotent per purchase reference).
+            $company = Company::withTrashed()->find($purchase->company_id);
+            $credits = (float) ($purchase->credits_added ?? 0);
+            if ($company && $credits > 0) {
+                app(CreditService::class)->credit(
+                    $company,
+                    $credits,
+                    CreditTransaction::TYPE_PURCHASE,
+                    $purchase,
+                    ['plan_id' => $purchase->plan_id, 'plan_name' => $purchase->plan_name],
+                    $purchase->user_id
+                );
+            }
+
             Log::info('Plan purchase fulfilled', [
                 'purchase_id' => $purchase->id,
                 'user_id'     => $purchase->user_id,
                 'company_id'  => $purchase->company_id,
-                'minutes'     => $purchase->minutes_added,
+                'credits'     => $credits,
             ]);
         });
+
+        // Save the customer + payment method for off-session auto top-ups.
+        $this->storeReusablePaymentMethod($purchase);
+    }
+
+    /**
+     * Best-effort: persist the Stripe customer and payment method from a
+     * completed purchase so auto top-up can charge off-session later.
+     */
+    private function storeReusablePaymentMethod(PlanPurchase $purchase): void
+    {
+        if (! $purchase->stripe_payment_intent_id || ! $purchase->company_id) {
+            return;
+        }
+
+        try {
+            Stripe::setApiKey($this->stripeSecretKey());
+            $paymentIntent = \Stripe\PaymentIntent::retrieve($purchase->stripe_payment_intent_id);
+
+            $customerId = is_string($paymentIntent->customer ?? null) ? $paymentIntent->customer : null;
+            $paymentMethodId = is_string($paymentIntent->payment_method ?? null) ? $paymentIntent->payment_method : null;
+
+            if ($customerId === null && $paymentMethodId === null) {
+                return;
+            }
+
+            $balanceRow = CompanyCreditBalance::firstOrCreate(
+                ['company_id' => $purchase->company_id],
+                ['balance' => 0]
+            );
+
+            $balanceRow->update(array_filter([
+                'stripe_customer_id' => $customerId,
+                'stripe_payment_method_id' => $paymentMethodId,
+            ]));
+        } catch (\Throwable $e) {
+            Log::warning('Stripe: failed to store reusable payment method', [
+                'purchase_id' => $purchase->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

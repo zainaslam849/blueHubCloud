@@ -2,9 +2,7 @@
 
 namespace App\Console;
 
-use App\Jobs\IngestPbxCallsJob;
 use App\Jobs\QueueHeartbeatJob;
-use App\Models\CompanyPbxAccount;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 use Illuminate\Support\Facades\Cache;
@@ -37,23 +35,11 @@ class Kernel extends ConsoleKernel
             ->weekly()
             ->withoutOverlapping();
 
-        $schedule->call(function () {
-            $enabled = (bool) config('services.pbxware.ingest_enabled', true);
-            if (! $enabled) {
-                Log::info('PBXware ingest scheduler is disabled via PBXWARE_INGEST_ENABLED');
-                return;
-            }
-
-            Log::info('PBXware ingest scheduler starting');
-
-            $accounts = CompanyPbxAccount::where('status', 'active')->get();
-            foreach ($accounts as $account) {
-                // Dispatch a job per PBX account; job handles company scoping
-                IngestPbxCallsJob::dispatch($account->company_id, $account->id)->onQueue('ingest-pbx');
-            }
-
-            Log::info('PBXware ingest scheduler completed', ['dispatched' => $accounts->count()]);
-        })->everyFiveMinutes()->withoutOverlapping();
+        // NOTE: The unbounded every-5-minute PBX ingest was intentionally removed.
+        // Call ingestion now runs ONLY inside the limit-aware weekly pipeline
+        // (see routes/console.php → 'weekly-pipeline'), which caps how many calls each
+        // company fetches to its remaining monthly call limit. Re-enabling an unlimited
+        // ingest here would bypass that limit.
     }
 
     protected function commands(): void

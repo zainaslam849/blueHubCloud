@@ -4,8 +4,8 @@ use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\AdminCallsController;
 use App\Http\Controllers\Admin\AdminCompaniesController;
 use App\Http\Controllers\Admin\AdminPbxAccountsController;
+use App\Http\Controllers\Admin\AdminPbxServersController;
 use App\Http\Controllers\Admin\AdminAiRegenerateController;
-use App\Http\Controllers\Admin\AdminPlansController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\Admin\AdminWeeklyCallReportsController;
 use App\Http\Controllers\Admin\AdminTranscriptionsController;
@@ -19,12 +19,7 @@ use App\Http\Controllers\User\AuthController as UserAuthController;
 use App\Http\Controllers\User\UserCallsController;
 use App\Http\Controllers\User\UserDashboardController;
 use App\Http\Controllers\User\UserJobsController;
-use App\Http\Controllers\User\UserAvailablePlansController;
-use App\Http\Controllers\User\UserPlanController;
 use App\Http\Controllers\User\UserWeeklyCallReportsController;
-use App\Http\Controllers\User\StripeController;
-use App\Http\Controllers\User\PurchaseHistoryController;
-use App\Http\Controllers\Admin\AdminPurchasesController;
 use App\Http\Controllers\Admin\AdminSettingsController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -114,6 +109,8 @@ Route::prefix('admin/api')->group(function () {
         Route::delete('/companies/{id}/force-delete', [AdminCompaniesController::class, 'forceDelete']);
         Route::post('/companies/sync-tenants', [AdminCompaniesController::class, 'syncTenants']);
         Route::get('/companies/available-tenants', [AdminCompaniesController::class, 'availableTenants']);
+        Route::get('/companies/{id}/renew-suggestion', [AdminCompaniesController::class, 'renewSuggestion'])->whereNumber('id');
+        Route::post('/companies/{id}/renew-limit', [AdminCompaniesController::class, 'renewLimit'])->whereNumber('id');
         
         // Tenant sync settings
         Route::get('/tenant-sync-settings', [AdminTenantSyncController::class, 'index']);
@@ -128,6 +125,13 @@ Route::prefix('admin/api')->group(function () {
         Route::put('/pbx-accounts/{id}', [AdminPbxAccountsController::class, 'update']);
         Route::delete('/pbx-accounts/{id}', [AdminPbxAccountsController::class, 'destroy']);
         Route::get('/pbx-providers', [AdminPbxAccountsController::class, 'providers']);
+
+        // PBX Servers management (multi-server: each row = one API key)
+        Route::get('/pbx-servers', [AdminPbxServersController::class, 'index']);
+        Route::post('/pbx-servers', [AdminPbxServersController::class, 'store']);
+        Route::put('/pbx-servers/{id}', [AdminPbxServersController::class, 'update'])->whereNumber('id');
+        Route::delete('/pbx-servers/{id}', [AdminPbxServersController::class, 'destroy'])->whereNumber('id');
+        Route::post('/pbx-servers/{id}/test-connection', [AdminPbxServersController::class, 'testConnection'])->whereNumber('id');
         
         Route::get('/calls', [AdminCallsController::class, 'index']);
         Route::get('/calls/{idOrUid}', [AdminCallsController::class, 'show']);
@@ -184,26 +188,30 @@ Route::prefix('admin/api')->group(function () {
         
         Route::post('/logout', [AuthController::class, 'logout']);
 
-        // SaaS plan management
-        Route::get('/plans', [AdminPlansController::class, 'index']);
-        Route::post('/plans', [AdminPlansController::class, 'store']);
-        Route::get('/plans/{id}', [AdminPlansController::class, 'show']);
-        Route::put('/plans/{id}', [AdminPlansController::class, 'update']);
-        Route::delete('/plans/{id}', [AdminPlansController::class, 'destroy']);
-
         // SaaS user management
         Route::get('/users', [AdminUsersController::class, 'index']);
+        Route::post('/users', [AdminUsersController::class, 'store']);
         Route::get('/users/unassigned', [AdminUsersController::class, 'unassigned']);
         Route::get('/users/{id}', [AdminUsersController::class, 'show'])->whereNumber('id');
         Route::patch('/users/{id}/toggle-status', [AdminUsersController::class, 'toggleStatus']);
         Route::delete('/users/{id}', [AdminUsersController::class, 'destroy']);
 
-        // Company user/plan assignment
+        // Company user assignment
         Route::post('/companies/{id}/assign-user', [AdminCompaniesController::class, 'assignUser']);
-        Route::post('/companies/{id}/assign-plan', [AdminCompaniesController::class, 'assignPlan']);
+
+        // SaaS plan management (credit bundles)
+        Route::get('/plans', [\App\Http\Controllers\Admin\AdminPlansController::class, 'index']);
+        Route::post('/plans', [\App\Http\Controllers\Admin\AdminPlansController::class, 'store']);
+        Route::get('/plans/{id}', [\App\Http\Controllers\Admin\AdminPlansController::class, 'show'])->whereNumber('id');
+        Route::put('/plans/{id}', [\App\Http\Controllers\Admin\AdminPlansController::class, 'update'])->whereNumber('id');
+        Route::delete('/plans/{id}', [\App\Http\Controllers\Admin\AdminPlansController::class, 'destroy'])->whereNumber('id');
 
         // Purchase history (admin)
-        Route::get('/purchases', [AdminPurchasesController::class, 'index']);
+        Route::get('/purchases', [\App\Http\Controllers\Admin\AdminPurchasesController::class, 'index']);
+
+        // Company credit balance + manual adjustments
+        Route::get('/companies/{id}/credits', [\App\Http\Controllers\Admin\AdminCreditsController::class, 'show'])->whereNumber('id');
+        Route::post('/companies/{id}/credits/adjust', [\App\Http\Controllers\Admin\AdminCreditsController::class, 'adjust'])->whereNumber('id');
 
         Route::post('/pbx/ingest', [\App\Http\Controllers\Admin\PbxIngestController::class, 'trigger']);
         Route::post('/pipeline/run', [\App\Http\Controllers\Admin\AdminPipelineController::class, 'run']);
@@ -212,12 +220,17 @@ Route::prefix('admin/api')->group(function () {
         Route::post('/jobs/workers/start', [\App\Http\Controllers\Admin\AdminJobsController::class, 'startWorkers']);
         Route::post('/jobs/pipelines/{pipelineRunId}/resume', [\App\Http\Controllers\Admin\AdminJobsController::class, 'resumePipeline'])
             ->whereNumber('pipelineRunId');
+        Route::post('/jobs/pipeline/run-now', [\App\Http\Controllers\Admin\AdminJobsController::class, 'runPipelineNow']);
         Route::get('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'show']);
         Route::post('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'update']);
         Route::post('/settings/password', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updatePassword']);
         Route::post('/settings/smtp', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateSmtp']);
         Route::get('/settings/stripe', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'showStripe']);
         Route::post('/settings/stripe', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateStripe']);
+        Route::get('/settings/automation', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'showAutomation']);
+        Route::post('/settings/automation', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateAutomation']);
+        Route::get('/settings/credits', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'showCredits']);
+        Route::post('/settings/credits', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updateCredits']);
     });
 });
 
@@ -273,37 +286,52 @@ Route::prefix('api/v1')->group(function () {
         Route::get('/dashboard',     [UserDashboardController::class, 'show']);
         Route::get('/reports',       [UserWeeklyCallReportsController::class, 'index']);
         Route::get('/reports/{id}',  [UserWeeklyCallReportsController::class, 'show'])->whereNumber('id');
-        Route::get('/calls',         [UserCallsController::class, 'index']);
+        Route::get('/calls',                                  [UserCallsController::class, 'index']);
+        Route::get('/calls/{callId}',                         [UserCallsController::class, 'show']);
+        Route::post('/calls/{callId}/regenerate-ai',          [UserCallsController::class, 'regenerate']);
+        Route::post('/calls/{callId}/check-transcript',       [UserCallsController::class, 'checkTranscript']);
+        Route::get('/categories',                             [UserCallsController::class, 'categories']);
+        Route::get('/transcriptions', [\App\Http\Controllers\User\UserTranscriptionsController::class, 'index']);
         Route::get('/jobs/overview', [UserJobsController::class, 'overview']);
-        Route::get('/plan',                [UserPlanController::class, 'show']);
-        Route::get('/plans/available',     [UserAvailablePlansController::class, 'index']);
+
+        // Per-week "process remaining" smart button.
+        Route::post('/weekly-fetches/{id}/process-remaining', [\App\Http\Controllers\User\UserCallLimitController::class, 'processWeek'])->whereNumber('id');
+
+        // Credits, plans & purchases
+        Route::get('/plan', [\App\Http\Controllers\User\UserPlanController::class, 'show']);
+        Route::get('/plans/available', [\App\Http\Controllers\User\UserAvailablePlansController::class, 'index']);
+        Route::get('/purchases', [\App\Http\Controllers\User\PurchaseHistoryController::class, 'index']);
 
         // Stripe checkout
-        Route::post('/stripe/create-checkout', [StripeController::class, 'createCheckout']);
-        Route::get('/stripe/verify/{sessionId}', [StripeController::class, 'verify']);
+        Route::post('/stripe/create-checkout', [\App\Http\Controllers\User\StripeController::class, 'createCheckout']);
+        Route::get('/stripe/verify/{sessionId}', [\App\Http\Controllers\User\StripeController::class, 'verify']);
 
-        // Purchase history
-        Route::get('/purchases', [PurchaseHistoryController::class, 'index']);
+        // Auto top-up configuration (saved card, off-session)
+        Route::post('/auto-topup/setup-intent', [\App\Http\Controllers\User\AutoTopupController::class, 'createSetupIntent']);
+        Route::post('/auto-topup', [\App\Http\Controllers\User\AutoTopupController::class, 'update']);
     });
 });
 
 // Stripe webhook — CSRF excluded via bootstrap/app.php
-Route::post('/stripe/webhook', [StripeController::class, 'webhook']);
+Route::post('/stripe/webhook', [\App\Http\Controllers\User\StripeController::class, 'webhook']);
 
 // User SPA entry — serves dashboard/src Vue app
-Route::view('/select-plan',     'app')->middleware('user');
 Route::view('/login',           'app')->middleware('user.guest');
 Route::view('/register',        'app')->middleware('user.guest');
 Route::view('/dashboard',       'app')->middleware('user');
 Route::view('/reports',         'app')->middleware('user');
 Route::view('/reports/{any}',   'app')->middleware('user')->where('any', '.*');
 Route::view('/usage',           'app')->middleware('user');
+Route::view('/calls',           'app')->middleware('user');
+Route::view('/calls/{any}',     'app')->middleware('user')->where('any', '.*');
+Route::view('/transcriptions',  'app')->middleware('user');
 Route::view('/account',         'app')->middleware('user');
 Route::view('/companies',       'app')->middleware('user');
 Route::view('/pbx-accounts',    'app')->middleware('user');
-Route::view('/plans',           'app')->middleware('user');
 Route::view('/admin-users',     'app')->middleware('user');
 Route::view('/ai-processing',   'app')->middleware('user');
+Route::view('/plans',           'app')->middleware('user');
+Route::view('/select-plan',     'app')->middleware('user');
 Route::view('/billing',         'app')->middleware('user');
 Route::view('/purchase/success','app')->middleware('user');
 Route::view('/admin/purchases', 'app')->middleware('user');

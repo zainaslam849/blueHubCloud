@@ -12,6 +12,7 @@ const router = useRouter();
 type Plan = {
     id: number;
     name: string;
+    credits: number;
     minute_limit: number;
     price: string;
     sale_price: string | null;
@@ -194,8 +195,8 @@ onMounted(loadPlans);
                                 <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/>
                                 <path d="M8 5v3l2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
                             </svg>
-                            <strong>{{ plan.minute_limit.toLocaleString() }}</strong>
-                            <span>minutes included</span>
+                            <strong>{{ Number(plan.credits ?? 0).toLocaleString() }}</strong>
+                            <span>credits included</span>
                         </div>
                     </div>
 
@@ -220,7 +221,7 @@ onMounted(loadPlans);
                     <div class="spSummary__badge">Selected</div>
                     <span class="spSummary__name">{{ selectedPlan.name }}</span>
                     <span class="spSummary__sep">·</span>
-                    <span class="spSummary__minutes">{{ selectedPlan.minute_limit.toLocaleString() }} min</span>
+                    <span class="spSummary__minutes">{{ Number(selectedPlan.credits ?? 0).toLocaleString() }} credits</span>
                     <span class="spSummary__sep">·</span>
                     <span class="spSummary__price">
                         <template v-if="selectedPlan.has_sale">

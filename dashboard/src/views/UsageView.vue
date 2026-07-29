@@ -5,10 +5,18 @@ import PageHeader from "../components/ui/PageHeader.vue";
 import { userApi } from "../api/user";
 
 type PlanData = {
-    plan: { id: number; name: string; minute_limit: number; price: string } | null;
-    purchased_minutes: number;
-    used_minutes: number;
-    available_minutes: number;
+    credits: number;
+    credit_price_usd: number;
+    credits_per_minute: number;
+    minutes_available: number | null;
+    auto_topup: {
+        enabled: boolean;
+        threshold: number | null;
+        credits: number | null;
+        has_payment_method: boolean;
+        paused_at: string | null;
+        failure_count: number;
+    };
 };
 
 const loading = ref(true);
@@ -35,18 +43,13 @@ async function load() {
 }
 
 onMounted(load);
-
-function pct(used: number, purchased: number): number {
-    if (purchased === 0) return 0;
-    return Math.min(100, Math.round((used / purchased) * 100));
-}
 </script>
 
 <template>
     <div>
         <PageHeader
             title="Usage"
-            description="Your minute plan and usage summary."
+            description="Your credit balance and usage summary."
         />
 
         <div v-if="loading" class="skeleton">
@@ -57,56 +60,50 @@ function pct(used: number, purchased: number): number {
         <div v-else-if="error" class="errorBanner">{{ error }}</div>
 
         <div v-else-if="!planData" class="infoBanner">
-            No plan assigned yet. Contact your administrator to be assigned a plan.
+            No billing information available yet. Contact your administrator.
         </div>
 
         <section v-else class="grid">
-            <Card :title="planData.plan ? `Plan: ${planData.plan.name}` : 'Minute Balance'">
+            <Card title="Credit Balance">
                 <div class="kv">
-                    <div class="k">Plan</div>
-                    <div class="v">{{ planData.plan?.name ?? '—' }}</div>
+                    <div class="k">Available credits</div>
+                    <div class="v" :class="planData.credits < 5 ? 'warn' : 'ok'">
+                        {{ planData.credits.toLocaleString() }}
+                    </div>
 
-                    <div class="k">Minute limit per top-up</div>
-                    <div class="v">{{ planData.plan ? planData.plan.minute_limit.toLocaleString() + ' min' : '—' }}</div>
+                    <div class="k">Approx. call minutes covered</div>
+                    <div class="v">
+                        {{ planData.minutes_available !== null ? planData.minutes_available.toLocaleString() + ' min' : '—' }}
+                    </div>
 
-                    <div class="k">Price per top-up</div>
-                    <div class="v">{{ planData.plan ? '$' + planData.plan.price : '—' }}</div>
+                    <div class="k">Credit price</div>
+                    <div class="v">${{ planData.credit_price_usd.toFixed(2) }} / credit</div>
+
+                    <div class="k">Rate</div>
+                    <div class="v">{{ planData.credits_per_minute }} credits / minute of call</div>
                 </div>
 
                 <div class="divider"></div>
 
                 <div class="kv">
-                    <div class="k">Purchased minutes</div>
-                    <div class="v">{{ planData.purchased_minutes.toLocaleString() }}</div>
-
-                    <div class="k">Used minutes</div>
-                    <div class="v">{{ planData.used_minutes.toLocaleString() }}</div>
-
-                    <div class="k">Available minutes</div>
-                    <div class="v" :class="planData.available_minutes < 60 ? 'warn' : 'ok'">
-                        {{ planData.available_minutes.toLocaleString() }}
-                    </div>
-                </div>
-
-                <div class="progressWrap">
-                    <div class="progressBar">
-                        <div
-                            class="progressFill"
-                            :style="{ width: pct(planData.used_minutes, planData.purchased_minutes) + '%' }"
-                            :class="pct(planData.used_minutes, planData.purchased_minutes) > 85 ? 'fill--warn' : 'fill--ok'"
-                        ></div>
-                    </div>
-                    <div class="progressLabel">
-                        {{ pct(planData.used_minutes, planData.purchased_minutes) }}% used
+                    <div class="k">Auto top-up</div>
+                    <div class="v">
+                        <template v-if="planData.auto_topup.paused_at">Paused (payment failures)</template>
+                        <template v-else-if="planData.auto_topup.enabled">
+                            On — below {{ planData.auto_topup.threshold }} credits, buy {{ planData.auto_topup.credits }}
+                        </template>
+                        <template v-else>Off</template>
                     </div>
                 </div>
             </Card>
 
-            <Card title="Need more minutes?" subtitle="Contact your administrator">
+            <Card title="Need more credits?" subtitle="Buy credits or enable auto top-up">
                 <p class="muted">
-                    When your available minutes run out, new weekly reports will be
-                    paused until more minutes are purchased. Ask your administrator
-                    to top up your plan.
+                    When your credits run out, new weekly reports pause until
+                    credits are purchased. You can buy credit bundles from the
+                    Plans page, or enable auto top-up on the Billing page so the
+                    system purchases credits automatically when your balance
+                    drops below your chosen threshold.
                 </p>
             </Card>
         </section>

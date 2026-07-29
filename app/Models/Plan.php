@@ -10,6 +10,7 @@ class Plan extends Model
     protected $fillable = [
         'name',
         'minute_limit',
+        'credits',
         'price',
         'sale_price',
         'is_active',
@@ -17,6 +18,7 @@ class Plan extends Model
 
     protected $casts = [
         'minute_limit' => 'integer',
+        'credits' => 'decimal:4',
         'price' => 'decimal:2',
         'sale_price' => 'decimal:2',
         'is_active' => 'boolean',

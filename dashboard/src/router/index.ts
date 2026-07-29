@@ -37,7 +37,25 @@ const routes: RouteRecordRaw[] = [
                 path: "reports",
                 name: "reports",
                 component: () => import("../views/ReportsView.vue"),
-                meta: { title: "Reports" },
+                meta: { title: "Weekly Call Reports" },
+            },
+            {
+                path: "calls",
+                name: "calls",
+                component: () => import("../views/CallsView.vue"),
+                meta: { title: "Calls" },
+            },
+            {
+                path: "calls/:callId",
+                name: "calls-detail",
+                component: () => import("../views/CallDetailView.vue"),
+                meta: { title: "Call Detail" },
+            },
+            {
+                path: "transcriptions",
+                name: "transcriptions",
+                component: () => import("../views/TranscriptionsView.vue"),
+                meta: { title: "Transcriptions" },
             },
             {
                 path: "reports/:id",
@@ -76,22 +94,22 @@ const routes: RouteRecordRaw[] = [
                 meta: { title: "PBX Accounts" },
             },
             {
-                path: "plans",
-                name: "plans",
-                component: () => import("../views/PlansView.vue"),
-                meta: { title: "Plans" },
-            },
-            {
                 path: "admin-users",
                 name: "admin-users",
                 component: () => import("../views/AdminUsersView.vue"),
                 meta: { title: "Users" },
             },
             {
+                path: "plans",
+                name: "plans",
+                component: () => import("../views/PlansView.vue"),
+                meta: { title: "Plans" },
+            },
+            {
                 path: "select-plan",
                 name: "select-plan",
                 component: () => import("../views/PlanSelectView.vue"),
-                meta: { title: "Choose a Plan" },
+                meta: { title: "Buy Credits" },
             },
             {
                 path: "billing",

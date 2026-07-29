@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\PbxProvider;
 use App\Models\TenantSyncSetting;
-use App\Services\PbxwareClient;
+use App\Services\Pbx\PbxClientResolver;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -12,20 +12,15 @@ class SyncPbxTenants extends Command
 {
     protected $signature = 'pbx:sync-tenants {--provider-id=}';
 
-    protected $description = 'Sync tenants for PBXware providers based on scheduled settings';
+    protected $description = 'Sync tenants for PBXware servers based on scheduled settings';
 
-    protected PbxwareClient $pbxwareClient;
-
-    // NOTE: Do NOT inject PbxwareClient via __construct. Laravel resolves
+    // NOTE: Do NOT build a PBX client via __construct. Laravel resolves
     // every registered command's constructor during artisan boot/discovery,
-    // and PbxwareClient::__construct performs Secrets Manager I/O. Inject
-    // via handle() so the client is only built when this command actually
-    // runs.
+    // and client construction performs Secrets Manager I/O. A client is
+    // built per server inside handle(), only when that server is synced.
 
-    public function handle(PbxwareClient $pbxwareClient)
+    public function handle()
     {
-        $this->pbxwareClient = $pbxwareClient;
-
         $this->info('Starting PBXware tenant sync...');
         $hadFailures = false;
         $requestedProviderId = $this->option('provider-id');
@@ -52,6 +47,12 @@ class SyncPbxTenants extends Command
 
         foreach ($syncSettings as $setting) {
             try {
+                $server = $setting->pbxProvider;
+                if (! $server || $server->status !== 'active') {
+                    $this->info("⏭️  Server for sync setting #{$setting->id} is missing or inactive; skipping.");
+                    continue;
+                }
+
                 $shouldSync = $setting->shouldSyncNow();
                 Log::info(
                     'Tenant sync check',
@@ -75,8 +76,7 @@ class SyncPbxTenants extends Command
                     "🔄 Syncing tenants for {$setting->pbxProvider->name}..."
                 );
 
-                // Call the sync endpoint from AdminCompaniesController logic
-                $result = $this->syncTenantsForProvider($setting->pbx_provider_id);
+                $result = $this->syncTenantsForServer($server);
 
                 $setting->update([
                     'last_synced_at' => now(),
@@ -151,11 +151,14 @@ class SyncPbxTenants extends Command
     }
 
     /**
-     * Sync tenants for a specific provider
+     * Sync tenants for a specific PBX server using that server's own
+     * credentials.
      */
-    private function syncTenantsForProvider(int $providerId): array
+    private function syncTenantsForServer(PbxProvider $server): array
     {
-        $tenants = $this->pbxwareClient->fetchTenantList();
+        $providerId = $server->id;
+        $client = PbxClientResolver::resolve($server);
+        $tenants = $client->fetchTenantList();
 
         if (empty($tenants)) {
             return [
@@ -232,15 +235,31 @@ class SyncPbxTenants extends Command
                         'pbx_synced_at' => now(),
                     ]);
 
-                // Auto-create and link companies
+                // Auto-create and link companies.
+                // Company resolution is SERVER-SCOPED: tenant names are not
+                // globally unique across servers, so a same-named tenant on a
+                // different server must become a separate company (duplicates
+                // arrive under different IDs).
                 $tenantName = $tenantData['name'] ?? null;
                 if (is_string($tenantName) && trim($tenantName) !== '') {
                     $tenantName = trim($tenantName);
-                    
-                    // Check for company including soft-deleted ones
-                    $company = \App\Models\Company::withTrashed()
-                        ->where('name', $tenantName)
+
+                    // 1) The account already mapped to this exact (server, tenant) wins.
+                    $mappedAccount = \App\Models\CompanyPbxAccount::where('pbx_provider_id', $providerId)
+                        ->where('server_id', (string) $serverId)
                         ->first();
+
+                    if ($mappedAccount) {
+                        $company = \App\Models\Company::withTrashed()->find($mappedAccount->company_id);
+                    } else {
+                        // 2) Name match restricted to companies already on this server.
+                        $company = \App\Models\Company::withTrashed()
+                            ->where('name', $tenantName)
+                            ->whereHas('companyPbxAccounts', function ($query) use ($providerId) {
+                                $query->where('pbx_provider_id', $providerId);
+                            })
+                            ->first();
+                    }
 
                     // Skip if company is soft-deleted (don't restore or create duplicate)
                     if ($company && $company->trashed()) {
@@ -248,11 +267,12 @@ class SyncPbxTenants extends Command
                         Log::info('Skipped soft-deleted company during sync', [
                             'company_id' => $company->id,
                             'name' => $tenantName,
+                            'pbx_provider_id' => $providerId,
                         ]);
                         continue;
                     }
 
-                    // Create new company only if it doesn't exist at all
+                    // 3) No company on this server matches: create a fresh one.
                     if (!$company) {
                         $company = \App\Models\Company::create([
                             'name' => $tenantName,
@@ -260,6 +280,12 @@ class SyncPbxTenants extends Command
                             'status' => 'inactive',
                         ]);
                         $createdCompanies++;
+                        Log::info('Auto-created company during tenant sync', [
+                            'company_id' => $company->id,
+                            'name' => $tenantName,
+                            'pbx_provider_id' => $providerId,
+                            'server_id' => (string) $serverId,
+                        ]);
                     }
                     // If company exists (active/inactive), keep its current status - don't change it
 
@@ -284,11 +310,13 @@ class SyncPbxTenants extends Command
                             ->where('company_id', '!=', $company->id)
                             ->exists();
 
+                        // tenant_code uniqueness is scoped per server.
                         $tenantCodeTaken = !empty($tenantCode)
                             ? \App\Models\CompanyPbxAccount::where(
                                 'tenant_code',
                                 $tenantCode
                             )
+                                ->where('pbx_provider_id', $providerId)
                                 ->where(
                                     'server_id',
                                     '!=',

@@ -210,6 +210,12 @@
                         systemStatus?.reports_ai_enabled ? 'active' : 'failed'
                     "
                 />
+                <MetricRow
+                    label="Weekly pipeline"
+                    :value="systemStatus?.weekly_pipeline?.enabled ? 'Enabled' : 'Disabled'"
+                    :status-label="weeklyPipelineDashboardLabel"
+                    :status-variant="weeklyPipelineDashboardVariant"
+                />
             </div>
         </PanelCard>
 
@@ -326,6 +332,23 @@ onMounted(() => {
 const queueMeta = computed(() =>
     loading.value ? "Loading…" : "Last 15 minutes",
 );
+
+const weeklyPipelineDashboardLabel = computed(() => {
+    const wp = systemStatus.value?.weekly_pipeline;
+    if (!wp) return "Unknown";
+    if (!wp.enabled) return "Disabled";
+    if (wp.last_run_status === "failed") return "Failed";
+    if (wp.last_run_status === "completed") return "Active";
+    return "Active";
+});
+
+const weeklyPipelineDashboardVariant = computed(() => {
+    const wp = systemStatus.value?.weekly_pipeline;
+    if (!wp) return "processing";
+    if (!wp.enabled) return "failed";
+    if (wp.last_run_status === "failed") return "failed";
+    return "active";
+});
 
 async function runPipeline() {
     pipelineRunning.value = true;

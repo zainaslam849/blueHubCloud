@@ -92,9 +92,7 @@ const navGroups = computed(() => {
             {
                 label: "SAAS",
                 items: [
-                    { name: "Plans", icon: "usage", to: { name: "plans" } },
                     { name: "Users", icon: "account", to: { name: "admin-users" } },
-                    { name: "Purchases", icon: "reports", to: { name: "admin-purchases" } },
                 ],
             },
             {
@@ -109,15 +107,14 @@ const navGroups = computed(() => {
             label: "MENU",
             items: [
                 { name: "Dashboard", icon: "dashboard", to: { name: "dashboard" } },
-                { name: "Reports", icon: "reports", to: { name: "reports" } },
+                { name: "Calls", icon: "calls", to: { name: "calls" } },
+                { name: "Transcriptions", icon: "generated", to: { name: "transcriptions" } },
+                { name: "Weekly Call Reports", icon: "reports", to: { name: "reports" } },
             ],
         },
         {
             label: "ACCOUNT",
             items: [
-                { name: "Usage", icon: "usage", to: { name: "usage" } },
-                { name: "Plans", icon: "dashboard", to: { name: "select-plan" } },
-                { name: "Billing", icon: "reports", to: { name: "billing" } },
                 { name: "Account", icon: "account", to: { name: "account" } },
             ],
         },

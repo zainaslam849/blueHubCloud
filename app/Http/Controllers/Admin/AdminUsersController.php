@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\WelcomeUserMail;
+use App\Models\AppSetting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 
 class AdminUsersController extends Controller
 {
@@ -23,16 +27,12 @@ class AdminUsersController extends Controller
     }
 
     /**
-     * All registered SaaS users with company and minute balance.
+     * All registered SaaS users with company info.
      */
     public function index(Request $request): JsonResponse
     {
         $users = User::where('role', User::ROLE_USER)
-            ->with([
-                'company:id,name,status',
-                'company.minuteBalance:company_id,plan_id,purchased_minutes,used_minutes',
-                'company.minuteBalance.plan:id,name,minute_limit',
-            ])
+            ->with(['company:id,name,status'])
             ->orderBy('name')
             ->paginate((int) $request->query('per_page', 25));
 
@@ -50,64 +50,89 @@ class AdminUsersController extends Controller
     }
 
     /**
-     * Full user detail with billing history.
+     * Full user detail.
      * GET /admin/api/users/{id}
      */
     public function show(int $id): JsonResponse
     {
         $user = User::where('role', User::ROLE_USER)
-            ->with([
-                'company:id,name,status',
-                'company.minuteBalance:company_id,plan_id,purchased_minutes,used_minutes',
-                'company.minuteBalance.plan:id,name,minute_limit',
-            ])
+            ->with(['company:id,name,status,monthly_call_limit,call_limit_used,call_limit_expires_at,timezone'])
             ->findOrFail($id);
 
-        $purchases = \App\Models\PlanPurchase::where('user_id', $id)
-            ->whereIn('status', ['completed', 'failed', 'refunded'])
-            ->with('plan:id,name,minute_limit')
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(fn ($p) => [
-                'id'                      => $p->id,
-                'plan_name'               => $p->plan_name,
-                'minutes_added'           => $p->minutes_added,
-                'amount_paid'             => $p->amount_paid,
-                'currency'                => strtoupper($p->currency ?? 'USD'),
-                'status'                  => $p->status,
-                'stripe_session_id'       => $p->stripe_session_id,
-                'stripe_payment_intent_id'=> $p->stripe_payment_intent_id,
-                'purchased_at'            => $p->purchased_at?->toIso8601String(),
-                'created_at'              => $p->created_at?->toIso8601String(),
-            ]);
-
-        $balance = $user->company?->minuteBalance;
+        $company = $user->company;
 
         return response()->json([
             'data' => [
                 'user' => [
-                    'id'             => $user->id,
-                    'name'           => $user->name,
-                    'email'          => $user->email,
-                    'account_status' => $user->account_status ?? 'active',
-                    'email_verified_at' => $user->email_verified_at?->toIso8601String(),
-                    'created_at'     => $user->created_at?->toIso8601String(),
+                    'id'                  => $user->id,
+                    'name'                => $user->name,
+                    'email'               => $user->email,
+                    'account_status'      => $user->account_status ?? 'active',
+                    'email_verified_at'   => $user->email_verified_at?->toIso8601String(),
+                    'created_at'          => $user->created_at?->toIso8601String(),
                 ],
-                'company' => $user->company ? [
-                    'id'   => $user->company->id,
-                    'name' => $user->company->name,
+                'company' => $company ? [
+                    'id'   => $company->id,
+                    'name' => $company->name,
                 ] : null,
-                'minute_balance' => $balance ? [
-                    'purchased_minutes' => $balance->purchased_minutes,
-                    'used_minutes'      => $balance->used_minutes,
-                    'available_minutes' => $balance->available_minutes,
-                    'plan_name'         => $balance->plan?->name,
+                // Call limit is company-level; surfaced here read-only for context.
+                'call_limit' => $company ? [
+                    'monthly_call_limit'   => $company->monthly_call_limit,
+                    'call_limit_used'      => (int) $company->call_limit_used,
+                    'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
+                    'call_limit_expires_at'=> $company->call_limit_expires_at?->toDateString(),
+                    'period_completed'     => $company->isCallLimitPeriodCompleted(),
                 ] : null,
-                'purchases'      => $purchases,
-                'total_spent'    => $purchases->where('status', 'completed')->sum('amount_paid'),
-                'total_purchases'=> $purchases->count(),
             ],
         ]);
+    }
+
+    /**
+     * Create a new SaaS user.
+     * POST /admin/api/users
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name'                => ['required', 'string', 'max:255'],
+            'email'               => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password'            => ['required', 'string', 'min:8'],
+            'company_id'          => ['nullable', 'integer', 'exists:companies,id'],
+        ]);
+
+        $user = User::create([
+            'name'                => $validated['name'],
+            'email'               => $validated['email'],
+            'password'            => Hash::make($validated['password']),
+            'role'                => User::ROLE_USER,
+            'account_status'      => User::STATUS_ACTIVE,
+            'company_id'          => $validated['company_id'] ?? null,
+            'email_verified_at'   => now(), // admin-created users are pre-verified
+        ]);
+
+        $user->load('company:id,name,status');
+
+        // Send welcome email with login credentials
+        try {
+            $settings = AppSetting::query()->first();
+            $appName  = $settings?->site_name ?? config('app.name', 'BlueHubCloud');
+            $loginUrl = rtrim(config('app.url'), '/') . '/login';
+
+            Mail::to($user->email)->send(new WelcomeUserMail(
+                userName:      $user->name,
+                userEmail:     $user->email,
+                plainPassword: $validated['password'],
+                loginUrl:      $loginUrl,
+                appName:       $appName,
+            ));
+        } catch (\Throwable) {
+            // Email failure must not prevent user creation from succeeding
+        }
+
+        return response()->json([
+            'message' => "User \"{$user->name}\" created successfully. A welcome email with login credentials has been sent.",
+            'data'    => $this->format($user),
+        ], 201);
     }
 
     /**
@@ -140,8 +165,6 @@ class AdminUsersController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $user = User::where('role', User::ROLE_USER)->findOrFail($id);
-
-        // Only delete the user row — all company data stays intact
         $user->delete();
 
         return response()->json(['message' => "User \"{$user->name}\" has been deleted."]);
@@ -149,24 +172,17 @@ class AdminUsersController extends Controller
 
     private function format(User $user): array
     {
-        $balance = $user->company?->minuteBalance;
-
         return [
-            'id'             => $user->id,
-            'name'           => $user->name,
-            'email'          => $user->email,
-            'company_id'     => $user->company_id,
-            'account_status' => $user->account_status ?? User::STATUS_ACTIVE,
-            'company'        => $user->company
+            'id'                 => $user->id,
+            'name'               => $user->name,
+            'email'              => $user->email,
+            'company_id'         => $user->company_id,
+            'account_status'     => $user->account_status ?? User::STATUS_ACTIVE,
+            'monthly_call_limit' => $user->monthly_call_limit,
+            'company'            => $user->company
                 ? ['id' => $user->company->id, 'name' => $user->company->name]
                 : null,
-            'minute_balance' => $balance ? [
-                'purchased_minutes' => $balance->purchased_minutes,
-                'used_minutes'      => $balance->used_minutes,
-                'available_minutes' => $balance->available_minutes,
-                'plan_name'         => $balance->plan?->name,
-            ] : null,
-            'created_at' => $user->created_at?->toIso8601String(),
+            'created_at'         => $user->created_at?->toIso8601String(),
         ];
     }
 }

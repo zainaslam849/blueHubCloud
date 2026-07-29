@@ -90,6 +90,7 @@
                             </th>
                             <th class="admin-table__th">Server ID</th>
                             <th class="admin-table__th">Tenant Code</th>
+                            <th class="admin-table__th">Call Limit</th>
                             <th class="admin-table__th">Package</th>
                             <th class="admin-table__th">
                                 <button
@@ -137,6 +138,31 @@
                                     company.tenant_code
                                 }}</code>
                                 <span v-else class="text-muted">—</span>
+                            </td>
+                            <td class="admin-table__td" data-label="Call Limit">
+                                <template v-if="company.monthly_call_limit != null">
+                                    <div class="cmpLimit">
+                                        <span class="cmpLimit__nums">
+                                            {{ Number(company.call_limit_used).toLocaleString() }}
+                                            / {{ Number(company.monthly_call_limit).toLocaleString() }}
+                                        </span>
+                                        <span
+                                            v-if="company.call_limit_period_completed"
+                                            class="admin-status-badge admin-status-badge--inactive cmpLimit__badge"
+                                        >Period ended</span>
+                                        <span
+                                            v-else-if="company.call_limit_expires_at"
+                                            class="cmpLimit__exp"
+                                        >exp {{ company.call_limit_expires_at }}</span>
+                                    </div>
+                                    <button
+                                        v-if="!company.deleted_at"
+                                        type="button"
+                                        class="cmpLimit__renew"
+                                        @click="openRenew(company)"
+                                    >Renew</button>
+                                </template>
+                                <span v-else class="text-muted">Unlimited</span>
                             </td>
                             <td class="admin-table__td" data-label="Package">
                                 <span v-if="company.package_name">{{
@@ -241,6 +267,55 @@
                 />
             </div>
         </section>
+
+        <!-- Renew Call Limit Modal -->
+        <Teleport to="body">
+            <Transition name="admin-modal">
+                <div v-if="showRenew" class="admin-modalOverlay" @click="closeRenew">
+                    <div class="admin-modal" style="max-width: 460px" @click.stop>
+                        <div class="admin-modal__header">
+                            <h2 class="admin-modal__title">Renew Call Limit</h2>
+                            <button class="admin-modal__close" @click="closeRenew">✕</button>
+                        </div>
+                        <div class="admin-modal__body">
+                            <p class="admin-field__help" style="margin-bottom: 14px">
+                                Renewing resets used calls to 0 for
+                                <strong>{{ renewTarget?.name }}</strong> and sets the next expiry date.
+                            </p>
+                            <div v-if="renewError" class="admin-alert admin-alert--error">{{ renewError }}</div>
+
+                            <div class="admin-field">
+                                <label class="admin-field__label" for="renew-limit">Monthly Call Limit</label>
+                                <input
+                                    id="renew-limit"
+                                    v-model="renewForm.monthly_call_limit"
+                                    class="admin-input"
+                                    type="number"
+                                    min="0"
+                                    placeholder="blank = unlimited"
+                                />
+                            </div>
+                            <div class="admin-field">
+                                <label class="admin-field__label" for="renew-expiry">Next Expiry Date</label>
+                                <input
+                                    id="renew-expiry"
+                                    v-model="renewForm.expires_at"
+                                    class="admin-input"
+                                    type="date"
+                                />
+                                <p class="admin-field__help">Suggested: 30 days from today (editable).</p>
+                            </div>
+                        </div>
+                        <div class="admin-modal__footer">
+                            <BaseButton variant="secondary" size="sm" @click="closeRenew">Cancel</BaseButton>
+                            <BaseButton variant="primary" size="sm" :disabled="renewing || !renewForm.expires_at" @click="submitRenew">
+                                {{ renewing ? "Renewing…" : "Renew" }}
+                            </BaseButton>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
 
         <!-- Add/Edit Company Modal -->
         <Teleport to="body">
@@ -447,6 +522,40 @@
                                 >
                                     {{ validationErrors.tenant_code[0] }}
                                 </span>
+                            </div>
+
+                            <!-- Monthly Call Limit -->
+                            <div class="admin-field">
+                                <label class="admin-field__label" for="company-call-limit">
+                                    Monthly Call Limit
+                                </label>
+                                <input
+                                    id="company-call-limit"
+                                    v-model="formData.monthly_call_limit"
+                                    class="admin-input"
+                                    type="number"
+                                    min="0"
+                                    placeholder="e.g., 10000 (blank = unlimited)"
+                                />
+                                <p class="admin-field__help">
+                                    Maximum analysed calls fetched per period. Leave blank for unlimited.
+                                </p>
+                            </div>
+
+                            <!-- Limit Expiry Date -->
+                            <div class="admin-field">
+                                <label class="admin-field__label" for="company-limit-expiry">
+                                    Limit Expiry Date
+                                </label>
+                                <input
+                                    id="company-limit-expiry"
+                                    v-model="formData.call_limit_expires_at"
+                                    class="admin-input"
+                                    type="date"
+                                />
+                                <p class="admin-field__help">
+                                    On this date the limit period ends. Use Renew to reset usage and set the next date.
+                                </p>
                             </div>
 
                             <!-- Assign User -->
@@ -807,6 +916,8 @@ const formData = reactive({
     server_id: "",
     tenant_code: "",
     user_id: "",
+    monthly_call_limit: "",
+    call_limit_expires_at: "",
 });
 
 const defaultFormData = {
@@ -818,6 +929,8 @@ const defaultFormData = {
     server_id: "",
     tenant_code: "",
     user_id: "",
+    monthly_call_limit: "",
+    call_limit_expires_at: "",
 };
 
 const registeredUsers = ref([]);
@@ -834,6 +947,54 @@ const showDeleteConfirm = ref(false);
 const deleteTarget = ref(null);
 const deleting = ref(false);
 const deleteMode = ref("soft");
+
+// Renew call-limit state
+const showRenew = ref(false);
+const renewTarget = ref(null);
+const renewing = ref(false);
+const renewError = ref("");
+const renewForm = reactive({ monthly_call_limit: "", expires_at: "" });
+
+async function openRenew(company) {
+    renewTarget.value = company;
+    renewError.value = "";
+    renewForm.monthly_call_limit = company.monthly_call_limit ?? "";
+    renewForm.expires_at = "";
+    showRenew.value = true;
+    try {
+        const res = await adminApi.get(`/companies/${company.id}/renew-suggestion`);
+        renewForm.expires_at = res?.data?.data?.suggested_expires_at ?? "";
+    } catch {
+        // fallback handled by user
+    }
+}
+
+function closeRenew() {
+    showRenew.value = false;
+    renewTarget.value = null;
+    renewError.value = "";
+}
+
+async function submitRenew() {
+    if (!renewTarget.value || !renewForm.expires_at) return;
+    renewing.value = true;
+    renewError.value = "";
+    try {
+        await adminApi.post(`/companies/${renewTarget.value.id}/renew-limit`, {
+            expires_at: renewForm.expires_at,
+            monthly_call_limit: renewForm.monthly_call_limit === "" || renewForm.monthly_call_limit === null
+                ? null
+                : Number(renewForm.monthly_call_limit),
+        });
+        showToast("Call limit renewed.");
+        closeRenew();
+        await fetchCompanies();
+    } catch (e) {
+        renewError.value = e?.response?.data?.message || "Failed to renew limit.";
+    } finally {
+        renewing.value = false;
+    }
+}
 
 async function fetchCompanies() {
     loading.value = true;
@@ -959,6 +1120,8 @@ function openEditForm(company) {
     formData.server_id = company.server_id || "";
     formData.tenant_code = company.tenant_code || "";
     formData.user_id = "";
+    formData.monthly_call_limit = company.monthly_call_limit ?? "";
+    formData.call_limit_expires_at = company.call_limit_expires_at || "";
     validationErrors.value = {};
     loadAvailableTenants(formData.pbx_provider_id);
     loadRegisteredUsers();
@@ -984,6 +1147,10 @@ async function submitForm() {
             pbx_provider_id: formData.pbx_provider_id || null,
             server_id: formData.server_id || null,
             tenant_code: formData.tenant_code || null,
+            monthly_call_limit: formData.monthly_call_limit === "" || formData.monthly_call_limit === null
+                ? null
+                : Number(formData.monthly_call_limit),
+            call_limit_expires_at: formData.call_limit_expires_at || null,
         };
 
         let companyId;

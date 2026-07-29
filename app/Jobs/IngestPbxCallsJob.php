@@ -27,11 +27,39 @@ class IngestPbxCallsJob implements ShouldQueue
     protected int $companyPbxAccountId;
     protected array $params;
 
-    public function __construct(int $companyId, int $companyPbxAccountId, array $params = [])
-    {
+    /**
+     * Maximum number of NEW calls this run may create. Null = unlimited.
+     * Legacy call-count cap (admin manual runs may still pass it).
+     */
+    protected ?int $maxCalls;
+
+    /**
+     * Credit budget expressed in seconds of call time. Null = unlimited.
+     * New calls whose duration exceeds the remaining budget are recorded as
+     * blocked and skipped, so they can be processed after a top-up.
+     */
+    protected ?int $maxSeconds;
+
+    /**
+     * When true, each NEW call deducts prorated credits from the company's
+     * balance (one idempotent ledger row per call).
+     */
+    protected bool $deductCredits;
+
+    public function __construct(
+        int $companyId,
+        int $companyPbxAccountId,
+        array $params = [],
+        ?int $maxCalls = null,
+        ?int $maxSeconds = null,
+        bool $deductCredits = false
+    ) {
         $this->companyId = $companyId;
         $this->companyPbxAccountId = $companyPbxAccountId;
         $this->params = $params;
+        $this->maxCalls = $maxCalls;
+        $this->maxSeconds = $maxSeconds;
+        $this->deductCredits = $deductCredits;
         $this->onQueue('ingest-pbx');
     }
 
@@ -59,12 +87,23 @@ class IngestPbxCallsJob implements ShouldQueue
             return [];
         }
 
+        $server = $pbxAccount->pbxProvider;
+        if (! $server || $server->status !== 'active') {
+            Log::info('Skipping PBX ingest for inactive/missing PBX server', [
+                'company_id' => $company->id,
+                'company_pbx_account_id' => $this->companyPbxAccountId,
+                'pbx_provider_id' => $pbxAccount->pbx_provider_id,
+                'server_status' => $server?->status,
+            ]);
+            return [];
+        }
+
         $serverId = is_string($pbxAccount->server_id ?? null) ? trim((string) $pbxAccount->server_id) : '';
         if ($serverId === '') {
             throw new PbxwareClientException('PBX server_id must be configured for this account');
         }
 
-        $client = PbxClientResolver::resolve();
+        $client = PbxClientResolver::resolve($pbxAccount->pbxProvider);
 
         try {
             Log::info('Starting PBX calls ingestion', ['company_id' => $this->companyId, 'company_pbx_account_id' => $this->companyPbxAccountId]);
@@ -83,6 +122,17 @@ class IngestPbxCallsJob implements ShouldQueue
 
             $callsCreated = 0;
             $callsSkipped = 0;
+            // Limit accounting: new calls seen (not already stored) and those we had to
+            // skip creating because the credit budget (or legacy call limit) was reached.
+            $newCallsAvailable = 0;
+            $callsBlockedByLimit = 0;
+            $callsBlockedByCredits = 0;
+            $remainingSeconds = $this->maxSeconds;
+            $secondsConsumed = 0;
+            $creditsDeducted = 0.0;
+            $creditService = ($this->deductCredits || $this->maxSeconds !== null)
+                ? app(\App\Services\Billing\CreditService::class)
+                : null;
             $transcriptionsStored = 0;
             $cdrRowsReturned = 0;
             $cdrRowsSkippedInvalid = 0;
@@ -371,6 +421,35 @@ class IngestPbxCallsJob implements ShouldQueue
                 }
                 $seenInThisRun[$seenKey] = true;
 
+                // Limit enforcement: determine whether this is a NEW call (not yet stored).
+                // Existing calls are always allowed through (updates / transcription) and do
+                // NOT count against the limit. New calls beyond the remaining limit are
+                // recorded as blocked and skipped so they can be processed later on renewal.
+                $callAlreadyExists = \App\Models\Call::withTrashed()->where([
+                    'company_pbx_account_id' => $this->companyPbxAccountId,
+                    'server_id' => $serverId,
+                    'pbx_unique_id' => $callUid,
+                ])->exists();
+
+                if (! $callAlreadyExists) {
+                    $newCallsAvailable++;
+
+                    if ($this->maxCalls !== null && $callsCreated >= $this->maxCalls) {
+                        $callsBlockedByLimit++;
+                        continue;
+                    }
+
+                    // Credit budget: block NEW calls whose duration no longer
+                    // fits the remaining prepaid seconds. Zero-duration calls
+                    // (missed) cost nothing and always pass; a zero budget
+                    // blocks every timed call.
+                    if ($remainingSeconds !== null && $billsec > 0 && $billsec > $remainingSeconds) {
+                        $callsBlockedByLimit++;
+                        $callsBlockedByCredits++;
+                        continue;
+                    }
+                }
+
                 $callAttributes = array_filter([
                     'company_id' => $this->companyId,
                     // Direction is not provided by this CDR payload, keep stable placeholder.
@@ -444,6 +523,36 @@ class IngestPbxCallsJob implements ShouldQueue
 
                 if ($call->wasRecentlyCreated) {
                     $callsCreated++;
+
+                    if ($billsec > 0) {
+                        if ($remainingSeconds !== null) {
+                            $remainingSeconds = max(0, $remainingSeconds - $billsec);
+                        }
+                        $secondsConsumed += $billsec;
+
+                        // One ledger row per call (idempotent on retry via the
+                        // ledger's unique reference index).
+                        if ($this->deductCredits && $creditService) {
+                            $cost = $creditService->costForSeconds($billsec);
+                            if ($cost > 0) {
+                                try {
+                                    $creditService->deduct($company, $cost, $call, [
+                                        'duration_seconds' => $billsec,
+                                        'source' => 'pbx_ingest',
+                                    ]);
+                                    $creditsDeducted += $cost;
+                                } catch (\Throwable $e) {
+                                    // Billing must never break ingestion; the
+                                    // ledger can be reconciled via adjustment.
+                                    Log::error('IngestPbxCallsJob: credit deduction failed', [
+                                        'company_id' => $this->companyId,
+                                        'call_id' => $call->id,
+                                        'error' => $e->getMessage(),
+                                    ]);
+                                }
+                            }
+                        }
+                    }
                 } else {
                     $callsSkipped++;
                 }
@@ -700,6 +809,13 @@ class IngestPbxCallsJob implements ShouldQueue
             return [
                 'calls_created' => $callsCreated,
                 'calls_skipped_existing' => $callsSkipped,
+                'calls_available_new' => $newCallsAvailable,
+                'calls_blocked_by_limit' => $callsBlockedByLimit,
+                'calls_blocked_by_credits' => $callsBlockedByCredits,
+                'seconds_consumed' => $secondsConsumed,
+                'credits_deducted' => round($creditsDeducted, 4),
+                'max_calls' => $this->maxCalls,
+                'max_seconds' => $this->maxSeconds,
                 'split_window_retries' => $splitWindowRetries,
                 'strict_lossless_discovery' => true,
                 'pagination_unresolved_single_day' => $paginationUnresolvedSingleDay,

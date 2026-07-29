@@ -27,6 +27,7 @@ class PbxRawPayload extends Model
 
     protected $fillable = [
         'provider',
+        'pbx_provider_id',
         'endpoint',
         'server_id',
         'external_id',

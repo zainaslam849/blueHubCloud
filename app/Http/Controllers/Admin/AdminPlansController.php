@@ -19,11 +19,14 @@ class AdminPlansController extends Controller
     {
         $validated = $request->validate([
             'name'         => ['required', 'string', 'max:255'],
-            'minute_limit' => ['required', 'integer', 'min:1'],
+            'credits'      => ['required', 'numeric', 'min:1'],
+            'minute_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'price'        => ['required', 'numeric', 'min:0'],
             'sale_price'   => ['nullable', 'numeric', 'min:0'],
             'is_active'    => ['sometimes', 'boolean'],
         ]);
+
+        $validated['minute_limit'] = $validated['minute_limit'] ?? 0;
 
         // Null out sale_price if it's empty string or equals the regular price
         if (isset($validated['sale_price']) && $validated['sale_price'] === '') {
@@ -46,7 +49,8 @@ class AdminPlansController extends Controller
 
         $validated = $request->validate([
             'name'         => ['sometimes', 'string', 'max:255'],
-            'minute_limit' => ['sometimes', 'integer', 'min:1'],
+            'credits'      => ['sometimes', 'numeric', 'min:1'],
+            'minute_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'price'        => ['sometimes', 'numeric', 'min:0'],
             'sale_price'   => ['nullable', 'numeric', 'min:0'],
             'is_active'    => ['sometimes', 'boolean'],
@@ -74,6 +78,7 @@ class AdminPlansController extends Controller
         return [
             'id'               => $plan->id,
             'name'             => $plan->name,
+            'credits'          => $plan->credits,
             'minute_limit'     => $plan->minute_limit,
             'price'            => $plan->price,
             'sale_price'       => $plan->sale_price,

@@ -3,22 +3,19 @@
 namespace App\Services;
 
 use App\Exceptions\PbxwareClientException;
+use App\Models\PbxProvider;
 use App\Services\AwsSecretsService;
-use Illuminate\Support\Facades\Cache;
+use App\Services\Pbx\PbxCredentialResolver;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 
 class PbxwareClient
 {
-    protected static bool $hasLoggedBaseUrlResolution = false;
-
     protected string $baseUrl;
     protected array $credentials;
-    protected string $secretName = 'pbxware/api-credentials';
-    protected int $secretTtlSeconds = 600; // 10 minutes
-    protected ?AwsSecretsService $secretsService = null;
+    protected ?PbxProvider $server = null;
 
-    public function __construct(?AwsSecretsService $secretsService = null)
+    public function __construct(?PbxProvider $server = null, ?AwsSecretsService $secretsService = null)
     {
         // Determine mock mode strictly from environment variable only.
         // PBXWARE_MOCK_MODE is the single source of truth for mock vs real
@@ -31,17 +28,19 @@ class PbxwareClient
             return;
         }
 
-        Log::info('PbxwareClient: operating in REAL mode per PBXWARE_MOCK_MODE env var');
+        // Null server = legacy/default server (pre-multi-server call sites).
+        $this->server = $server ?? PbxProvider::defaultServer();
+        if ($this->server === null) {
+            throw new PbxwareClientException('No PBX server configured: pbx_providers has no default row.');
+        }
 
-        $this->secretsService = $secretsService ?? new AwsSecretsService();
+        Log::info('PbxwareClient: operating in REAL mode', [
+            'pbx_provider_id' => $this->server->id,
+            'server' => $this->server->slug,
+        ]);
 
-        // Credential precedence:
-        // 1) AWS Secrets Manager (production preferred)
-        // 2) ENV fallback (ONLY if secret missing/unavailable or incomplete)
-        $resolved = $this->resolveCredentials();
-        $this->credentials = $resolved;
-
-        $this->baseUrl = rtrim((string) ($resolved['base_url'] ?? ''), '/');
+        $this->credentials = PbxCredentialResolver::resolve($this->server, $secretsService);
+        $this->baseUrl = rtrim((string) ($this->credentials['base_url'] ?? ''), '/');
 
         // PBXware uses a query-based API on the host root. Base URL must NOT
         // contain an API path (e.g. /api/v7). Warn if an API-like path is present.
@@ -51,210 +50,11 @@ class PbxwareClient
     }
 
     /**
-     * Resolve PBXware credentials using Secrets Manager as PRIMARY source
-     * with ENV fallback for testing/recovery.
-     *
-     * Normalized structure:
-     *   {
-     *     api_key,
-     *     base_url,
-     *     server_id,
-     *     timeout
-     *   }
+     * The server this client is bound to (null only in mock mode).
      */
-    protected function resolveCredentials(): array
+    public function server(): ?PbxProvider
     {
-        $secretCreds = $this->getCachedCredentials();
-        try {
-            $normalized = $this->normalizeAndValidateCredentials($secretCreds, 'secrets-manager');
-            if (! self::$hasLoggedBaseUrlResolution) {
-                Log::info('PBXware credentials resolved from Secrets Manager', [
-                    'secret' => $this->secretName,
-                    'base_url' => $normalized['base_url'] ?? null,
-                    'server_id' => $normalized['server_id'] ?? null,
-                    'timeout' => $normalized['timeout'] ?? null,
-                ]);
-                self::$hasLoggedBaseUrlResolution = true;
-            }
-            return $normalized;
-        } catch (PbxwareClientException $e) {
-            // Do NOT block execution if secrets are unreachable/misconfigured
-            // but ENV fallback is present.
-            Log::warning('PbxwareClient: Secrets Manager credentials unavailable or incomplete; attempting ENV fallback', [
-                'secret' => $this->secretName,
-                'error' => $e->getMessage(),
-                'secret_keys' => is_array($secretCreds) ? array_keys($secretCreds) : [],
-            ]);
-        }
-
-        $envCreds = $this->getEnvCredentials();
-        try {
-            $normalized = $this->normalizeAndValidateCredentials($envCreds, 'env');
-            if (! self::$hasLoggedBaseUrlResolution) {
-                Log::info('PBXware credentials resolved from ENV fallback', [
-                    'base_url' => $normalized['base_url'] ?? null,
-                    'server_id' => $normalized['server_id'] ?? null,
-                    'timeout' => $normalized['timeout'] ?? null,
-                ]);
-                self::$hasLoggedBaseUrlResolution = true;
-            }
-            return $normalized;
-        } catch (PbxwareClientException $e) {
-            $msg = 'PBXware credentials missing: unable to load from AWS Secrets Manager secret "' . $this->secretName . '" and ENV fallback (PBXWARE_API_KEY, PBXWARE_BASE_URL, PBXWARE_SERVER_ID).';
-            Log::error('PbxwareClient: ' . $msg, [
-                'secret' => $this->secretName,
-                'env_present' => [
-                    'PBXWARE_API_KEY' => config('services.pbxware.api_key') ? true : false,
-                    'PBXWARE_BASE_URL' => config('services.pbxware.base_url') ? true : false,
-                    'PBXWARE_SERVER_ID' => config('services.pbxware.server_id') ? true : false,
-                    'PBXWARE_TIMEOUT' => config('services.pbxware.timeout') !== null,
-                ],
-                'error' => $e->getMessage(),
-            ]);
-            throw new PbxwareClientException($msg, 0, $e);
-        }
-    }
-
-    /**
-     * ENV fallback credential loader.
-     * Only used when Secrets Manager is missing/unavailable or incomplete.
-     * Reads via config('services.pbxware.*') so values are honored under
-     * `php artisan config:cache`.
-     */
-    protected function getEnvCredentials(): array
-    {
-        $out = [];
-
-        $apiKey = config('services.pbxware.api_key');
-        $baseUrl = config('services.pbxware.base_url');
-        $serverId = config('services.pbxware.server_id');
-        $timeout = config('services.pbxware.timeout');
-
-        if ($apiKey !== null && trim((string) $apiKey) !== '') {
-            $out['api_key'] = (string) $apiKey;
-        }
-        if ($baseUrl !== null && trim((string) $baseUrl) !== '') {
-            $out['base_url'] = (string) $baseUrl;
-        }
-        if ($serverId !== null && trim((string) $serverId) !== '') {
-            $out['server_id'] = (string) $serverId;
-        }
-        if ($timeout !== null && trim((string) $timeout) !== '') {
-            $out['timeout'] = (int) $timeout;
-        }
-
-        return $out;
-    }
-
-    protected function getCachedCredentials(): array
-    {
-        $cacheKey = $this->cacheKey();
-        $disableCache = filter_var(config('services.pbxware.disable_secrets_cache', false), FILTER_VALIDATE_BOOLEAN);
-
-        if ($disableCache) {
-            Cache::forget($cacheKey);
-        } else {
-            // Self-heal: if a previous run cached an empty array, treat as a cache miss.
-            if (Cache::has($cacheKey)) {
-                $cached = Cache::get($cacheKey);
-                if (is_array($cached) && $cached !== []) {
-                    return $cached;
-                }
-            }
-        }
-
-        try {
-            $decoded = $this->secretsService->get($this->secretName);
-            if (is_array($decoded) && $decoded !== [] && ! $disableCache) {
-                Cache::put($cacheKey, $decoded, $this->secretTtlSeconds);
-            }
-            return is_array($decoded) ? $decoded : [];
-        } catch (\Throwable $e) {
-            // IMPORTANT: do NOT cache failures/empty secrets.
-            Log::error('PbxwareClient: failed to fetch secret via AwsSecretsService', [
-                'secret' => $this->secretName,
-                'cache_key' => $cacheKey,
-                'disable_cache' => $disableCache,
-                'error' => $e->getMessage(),
-            ]);
-            return [];
-        }
-    }
-
-    protected function cacheKey(): string
-    {
-        // v2: previous versions could cache an empty array on transient failures.
-        return 'pbxware_api_credentials_v2';
-    }
-
-    /**
-     * Normalize and validate PBXware credentials.
-     *
-     * Supported sources:
-     * - secrets-manager: secret "pbxware/api-credentials" (production preferred)
-     * - env: PBXWARE_* vars (fallback only)
-     */
-    protected function normalizeAndValidateCredentials(array $creds, string $source): array
-    {
-        // Normalize common variant key names from Secrets Manager.
-        if (! isset($creds['api_key']) && isset($creds['apikey'])) {
-            $creds['api_key'] = $creds['apikey'];
-        }
-        if (! isset($creds['base_url']) && isset($creds['baseUrl'])) {
-            $creds['base_url'] = $creds['baseUrl'];
-        }
-        if (! isset($creds['server_id']) && isset($creds['server'])) {
-            $creds['server_id'] = $creds['server'];
-        }
-        if (! isset($creds['server_id']) && isset($creds['serverId'])) {
-            $creds['server_id'] = $creds['serverId'];
-        }
-
-        // Warn about unsupported legacy keys if present
-        if (isset($creds['pbx_api_key']) || isset($creds['pbx_base_url'])) {
-            Log::warning('PbxwareClient: unsupported secret keys found (pbx_api_key or pbx_base_url). These are not used. Use auth_type/access_token/api_key/token or username/password and base_url instead.', ['present_keys' => array_intersect_key($creds, array_flip(['pbx_api_key','pbx_base_url']))]);
-        }
-
-        // PBXware uses query-based auth ONLY.
-        // If auth_type is provided and not "query", fail fast.
-        $authType = strtolower((string) ($creds['auth_type'] ?? $creds['auth'] ?? 'query'));
-        if ($authType !== 'query') {
-            $msg = 'Unsupported PBXware auth_type: expected "query" for query-based API.';
-            Log::error('PbxwareClient: ' . $msg, ['auth_type' => $authType, 'source' => $source]);
-            throw new PbxwareClientException($msg);
-        }
-
-        $normalized = [
-            'api_key' => $creds['api_key'] ?? null,
-            'base_url' => $creds['base_url'] ?? null,
-            'server_id' => $creds['server_id'] ?? null,
-            'timeout' => isset($creds['timeout']) ? (int) $creds['timeout'] : (int) (config('pbx.providers.pbxware.timeout') ?? 30),
-        ];
-
-        // Required for query auth
-        if (empty($normalized['api_key'])) {
-            $msg = 'Credentials validation failed: api_key is missing.';
-            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds), 'source' => $source]);
-            throw new PbxwareClientException($msg);
-        }
-
-        if (empty($normalized['base_url'])) {
-            $msg = 'Credentials validation failed: base_url is missing.';
-            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds), 'source' => $source]);
-            throw new PbxwareClientException($msg);
-        }
-
-        if (empty($normalized['server_id'])) {
-            $msg = 'Credentials validation failed: server_id is missing.';
-            Log::error('PbxwareClient: ' . $msg, ['available_keys' => array_keys($creds), 'source' => $source]);
-            throw new PbxwareClientException($msg);
-        }
-
-        $normalized['api_key'] = (string) $normalized['api_key'];
-        $normalized['base_url'] = rtrim((string) $normalized['base_url'], '/');
-        $normalized['server_id'] = (string) $normalized['server_id'];
-
-        return $normalized;
+        return $this->server;
     }
 
     protected function buildHeaders(array $extra = []): array

@@ -93,6 +93,12 @@ const router = createRouter({
             component: () => import("../../pages/admin/CompaniesPage.vue"),
         },
         {
+            path: "/pbx-servers",
+            name: "admin.pbx-servers",
+            meta: { title: "PBX Servers", breadcrumb: "PBX Servers" },
+            component: () => import("../../pages/admin/PbxServersPage.vue"),
+        },
+        {
             path: "/settings",
             name: "admin.settings",
             meta: { title: "Settings", breadcrumb: "Settings" },
@@ -103,6 +109,18 @@ const router = createRouter({
             name: "admin.settings.stripe",
             meta: { title: "Stripe Settings", breadcrumb: "Stripe" },
             component: () => import("../../pages/admin/StripeSettingsPage.vue"),
+        },
+        {
+            path: "/settings/credits",
+            name: "admin.settings.credits",
+            meta: { title: "Credit Settings", breadcrumb: "Credits" },
+            component: () => import("../../pages/admin/CreditSettingsPage.vue"),
+        },
+        {
+            path: "/plans",
+            name: "admin.plans",
+            meta: { title: "Plans", breadcrumb: "Plans" },
+            component: () => import("../../pages/admin/PlansPage.vue"),
         },
         {
             path: "/settings/email",
@@ -117,10 +135,10 @@ const router = createRouter({
             component: () => import("../../pages/admin/AiSettingsPage.vue"),
         },
         {
-            path: "/plans",
-            name: "admin.plans",
-            meta: { title: "Plans", breadcrumb: "Plans" },
-            component: () => import("../../pages/admin/PlansPage.vue"),
+            path: "/settings/automation",
+            name: "admin.settings.automation",
+            meta: { title: "Automation", breadcrumb: "Automation" },
+            component: () => import("../../pages/admin/AutomationSettingsPage.vue"),
         },
         {
             path: "/categories",

@@ -164,6 +164,56 @@ class AwsSecretsService
         return $decoded;
     }
 
+    /**
+     * Create or update a JSON secret in AWS Secrets Manager.
+     *
+     * Requires IAM permissions secretsmanager:CreateSecret and
+     * secretsmanager:PutSecretValue (scope them to pbxware/servers/* in
+     * production).
+     *
+     * @param array<string,mixed> $payload
+     * @throws \RuntimeException on AWS failure
+     */
+    public function put(string $secretName, array $payload): void
+    {
+        $secretString = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+        try {
+            $this->client->createSecret([
+                'Name' => $secretName,
+                'SecretString' => $secretString,
+            ]);
+            Log::info('AwsSecretsService: secret created', ['secret' => $secretName]);
+        } catch (AwsException $e) {
+            if ($e->getAwsErrorCode() !== 'ResourceExistsException') {
+                Log::error('AwsSecretsService: createSecret failed', [
+                    'secret' => $secretName,
+                    'aws_error_code' => $e->getAwsErrorCode(),
+                    'message' => $e->getMessage(),
+                ]);
+                throw new \RuntimeException("Failed to create secret '{$secretName}': " . $e->getMessage(), 0, $e);
+            }
+
+            try {
+                $this->client->putSecretValue([
+                    'SecretId' => $secretName,
+                    'SecretString' => $secretString,
+                ]);
+                Log::info('AwsSecretsService: secret updated', ['secret' => $secretName]);
+            } catch (AwsException $putException) {
+                Log::error('AwsSecretsService: putSecretValue failed', [
+                    'secret' => $secretName,
+                    'aws_error_code' => $putException->getAwsErrorCode(),
+                    'message' => $putException->getMessage(),
+                ]);
+                throw new \RuntimeException("Failed to update secret '{$secretName}': " . $putException->getMessage(), 0, $putException);
+            }
+        }
+
+        // A stale in-request copy must not survive a rotation.
+        unset($this->cache[$secretName]);
+    }
+
     private function redactForLog(array $value): array
     {
         $out = [];

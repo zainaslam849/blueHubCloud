@@ -133,6 +133,83 @@ class AdminSettingsController extends Controller
         ]);
     }
 
+    /**
+     * Weekly auto-run schedule (day / time / timezone) for the AI pipeline.
+     */
+    public function showAutomation(): JsonResponse
+    {
+        $settings = AppSetting::query()->first();
+
+        return response()->json([
+            'data' => [
+                'weekly_run_enabled'  => (bool) ($settings?->weekly_run_enabled ?? true),
+                'weekly_run_day'      => (int) ($settings?->weekly_run_day ?? 1),
+                'weekly_run_time'     => $settings?->weekly_run_time ?? '02:00',
+                'weekly_run_timezone' => $settings?->weekly_run_timezone ?? 'UTC',
+            ],
+        ]);
+    }
+
+    public function updateAutomation(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'weekly_run_enabled'  => ['required', 'boolean'],
+            'weekly_run_day'      => ['required', 'integer', 'min:0', 'max:6'],
+            'weekly_run_time'     => ['required', 'string', 'regex:/^\d{2}:\d{2}$/'],
+            'weekly_run_timezone' => ['required', 'string', 'timezone'],
+        ]);
+
+        $settings = AppSetting::query()->first() ?? new AppSetting();
+        $settings->weekly_run_enabled  = (bool) $validated['weekly_run_enabled'];
+        $settings->weekly_run_day      = (int) $validated['weekly_run_day'];
+        $settings->weekly_run_time     = $validated['weekly_run_time'];
+        $settings->weekly_run_timezone = $validated['weekly_run_timezone'];
+        $settings->save();
+
+        return response()->json([
+            'message' => 'Automation settings saved.',
+            'data' => [
+                'weekly_run_enabled'  => $settings->weekly_run_enabled,
+                'weekly_run_day'      => $settings->weekly_run_day,
+                'weekly_run_time'     => $settings->weekly_run_time,
+                'weekly_run_timezone' => $settings->weekly_run_timezone,
+            ],
+        ]);
+    }
+
+    public function showCredits(): JsonResponse
+    {
+        $settings = AppSetting::query()->first();
+
+        return response()->json([
+            'data' => [
+                'credit_price_usd'   => (float) ($settings?->credit_price_usd ?? 1.0),
+                'credits_per_minute' => (float) ($settings?->credits_per_minute ?? 1.0),
+            ],
+        ]);
+    }
+
+    public function updateCredits(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'credit_price_usd'   => ['required', 'numeric', 'min:0.01', 'max:999999'],
+            'credits_per_minute' => ['required', 'numeric', 'min:0.0001', 'max:9999'],
+        ]);
+
+        $settings = AppSetting::query()->first() ?? new AppSetting();
+        $settings->credit_price_usd   = $validated['credit_price_usd'];
+        $settings->credits_per_minute = $validated['credits_per_minute'];
+        $settings->save();
+
+        return response()->json([
+            'message' => 'Credit settings saved.',
+            'data' => [
+                'credit_price_usd'   => (float) $settings->credit_price_usd,
+                'credits_per_minute' => (float) $settings->credits_per_minute,
+            ],
+        ]);
+    }
+
     private function sanitizeAssetUrl(?string $url): ?string
     {
         if (! is_string($url) || trim($url) === '') {

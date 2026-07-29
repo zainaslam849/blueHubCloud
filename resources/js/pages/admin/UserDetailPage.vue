@@ -36,19 +36,17 @@
                     </div>
                 </div>
 
-                <!-- Quick stats -->
+                <!-- Quick stat: call limit -->
                 <div class="ud-stats">
                     <div class="ud-stat">
-                        <div class="ud-stat__val">${{ Number(data.total_spent).toFixed(2) }}</div>
-                        <div class="ud-stat__label">Total Spent</div>
+                        <div class="ud-stat__val">
+                            {{ data.call_limit && data.call_limit.monthly_call_limit != null ? Number(data.call_limit.monthly_call_limit).toLocaleString() : '∞' }}
+                        </div>
+                        <div class="ud-stat__label">Calls / Month</div>
                     </div>
-                    <div class="ud-stat">
-                        <div class="ud-stat__val">{{ data.total_purchases }}</div>
-                        <div class="ud-stat__label">Purchases</div>
-                    </div>
-                    <div class="ud-stat">
-                        <div class="ud-stat__val">{{ data.minute_balance?.available_minutes?.toLocaleString() ?? '—' }}</div>
-                        <div class="ud-stat__label">Minutes Left</div>
+                    <div class="ud-stat" v-if="data.company">
+                        <div class="ud-stat__val ud-stat__val--sm">{{ data.company.name }}</div>
+                        <div class="ud-stat__label">Company</div>
                     </div>
                 </div>
             </div>
@@ -79,116 +77,93 @@
                         </div>
                     </section>
 
-                    <!-- Minute balance card -->
+                    <!-- Account info card -->
                     <section class="ud-card">
                         <div class="ud-card__head">
-                            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 6v4l2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                            Minute Balance
+                            <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="7" r="4" stroke="currentColor" stroke-width="1.5"/><path d="M2 18a8 8 0 0 1 16 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                            Account
                         </div>
                         <div class="ud-card__body">
-                            <template v-if="data.minute_balance">
-                                <div class="ud-kv">
-                                    <span class="ud-kv__k">Plan</span>
-                                    <span class="ud-kv__v">{{ data.minute_balance.plan_name ?? '—' }}</span>
-                                </div>
-                                <div class="ud-kv">
-                                    <span class="ud-kv__k">Purchased</span>
-                                    <span class="ud-kv__v">{{ data.minute_balance.purchased_minutes.toLocaleString() }} min</span>
-                                </div>
-                                <div class="ud-kv">
-                                    <span class="ud-kv__k">Used</span>
-                                    <span class="ud-kv__v">{{ data.minute_balance.used_minutes.toLocaleString() }} min</span>
-                                </div>
-                                <div class="ud-kv">
-                                    <span class="ud-kv__k">Available</span>
-                                    <span class="ud-kv__v ud-green">{{ data.minute_balance.available_minutes.toLocaleString() }} min</span>
-                                </div>
-                                <div class="ud-bar-wrap">
-                                    <div class="ud-bar">
-                                        <div class="ud-bar__fill" :style="{ width: minutesPct + '%' }" :class="minutesPct < 20 ? 'ud-bar__fill--low' : ''"></div>
-                                    </div>
-                                    <span class="ud-bar__pct">{{ minutesPct }}% remaining</span>
-                                </div>
-                            </template>
-                            <div v-else class="ud-empty-mini">No minutes purchased yet</div>
+                            <div class="ud-kv">
+                                <span class="ud-kv__k">Status</span>
+                                <span class="ud-kv__v">
+                                    <span class="ud-badge ud-badge--sm" :class="data.user.account_status === 'suspended' ? 'ud-badge--warn' : 'ud-badge--ok'">
+                                        {{ data.user.account_status === 'suspended' ? 'Suspended' : 'Active' }}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="ud-kv">
+                                <span class="ud-kv__k">Email verified</span>
+                                <span class="ud-kv__v">{{ data.user.email_verified_at ? fmtDate(data.user.email_verified_at) : 'Not verified' }}</span>
+                            </div>
+                            <div class="ud-kv">
+                                <span class="ud-kv__k">Joined</span>
+                                <span class="ud-kv__v">{{ fmtDate(data.user.created_at) }}</span>
+                            </div>
                         </div>
                     </section>
 
                 </div>
 
-                <!-- ── Right column — billing history ────────── -->
+                <!-- ── Right column — call limit (read-only) ──── -->
                 <div class="ud-col ud-col--wide">
+
+                    <!-- Call Limit card -->
                     <section class="ud-card">
                         <div class="ud-card__head">
-                            <svg viewBox="0 0 20 20" fill="none"><rect x="2" y="5" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M2 9h16" stroke="currentColor" stroke-width="1.5"/><path d="M6 13h2M10 13h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-                            Billing History
-                            <span class="ud-card__count">{{ data.purchases.length }}</span>
+                            <svg viewBox="0 0 20 20" fill="none"><path d="M3 10h14M10 3v14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/></svg>
+                            Call Analysis Limit
+                            <span class="ud-card__hint">Set on the Companies page</span>
                         </div>
+                        <div class="ud-card__body ud-card__body--pad">
 
-                        <div v-if="data.purchases.length === 0" class="ud-empty-mini ud-empty-mini--pad">
-                            No purchases found for this user.
-                        </div>
-
-                        <div v-else class="ud-billing">
-                            <div class="ud-billing__head">
-                                <span>Plan</span>
-                                <span>Minutes</span>
-                                <span>Amount</span>
-                                <span>Status</span>
-                                <span>Date</span>
-                                <span>Stripe ID</span>
+                            <div v-if="!data.company" class="ud-empty-mini">
+                                Assign a company to this user to manage call limits.
                             </div>
 
-                            <div v-for="p in data.purchases" :key="p.id" class="ud-billing__row">
-                                <!-- Plan name -->
-                                <div class="ud-billing__cell">
-                                    <span class="ud-billing__plan">{{ p.plan_name }}</span>
-                                </div>
-
-                                <!-- Minutes -->
-                                <div class="ud-billing__cell">
-                                    <span class="ud-billing__min">{{ p.minutes_added?.toLocaleString() ?? '—' }} min</span>
-                                </div>
-
-                                <!-- Amount -->
-                                <div class="ud-billing__cell">
-                                    <span class="ud-billing__amount">${{ Number(p.amount_paid).toFixed(2) }}</span>
-                                    <span class="ud-billing__cur">{{ p.currency }}</span>
-                                </div>
-
-                                <!-- Status -->
-                                <div class="ud-billing__cell">
-                                    <span class="ud-status" :class="`ud-status--${p.status}`">{{ p.status }}</span>
-                                </div>
-
-                                <!-- Date -->
-                                <div class="ud-billing__cell">
-                                    <span class="ud-billing__date">{{ fmtDate(p.purchased_at ?? p.created_at) }}</span>
-                                </div>
-
-                                <!-- Stripe IDs -->
-                                <div class="ud-billing__cell ud-billing__cell--ids">
-                                    <div v-if="p.stripe_session_id" class="ud-id-row">
-                                        <span class="ud-id-label">Session</span>
-                                        <code class="ud-id-val" :title="p.stripe_session_id">{{ truncate(p.stripe_session_id) }}</code>
-                                        <button class="ud-copy" @click="copy(p.stripe_session_id)" title="Copy session ID">
-                                            <svg viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" stroke-width="1.4"/></svg>
-                                        </button>
+                            <template v-else>
+                                <div class="ud-limitInfo">
+                                    <div class="ud-limitIcon">
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.78a16 16 0 0 0 6 6l.85-.85a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.22 16a1.59 1.59 0 0 1 .78.92Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
                                     </div>
-                                    <div v-if="p.stripe_payment_intent_id" class="ud-id-row">
-                                        <span class="ud-id-label">Payment</span>
-                                        <code class="ud-id-val" :title="p.stripe_payment_intent_id">{{ truncate(p.stripe_payment_intent_id) }}</code>
-                                        <button class="ud-copy" @click="copy(p.stripe_payment_intent_id)" title="Copy payment intent ID">
-                                            <svg viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" stroke-width="1.4"/></svg>
-                                        </button>
+                                    <div>
+                                        <div class="ud-limitVal">
+                                            {{ data.call_limit && data.call_limit.monthly_call_limit != null ? Number(data.call_limit.monthly_call_limit).toLocaleString() : 'Unlimited' }}
+                                        </div>
+                                        <div class="ud-limitSub">analysed calls per period</div>
                                     </div>
-                                    <span v-if="!p.stripe_session_id && !p.stripe_payment_intent_id" class="ud-muted">—</span>
                                 </div>
-                            </div>
+
+                                <template v-if="data.call_limit && data.call_limit.monthly_call_limit != null">
+                                    <div class="ud-kv">
+                                        <span class="ud-kv__k">Used this period</span>
+                                        <span class="ud-kv__v">{{ Number(data.call_limit.call_limit_used).toLocaleString() }}</span>
+                                    </div>
+                                    <div class="ud-kv">
+                                        <span class="ud-kv__k">Remaining</span>
+                                        <span class="ud-kv__v ud-green">{{ Number(data.call_limit.call_limit_remaining).toLocaleString() }}</span>
+                                    </div>
+                                    <div class="ud-bar-wrap">
+                                        <div class="ud-bar">
+                                            <div class="ud-bar__fill" :style="{ width: usagePct + '%' }" :class="usagePct >= 100 ? 'ud-bar__fill--low' : ''"></div>
+                                        </div>
+                                        <span class="ud-bar__pct">{{ usagePct }}% used</span>
+                                    </div>
+                                    <div class="ud-kv">
+                                        <span class="ud-kv__k">Expires</span>
+                                        <span class="ud-kv__v">
+                                            {{ data.call_limit.call_limit_expires_at ? fmtDate(data.call_limit.call_limit_expires_at) : '—' }}
+                                            <span v-if="data.call_limit.period_completed" class="ud-badge ud-badge--sm ud-badge--warn" style="margin-left:6px">Period ended</span>
+                                        </span>
+                                    </div>
+                                </template>
+                            </template>
                         </div>
                     </section>
-                </div>
 
+                </div>
             </div>
         </template>
 
@@ -197,14 +172,6 @@
         </div>
 
     </div>
-
-    <!-- Copy toast -->
-    <Transition name="ud-toast">
-        <div v-if="toastVisible" class="ud-toast">
-            <svg viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            {{ toast }}
-        </div>
-    </Transition>
 </template>
 
 <script setup>
@@ -212,9 +179,15 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, RouterLink } from "vue-router";
 import adminApi from "../../router/admin/api";
 
-const route  = useRoute();
+const route   = useRoute();
 const loading = ref(true);
 const data    = ref(null);
+
+const usagePct = computed(() => {
+    const cl = data.value?.call_limit;
+    if (!cl || cl.monthly_call_limit == null || cl.monthly_call_limit === 0) return 0;
+    return Math.min(100, Math.round((cl.call_limit_used / cl.monthly_call_limit) * 100));
+});
 
 const COLORS = ["#6366f1","#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316"];
 function avatarColor(name) {
@@ -229,29 +202,6 @@ function fmtDate(iso) {
     if (!iso) return "—";
     return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
-function truncate(str) {
-    if (!str) return "";
-    return str.length > 20 ? str.slice(0, 10) + "…" + str.slice(-8) : str;
-}
-// ── Copy toast ─────────────────────────────────────────
-const toast        = ref("");
-const toastVisible = ref(false);
-let   toastTimer   = null;
-
-function copy(str) {
-    navigator.clipboard.writeText(str).then(() => {
-        toast.value = "Copied!";
-        toastVisible.value = true;
-        if (toastTimer) clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => { toastVisible.value = false; }, 2000);
-    }).catch(() => {});
-}
-
-const minutesPct = computed(() => {
-    const b = data.value?.minute_balance;
-    if (!b || b.purchased_minutes === 0) return 0;
-    return Math.round((b.available_minutes / b.purchased_minutes) * 100);
-});
 
 async function load() {
     loading.value = true;
@@ -273,69 +223,41 @@ onMounted(load);
 .ud-back { margin-bottom: 20px; }
 .ud-backLink {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 0.875rem; font-weight: 600;
-    color: var(--text-secondary);
-    text-decoration: none;
-    transition: color 0.15s;
+    font-size: 0.875rem; font-weight: 600; color: var(--text-secondary);
+    text-decoration: none; transition: color 0.15s;
 }
 .ud-backLink:hover { color: var(--accent, #3b82f6); }
 .ud-backLink svg { width: 16px; height: 16px; }
 
 /* ── Loading ─────────────────────────────────────────── */
-.ud-loading {
-    display: flex; align-items: center; justify-content: center;
-    gap: 12px; padding: 60px 0;
-    color: var(--text-secondary); font-size: 0.9rem;
-}
-.ud-spinner {
-    width: 24px; height: 24px;
-    border: 2.5px solid var(--border-soft, #e5e7eb);
-    border-top-color: var(--accent, #3b82f6);
-    border-radius: 50%;
-    animation: spin .7s linear infinite;
-}
+.ud-loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 60px 0; color: var(--text-secondary); font-size: 0.9rem; }
+.ud-spinner { width: 24px; height: 24px; border: 2.5px solid var(--border-soft, #e5e7eb); border-top-color: var(--accent, #3b82f6); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Hero ────────────────────────────────────────────── */
 .ud-hero {
-    display: flex;
-    align-items: center;
-    gap: 20px;
+    display: flex; align-items: center; gap: 20px;
     padding: 24px 28px;
-    background: var(--bg-surface, #fff);
-    border: 1px solid var(--border-soft, #e5e7eb);
-    border-radius: 16px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
+    background: var(--bg-surface, #fff); border: 1px solid var(--border-soft, #e5e7eb);
+    border-radius: 16px; margin-bottom: 20px; flex-wrap: wrap;
 }
-
 .ud-hero__avatar {
-    width: 64px; height: 64px; border-radius: 50%;
+    width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
     display: grid; place-items: center;
     font-size: 1.3rem; font-weight: 800; color: #fff;
-    flex-shrink: 0;
     box-shadow: 0 4px 14px rgba(0,0,0,.15);
 }
-
 .ud-hero__info { flex: 1; min-width: 0; }
-.ud-hero__name {
-    margin: 0 0 4px;
-    font-size: 1.35rem; font-weight: 800;
-    color: var(--text-primary);
-}
-.ud-hero__email {
-    font-size: 0.875rem; color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-.ud-hero__meta {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
+.ud-hero__name { margin: 0 0 4px; font-size: 1.35rem; font-weight: 800; color: var(--text-primary); }
+.ud-hero__email { font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 8px; }
+.ud-hero__meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* Badges */
 .ud-badge {
     padding: 3px 10px; border-radius: 999px;
     font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
 }
+.ud-badge--sm { font-size: 10px; padding: 2px 8px; }
 .ud-badge--ok     { background: color-mix(in srgb, #10b981 13%, transparent); color: #059669; border: 1px solid color-mix(in srgb, #10b981 25%, transparent); }
 .ud-badge--warn   { background: color-mix(in srgb, #f59e0b 13%, transparent); color: #b45309; border: 1px solid color-mix(in srgb, #f59e0b 25%, transparent); }
 .ud-badge--purple { background: color-mix(in srgb, #8b5cf6 13%, transparent); color: #7c3aed; border: 1px solid color-mix(in srgb, #8b5cf6 25%, transparent); }
@@ -345,186 +267,68 @@ onMounted(load);
 .ud-meta__val { font-size: 0.82rem; color: var(--text-secondary); }
 
 /* Quick stats */
-.ud-stats {
-    display: flex; gap: 0;
-    border: 1px solid var(--border-soft, #e5e7eb);
-    border-radius: 12px;
-    overflow: hidden;
-    flex-shrink: 0;
-}
-.ud-stat {
-    padding: 14px 22px;
-    text-align: center;
-    border-right: 1px solid var(--border-soft, #e5e7eb);
-}
+.ud-stats { display: flex; gap: 0; border: 1px solid var(--border-soft, #e5e7eb); border-radius: 12px; overflow: hidden; flex-shrink: 0; }
+.ud-stat { padding: 14px 22px; text-align: center; border-right: 1px solid var(--border-soft, #e5e7eb); }
 .ud-stat:last-child { border-right: none; }
 .ud-stat__val { font-size: 1.25rem; font-weight: 800; color: var(--text-primary); line-height: 1; }
+.ud-stat__val--sm { font-size: 0.9rem; }
 .ud-stat__label { font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
 
 /* ── Grid ────────────────────────────────────────────── */
-.ud-grid {
-    display: grid;
-    grid-template-columns: 280px 1fr;
-    gap: 20px;
-    align-items: start;
-}
-
+.ud-grid { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
 .ud-col { display: flex; flex-direction: column; gap: 20px; }
 .ud-col--wide { min-width: 0; }
 
 /* ── Card ────────────────────────────────────────────── */
-.ud-card {
-    background: var(--bg-surface, #fff);
-    border: 1px solid var(--border-soft, #e5e7eb);
-    border-radius: 14px;
-    overflow: hidden;
-}
-
+.ud-card { background: var(--bg-surface, #fff); border: 1px solid var(--border-soft, #e5e7eb); border-radius: 14px; overflow: hidden; }
 .ud-card__head {
     display: flex; align-items: center; gap: 8px;
-    padding: 14px 20px;
-    font-size: 0.85rem; font-weight: 700;
-    color: var(--text-primary);
-    background: var(--bg-surface-2, #f9fafb);
-    border-bottom: 1px solid var(--border-soft, #e5e7eb);
+    padding: 14px 20px; font-size: 0.85rem; font-weight: 700; color: var(--text-primary);
+    background: var(--bg-surface-2, #f9fafb); border-bottom: 1px solid var(--border-soft, #e5e7eb);
 }
 .ud-card__head svg { width: 16px; height: 16px; color: var(--text-secondary); flex-shrink: 0; }
-.ud-card__count {
-    margin-left: auto;
-    background: var(--bg-surface-2, #f3f4f6);
-    border: 1px solid var(--border-soft, #e5e7eb);
-    border-radius: 999px;
-    padding: 1px 8px; font-size: 11px; font-weight: 700;
-    color: var(--text-secondary);
-}
-
 .ud-card__body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.ud-card__body--pad { gap: 20px; }
 
-/* ── Key-value rows ──────────────────────────────────── */
+/* ── Key-value ───────────────────────────────────────── */
 .ud-kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .ud-kv__k { font-size: 0.8rem; color: var(--text-secondary); }
 .ud-kv__v { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); text-align: right; }
 .ud-mono { font-family: monospace; font-size: 0.8rem; }
+.ud-empty-mini { font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0; }
+
+/* ── Call limit card ─────────────────────────────────── */
+.ud-limitInfo {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px;
+    background: color-mix(in srgb, var(--accent, #3b82f6) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 18%, transparent);
+    border-radius: 12px;
+}
+.ud-limitIcon {
+    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+    background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+    display: grid; place-items: center;
+    color: var(--accent, #3b82f6);
+}
+.ud-limitIcon svg { width: 22px; height: 22px; }
+.ud-limitVal { font-size: 1.6rem; font-weight: 800; color: var(--text-primary); line-height: 1.1; }
+.ud-limitSub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 3px; }
+
+.ud-card__hint {
+    margin-left: auto; font-size: 0.7rem; font-weight: 600;
+    color: var(--text-secondary); text-transform: none; letter-spacing: 0;
+    background: var(--bg-surface-2, #f3f4f6); border: 1px solid var(--border-soft, #e5e7eb);
+    padding: 2px 8px; border-radius: 999px;
+}
 .ud-green { color: #059669; }
 
-/* Minute bar */
-.ud-bar-wrap { margin-top: 4px; }
-.ud-bar {
-    height: 6px; border-radius: 999px;
-    background: var(--bg-surface-2, #f3f4f6);
-    overflow: hidden;
-}
-.ud-bar__fill { height: 100%; border-radius: 999px; background: #10b981; transition: width .3s; }
+/* Usage bar */
+.ud-bar-wrap { margin-top: 2px; }
+.ud-bar { height: 6px; border-radius: 999px; background: var(--bg-surface-2, #f3f4f6); overflow: hidden; }
+.ud-bar__fill { height: 100%; border-radius: 999px; background: #3b82f6; transition: width .3s; }
 .ud-bar__fill--low { background: #ef4444; }
 .ud-bar__pct { font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; display: block; }
-
-/* ── Billing table ───────────────────────────────────── */
-.ud-billing { overflow-x: auto; }
-
-.ud-billing__head {
-    display: grid;
-    grid-template-columns: 1.4fr 0.8fr 0.9fr 0.85fr 1fr 1.8fr;
-    gap: 12px;
-    padding: 10px 20px;
-    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .06em; color: var(--text-secondary);
-    background: var(--bg-surface-2, #f9fafb);
-    border-bottom: 1px solid var(--border-soft, #e5e7eb);
-    min-width: 680px;
-}
-
-.ud-billing__row {
-    display: grid;
-    grid-template-columns: 1.4fr 0.8fr 0.9fr 0.85fr 1fr 1.8fr;
-    gap: 12px;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border-soft, #e5e7eb);
-    align-items: center;
-    transition: background .12s;
-    min-width: 680px;
-}
-.ud-billing__row:last-child { border-bottom: none; }
-.ud-billing__row:hover { background: var(--bg-surface-2, #f9fafb); }
-
-.ud-billing__cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ud-billing__cell--ids { gap: 4px; }
-
-.ud-billing__plan { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
-.ud-billing__min  { font-size: 0.82rem; color: var(--text-secondary); }
-.ud-billing__amount { font-size: 0.88rem; font-weight: 700; color: var(--text-primary); }
-.ud-billing__cur  { font-size: 0.7rem; color: var(--text-secondary); letter-spacing: .04em; }
-.ud-billing__date { font-size: 0.8rem; color: var(--text-secondary); }
-
-/* Status pill — width fits text only */
-.ud-status {
-    display: inline-flex;
-    align-items: center;
-    width: fit-content;
-    white-space: nowrap;
-    padding: 3px 10px; border-radius: 999px;
-    font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
-}
-.ud-status--completed { background: color-mix(in srgb,#10b981 13%,transparent); color:#059669; border:1px solid color-mix(in srgb,#10b981 25%,transparent); }
-.ud-status--pending   { background: color-mix(in srgb,#f59e0b 13%,transparent); color:#b45309; border:1px solid color-mix(in srgb,#f59e0b 25%,transparent); }
-.ud-status--failed    { background: color-mix(in srgb,#ef4444 13%,transparent); color:#dc2626; border:1px solid color-mix(in srgb,#ef4444 25%,transparent); }
-.ud-status--refunded  { background: color-mix(in srgb,#8b5cf6 13%,transparent); color:#7c3aed; border:1px solid color-mix(in srgb,#8b5cf6 25%,transparent); }
-
-/* ── Copy toast ──────────────────────────────────────── */
-.ud-toast {
-    position: fixed;
-    bottom: 28px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 18px;
-    background: #1a1f2e;
-    color: #fff;
-    font-size: 0.85rem;
-    font-weight: 600;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.25);
-    z-index: 9999;
-    pointer-events: none;
-}
-.ud-toast svg { width: 15px; height: 15px; color: #10b981; flex-shrink: 0; }
-
-.ud-toast-enter-active, .ud-toast-leave-active { transition: opacity .2s, transform .2s; }
-.ud-toast-enter-from { opacity: 0; transform: translateX(-50%) translateY(10px); }
-.ud-toast-leave-to   { opacity: 0; transform: translateX(-50%) translateY(10px); }
-
-/* Stripe ID rows */
-.ud-id-row {
-    display: flex; align-items: center; gap: 5px;
-}
-.ud-id-label {
-    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--text-secondary); width: 46px; flex-shrink: 0;
-}
-.ud-id-val {
-    font-family: monospace; font-size: 0.72rem;
-    color: var(--text-primary);
-    background: var(--bg-surface-2, #f3f4f6);
-    padding: 2px 6px; border-radius: 4px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    max-width: 110px;
-}
-.ud-copy {
-    background: none; border: none; padding: 2px; cursor: pointer;
-    color: var(--text-secondary); border-radius: 4px;
-    display: grid; place-items: center;
-    transition: color .15s, background .15s;
-    flex-shrink: 0;
-}
-.ud-copy:hover { color: var(--accent,#3b82f6); background: var(--bg-surface-2,#f3f4f6); }
-.ud-copy svg { width: 12px; height: 12px; }
-
-/* Empty */
-.ud-empty-mini { font-size: 0.85rem; color: var(--text-secondary); padding: 16px 20px; }
-.ud-empty-mini--pad { padding: 32px 20px; text-align: center; }
-
-.ud-muted { color: var(--text-secondary); font-size: 0.82rem; }
 
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 860px) {

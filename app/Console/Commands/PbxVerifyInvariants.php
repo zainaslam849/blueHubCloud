@@ -30,7 +30,9 @@ class PbxVerifyInvariants extends Command
         $violations = [
             'duplicate_company_pbx_accounts' => $this->checkDuplicateCompanyPbxAccounts(),
             'duplicate_pbxware_tenants' => $this->checkDuplicatePbxwareTenants(),
-            'cross_provider_tenant_mismatch' => $this->checkCrossProviderTenantMismatch(),
+            'tenant_code_drift' => $this->checkTenantCodeDrift(),
+            'duplicate_tenant_codes_per_server' => $this->checkDuplicateTenantCodesPerServer(),
+            'active_accounts_on_inactive_servers' => $this->checkActiveAccountsOnInactiveServers(),
         ];
 
         $totalViolations = array_sum(array_map('count', $violations));
@@ -108,12 +110,14 @@ class PbxVerifyInvariants extends Command
     }
 
     /**
-     * Find CompanyPbxAccount rows whose tenant_code matches a PbxwareTenant
-     * on a DIFFERENT pbx_provider_id (cross-provider leakage).
+     * Find CompanyPbxAccount rows whose tenant_code disagrees with the
+     * PbxwareTenant catalogue row for the same (pbx_provider_id, server_id).
+     * NOTE: identical tenant_codes on DIFFERENT servers are legal — tenant
+     * codes are only unique within one server.
      *
      * @return array<int, array<string, mixed>>
      */
-    private function checkCrossProviderTenantMismatch(): array
+    private function checkTenantCodeDrift(): array
     {
         if (! Schema::hasTable('company_pbx_accounts') || ! Schema::hasTable('pbxware_tenants')) {
             return [];
@@ -124,15 +128,78 @@ class PbxVerifyInvariants extends Command
         }
 
         return DB::table('company_pbx_accounts as cpa')
-            ->join('pbxware_tenants as pt', 'pt.tenant_code', '=', 'cpa.tenant_code')
-            ->whereColumn('pt.pbx_provider_id', '!=', 'cpa.pbx_provider_id')
+            ->join('pbxware_tenants as pt', function ($join) {
+                $join->on('pt.pbx_provider_id', '=', 'cpa.pbx_provider_id')
+                    ->on('pt.server_id', '=', 'cpa.server_id');
+            })
+            ->whereNotNull('cpa.tenant_code')
+            ->whereColumn('pt.tenant_code', '!=', 'cpa.tenant_code')
             ->select(
                 'cpa.id as company_pbx_account_id',
                 'cpa.company_id',
-                'cpa.pbx_provider_id as account_provider_id',
-                'pt.pbx_provider_id as tenant_provider_id',
-                'cpa.tenant_code',
-                'cpa.server_id'
+                'cpa.pbx_provider_id',
+                'cpa.server_id',
+                'cpa.tenant_code as account_tenant_code',
+                'pt.tenant_code as catalogue_tenant_code'
+            )
+            ->get()
+            ->map(fn ($row) => (array) $row)
+            ->all();
+    }
+
+    /**
+     * tenant_code must be unique within one server (pbx_provider_id).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function checkDuplicateTenantCodesPerServer(): array
+    {
+        $out = [];
+
+        foreach (['company_pbx_accounts', 'pbxware_tenants'] as $table) {
+            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'tenant_code')) {
+                continue;
+            }
+
+            $rows = DB::table($table)
+                ->select('pbx_provider_id', 'tenant_code', DB::raw('COUNT(*) as occurrences'))
+                ->whereNotNull('tenant_code')
+                ->groupBy('pbx_provider_id', 'tenant_code')
+                ->having('occurrences', '>', 1)
+                ->get()
+                ->map(fn ($row) => ['table' => $table] + (array) $row)
+                ->all();
+
+            $out = array_merge($out, $rows);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Active accounts must not point at a missing or inactive PBX server.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function checkActiveAccountsOnInactiveServers(): array
+    {
+        if (! Schema::hasTable('company_pbx_accounts') || ! Schema::hasTable('pbx_providers')) {
+            return [];
+        }
+
+        return DB::table('company_pbx_accounts as cpa')
+            ->leftJoin('pbx_providers as pp', 'pp.id', '=', 'cpa.pbx_provider_id')
+            ->where('cpa.status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('pp.id')
+                    ->orWhere('pp.status', '!=', 'active');
+            })
+            ->select(
+                'cpa.id as company_pbx_account_id',
+                'cpa.company_id',
+                'cpa.pbx_provider_id',
+                'cpa.server_id',
+                'pp.status as server_status'
             )
             ->get()
             ->map(fn ($row) => (array) $row)
