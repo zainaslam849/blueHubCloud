@@ -453,7 +453,11 @@ async function testConnection(server) {
 
     try {
         const res = await adminApi.post(`/pbx-servers/${server.id}/test-connection`);
-        notice.value = res?.data?.message || "Connection successful.";
+        if (res?.data?.data?.ok) {
+            notice.value = res?.data?.message || "Connection successful.";
+        } else {
+            error.value = res?.data?.message || "Connection test failed.";
+        }
     } catch (e) {
         error.value =
             e?.response?.data?.message || "Connection test failed.";

@@ -67,7 +67,7 @@ class AutoTopupController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json(['message' => 'Could not start card setup. Please try again later.'], 502);
+            return response()->json(['message' => 'Could not start card setup. Please try again later.'], 422);
         }
     }
 

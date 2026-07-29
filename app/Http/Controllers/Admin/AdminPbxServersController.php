@@ -58,8 +58,8 @@ class AdminPbxServersController extends Controller
                 ]);
 
                 return response()->json([
-                    'message' => 'Could not store the API key in AWS Secrets Manager. Verify the app has secretsmanager:CreateSecret / PutSecretValue permissions, or create the secret manually and enter its name.',
-                ], 502);
+                    'message' => 'Could not store the API key in AWS Secrets Manager. Verify the app has secretsmanager:CreateSecret / PutSecretValue permissions, or create the secret manually and enter its name. (' . $e->getMessage() . ')',
+                ], 422);
             }
         }
 
@@ -128,8 +128,8 @@ class AdminPbxServersController extends Controller
                 ]);
 
                 return response()->json([
-                    'message' => 'Could not update the API key in AWS Secrets Manager. Verify IAM permissions, or update the secret manually.',
-                ], 502);
+                    'message' => 'Could not update the API key in AWS Secrets Manager. Verify IAM permissions, or update the secret manually. (' . $e->getMessage() . ')',
+                ], 422);
             }
 
             $attributes['secret_name'] = $secretName;
@@ -173,6 +173,10 @@ class AdminPbxServersController extends Controller
 
     /**
      * Verify the stored credentials by fetching the tenant list.
+     *
+     * Always responds 200: proxies (Cloudflare) replace origin 5xx responses
+     * with their own error page, which would hide the real failure message.
+     * The outcome is carried in data.ok.
      */
     public function testConnection(int $id): JsonResponse
     {
@@ -198,7 +202,7 @@ class AdminPbxServersController extends Controller
             return response()->json([
                 'data' => ['ok' => false],
                 'message' => 'Connection failed: ' . $e->getMessage(),
-            ], 502);
+            ]);
         }
     }
 
