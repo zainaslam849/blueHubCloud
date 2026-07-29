@@ -27,6 +27,7 @@ class ListCompaniesRequest extends FormRequest
             'sort' => ['sometimes', 'in:name,status,timezone,created_at'],
             'direction' => ['sometimes', 'in:asc,desc'],
             'status' => ['sometimes', 'in:active,inactive'],
+            'pbx_provider_id' => ['sometimes', 'integer', 'exists:pbx_providers,id'],
             'include_deleted' => ['sometimes', 'in:true,false,1,0'],
         ];
     }

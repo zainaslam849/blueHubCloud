@@ -1,5 +1,7 @@
 :root {
-    color-scheme: light dark;
+    /* Follow the SITE theme, not the OS: "light dark" made browsers paint
+       native black scrollbars in light mode whenever the OS was dark. */
+    color-scheme: light;
 
     --font-sans:
         "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont,
@@ -198,6 +200,36 @@ html[data-theme="dark"] {
 
 * {
     box-sizing: border-box;
+}
+
+/* Global thin scrollbars — every scrollable area (page, sidebar, modals,
+   tables) uses the theme tokens instead of the fat native scrollbar. The
+   track is transparent so it blends with whatever surface it sits on. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 html,
@@ -1554,24 +1586,23 @@ body.admin-body {
         background-color 160ms ease;
     min-height: 44px;
     font-weight: 600;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-color: var(--scrollbar-thumb) transparent;
     scrollbar-width: thin;
 }
 
 .admin-input::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
 }
 
 .admin-input::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: transparent;
     border-radius: 999px;
 }
 
 .admin-input::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb);
     border-radius: 999px;
-    border: 2px solid var(--scrollbar-track);
 }
 
 .admin-input::-webkit-scrollbar-thumb:hover {
@@ -2658,17 +2689,17 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
 /* Scrollbar styling (WebKit & Firefox) for table wrappers */
 .admin-tableWrap {
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    scrollbar-color: var(--scrollbar-thumb) transparent;
     scrollbar-width: thin;
 }
 
 .admin-tableWrap::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
 }
 
 .admin-tableWrap::-webkit-scrollbar-track {
-    background: var(--scrollbar-track);
+    background: transparent;
     border-radius: 999px;
 }
 

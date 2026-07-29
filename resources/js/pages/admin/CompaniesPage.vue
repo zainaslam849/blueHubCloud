@@ -43,6 +43,24 @@
                         placeholder="Company name, server ID, tenant code…"
                     />
                 </div>
+                <div class="admin-field" style="min-width: 180px">
+                    <label class="admin-field__label" for="company-server-filter">Server</label>
+                    <select
+                        id="company-server-filter"
+                        v-model="serverFilter"
+                        class="admin-input"
+                        @change="onServerFilterChange"
+                    >
+                        <option value="">All servers</option>
+                        <option
+                            v-for="provider in pbxProviders"
+                            :key="provider.id"
+                            :value="provider.id"
+                        >
+                            {{ provider.name }}
+                        </option>
+                    </select>
+                </div>
                 <BaseButton
                     variant="secondary"
                     size="sm"
@@ -88,7 +106,8 @@
                                     >
                                 </button>
                             </th>
-                            <th class="admin-table__th">Server ID</th>
+                            <th class="admin-table__th">Server</th>
+                            <th class="admin-table__th">Tenant ID</th>
                             <th class="admin-table__th">Tenant Code</th>
                             <th class="admin-table__th">Call Limit</th>
                             <th class="admin-table__th">Package</th>
@@ -124,7 +143,14 @@
                                     company.name
                                 }}</span>
                             </td>
-                            <td class="admin-table__td" data-label="Server ID">
+                            <td class="admin-table__td" data-label="Server">
+                                <span
+                                    v-if="company.pbx_provider_name"
+                                    class="admin-status-badge"
+                                >{{ company.pbx_provider_name }}</span>
+                                <span v-else class="text-muted">—</span>
+                            </td>
+                            <td class="admin-table__td" data-label="Tenant ID">
                                 <code v-if="company.server_id">{{
                                     company.server_id
                                 }}</code>
@@ -884,6 +910,7 @@ import { showAdminToast } from "../../admin/toast";
 
 // Pagination and search state
 const search = ref("");
+const serverFilter = ref("");
 const page = ref(1);
 const pageSize = ref(25);
 const sortBy = ref("name");
@@ -1004,6 +1031,7 @@ async function fetchCompanies() {
             page: page.value,
             per_page: pageSize.value,
             search: search.value || undefined,
+            pbx_provider_id: serverFilter.value || undefined,
             sort: sortBy.value,
             direction: sortDirection.value,
             include_deleted: true,
@@ -1038,6 +1066,11 @@ function toggleSort(key) {
 }
 
 function refresh() {
+    fetchCompanies();
+}
+
+function onServerFilterChange() {
+    page.value = 1;
     fetchCompanies();
 }
 

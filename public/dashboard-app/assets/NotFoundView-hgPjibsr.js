@@ -1,1 +1,0 @@
-import{P as e,u as t,w as n,x as r}from"./main-BWo9e-K6.js";var i={},a={style:{padding:`24px`,"max-width":`960px`,margin:`0 auto`}};function o(t,i){return e(),n(`main`,a,[...i[0]||=[r(`h1`,null,`Not Found`,-1),r(`p`,null,`The page you requested doesn’t exist.`,-1)]])}var s=t(i,[[`render`,o]]);export{s as default};

@@ -70,6 +70,13 @@ class AdminCompaniesController extends Controller
             $query->where('status', $statusFilter);
         }
 
+        // Apply server filter
+        if (!empty($validated['pbx_provider_id'])) {
+            $query->whereHas('companyPbxAccounts', function ($accountQ) use ($validated) {
+                $accountQ->where('pbx_provider_id', $validated['pbx_provider_id']);
+            });
+        }
+
         // Apply sorting
         if (in_array($sort, ['name', 'status', 'timezone', 'created_at'])) {
             $query->orderBy($sort, $direction);

@@ -99,6 +99,48 @@
     --border: var(--color-border);
 }
 
+/* Global thin scrollbars — every scrollable area (page, sidebar, modals)
+   gets a slim themed scrollbar with a transparent track instead of the fat
+   native one. */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: rgba(15, 23, 42, 0.28);
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+:root[data-theme="dark"] * {
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
 /* Dark-ready later: opt-in by setting <html data-theme="dark"> */
 :root[data-theme="dark"] {
     color-scheme: dark;
