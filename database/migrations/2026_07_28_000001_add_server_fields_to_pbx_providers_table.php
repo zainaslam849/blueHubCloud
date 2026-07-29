@@ -29,12 +29,28 @@ return new class extends Migration
             $table->boolean('is_default')->default(false)->after('base_url');
         });
 
-        DB::table('pbx_providers')
+        // The pre-existing single server becomes the legacy/default row.
+        // Seeded installs use slug 'pbxware'; some environments named the
+        // row differently (e.g. 'bhubcomms'), so fall back to the first row.
+        $updated = DB::table('pbx_providers')
             ->where('slug', 'pbxware')
             ->update([
                 'secret_name' => 'pbxware/api-credentials',
                 'is_default' => true,
             ]);
+
+        if ($updated === 0) {
+            $firstId = DB::table('pbx_providers')->orderBy('id')->value('id');
+
+            if ($firstId !== null) {
+                DB::table('pbx_providers')
+                    ->where('id', $firstId)
+                    ->update([
+                        'secret_name' => 'pbxware/api-credentials',
+                        'is_default' => true,
+                    ]);
+            }
+        }
     }
 
     public function down(): void
