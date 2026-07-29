@@ -2530,12 +2530,20 @@ html[data-theme="dark"] .admin-actionBtn:hover {
     width: 15px;
     height: 15px;
     flex: 0 0 15px;
-    font-size: 13px;
     line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     opacity: 0.9;
+}
+
+/* SVG icons (not emoji): fixed geometry means icon and label sit on the
+   same visual baseline at every OS/browser, unlike emoji glyphs whose
+   size/vertical-position varies by platform font. */
+.admin-actionBtn__icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
 }
 
 .admin-actionBtn__text {
@@ -2572,6 +2580,35 @@ html[data-theme="dark"] .admin-actionBtn--edit {
         rgba(37, 99, 235, 0.15)
     ) !important;
     border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.admin-actionBtn--test {
+    background: linear-gradient(
+        135deg,
+        rgba(16, 185, 129, 0.1),
+        rgba(5, 150, 105, 0.08)
+    ) !important;
+    border-color: rgba(16, 185, 129, 0.2) !important;
+    color: #059669 !important;
+}
+
+html[data-theme="dark"] .admin-actionBtn--test {
+    background: linear-gradient(
+        135deg,
+        rgba(16, 185, 129, 0.15),
+        rgba(5, 150, 105, 0.1)
+    ) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+    color: #34d399 !important;
+}
+
+.admin-actionBtn--test:hover {
+    background: linear-gradient(
+        135deg,
+        rgba(16, 185, 129, 0.2),
+        rgba(5, 150, 105, 0.15)
+    ) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
 }
 
 .admin-actionBtn--delete {
@@ -2638,20 +2675,26 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 }
 
 @media (max-width: 768px) {
+    /* Keep icon + label together on mobile: icon-only buttons (✎ 🗑 ⚠) read
+       as unlabeled symbols and are the #1 source of "what does this do?"
+       confusion on phones. Instead, size both for comfortable tap targets. */
     .admin-actionBtn {
-        padding: 8px 10px !important;
-        font-size: 11px !important;
+        padding: 10px 14px !important;
+        font-size: 13px !important;
+        min-height: 40px;
+        flex: 1 1 auto;
     }
 
     .admin-actionBtn__text {
-        display: none;
+        display: inline-flex;
+        font-size: 13px !important;
     }
 
     .admin-actionBtn__icon {
-        width: 15px;
-        height: 15px;
-        flex-basis: 15px;
-        font-size: 13px;
+        width: 16px;
+        height: 16px;
+        flex-basis: 16px;
+        font-size: 14px;
     }
 }
 
@@ -2824,7 +2867,18 @@ html[data-theme="dark"] .admin-actionBtn--restore {
 
     .admin-table__td--actions {
         display: flex !important;
-        justify-content: flex-end !important;
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 8px;
+    }
+
+    .admin-table__td--actions::before {
+        margin-bottom: 2px;
+    }
+
+    .admin-table__actions {
+        width: 100%;
+        gap: 8px;
     }
 }
 

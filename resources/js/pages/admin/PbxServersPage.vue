@@ -105,8 +105,11 @@
                                         size="sm"
                                         variant="secondary"
                                         :loading="testingId === server.id"
-                                        class="admin-actionBtn"
+                                        class="admin-actionBtn admin-actionBtn--test"
                                     >
+                                        <span class="admin-actionBtn__icon"
+                                            ><IconPlug
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Test</span
                                         >
@@ -118,8 +121,8 @@
                                         class="admin-actionBtn admin-actionBtn--edit"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >✎</span
-                                        >
+                                            ><IconEdit
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Edit</span
                                         >
@@ -132,8 +135,8 @@
                                         class="admin-actionBtn admin-actionBtn--delete"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >🗑</span
-                                        >
+                                            ><IconTrash
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Delete</span
                                         >
@@ -340,7 +343,13 @@
 <script setup>
 import { onMounted, ref } from "vue";
 import adminApi from "../../router/admin/api";
-import { BaseBadge, BaseButton } from "../../components/admin/base";
+import {
+    BaseBadge,
+    BaseButton,
+    IconEdit,
+    IconTrash,
+    IconPlug,
+} from "../../components/admin/base";
 
 const loading = ref(true);
 const error = ref("");

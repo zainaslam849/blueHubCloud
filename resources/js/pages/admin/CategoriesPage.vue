@@ -289,8 +289,8 @@
                                         class="admin-actionBtn admin-actionBtn--edit"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >✎</span
-                                        >
+                                            ><IconEdit
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Edit</span
                                         >
@@ -322,11 +322,15 @@
                                             statusUpdatingId === category.id
                                         "
                                     >
-                                        <span class="admin-actionBtn__icon">{{
-                                            category.status === "active"
-                                                ? "⊘"
-                                                : "●"
-                                        }}</span>
+                                        <span class="admin-actionBtn__icon">
+                                            <IconArchive
+                                                v-if="
+                                                    category.status ===
+                                                    'active'
+                                                "
+                                            />
+                                            <IconActivate v-else />
+                                        </span>
                                         <span
                                             v-if="
                                                 statusUpdatingId !== category.id
@@ -363,8 +367,8 @@
                                         "
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >🗑</span
-                                        >
+                                            ><IconTrash
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Delete</span
                                         >
@@ -380,8 +384,8 @@
                                         title="Manage sub-categories"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >⊞</span
-                                        >
+                                            ><IconGrid
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Sub-Cats</span
                                         >
@@ -396,8 +400,8 @@
                                         :loading="restoringId === category.id"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >↺</span
-                                        >
+                                            ><IconRestore
+                                        /></span>
                                         <span
                                             v-if="restoringId !== category.id"
                                             class="admin-actionBtn__text"
@@ -420,8 +424,8 @@
                                         :disabled="forceDeleting"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >🗑</span
-                                        >
+                                            ><IconWarning
+                                        /></span>
                                         <span
                                             v-if="forceDeleting !== category.id"
                                             class="admin-actionBtn__text"
@@ -1011,7 +1015,17 @@
 </template>
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
-import { BaseButton, BaseBadge } from "../../components/admin/base";
+import {
+    BaseButton,
+    BaseBadge,
+    IconEdit,
+    IconTrash,
+    IconWarning,
+    IconRestore,
+    IconArchive,
+    IconActivate,
+    IconGrid,
+} from "../../components/admin/base";
 import SubCategoriesModal from "../../components/admin/SubCategoriesModal.vue";
 import adminApi from "../../router/admin/api";
 import { showAdminToast } from "../../admin/toast";

@@ -229,8 +229,8 @@
                                         class="admin-actionBtn admin-actionBtn--edit"
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >✎</span
-                                        >
+                                            ><IconEdit
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Edit</span
                                         >
@@ -247,8 +247,8 @@
                                         "
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >🗑</span
-                                        >
+                                            ><IconTrash
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Delete</span
                                         >
@@ -267,8 +267,8 @@
                                         "
                                     >
                                         <span class="admin-actionBtn__icon"
-                                            >⚠</span
-                                        >
+                                            ><IconWarning
+                                        /></span>
                                         <span class="admin-actionBtn__text"
                                             >Delete Permanently</span
                                         >
@@ -905,7 +905,13 @@
 <script setup>
 import { onMounted, ref, reactive, watch } from "vue";
 import adminApi from "../../router/admin/api";
-import { BaseButton, BasePagination } from "../../components/admin/base";
+import {
+    BaseButton,
+    BasePagination,
+    IconEdit,
+    IconTrash,
+    IconWarning,
+} from "../../components/admin/base";
 import { showAdminToast } from "../../admin/toast";
 
 // Pagination and search state

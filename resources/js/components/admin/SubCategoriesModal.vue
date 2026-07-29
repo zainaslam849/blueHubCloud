@@ -222,8 +222,9 @@
                                                 >
                                                     <span
                                                         class="admin-actionBtn__icon"
-                                                        >✎</span
-                                                    ><span
+                                                        ><IconEdit
+                                                    /></span>
+                                                    <span
                                                         class="admin-actionBtn__text"
                                                         >Edit</span
                                                     >
@@ -251,12 +252,16 @@
                                                 >
                                                     <span
                                                         class="admin-actionBtn__icon"
-                                                        >{{
-                                                            subCat.is_enabled
-                                                                ? "⊘"
-                                                                : "●"
-                                                        }}</span
                                                     >
+                                                        <IconArchive
+                                                            v-if="
+                                                                subCat.is_enabled
+                                                            "
+                                                        />
+                                                        <IconActivate
+                                                            v-else
+                                                        />
+                                                    </span>
                                                     <span
                                                         v-if="
                                                             togglingId !==
@@ -297,8 +302,9 @@
                                                 >
                                                     <span
                                                         class="admin-actionBtn__icon"
-                                                        >🗑</span
-                                                    ><span
+                                                        ><IconTrash
+                                                    /></span>
+                                                    <span
                                                         class="admin-actionBtn__text"
                                                         >Delete</span
                                                     >
@@ -324,8 +330,8 @@
                                                 >
                                                     <span
                                                         class="admin-actionBtn__icon"
-                                                        >↺</span
-                                                    >
+                                                        ><IconRestore
+                                                    /></span>
                                                     <span
                                                         v-if="
                                                             restoringId !==
@@ -431,7 +437,15 @@
 
 <script setup>
 import { ref, computed, watch } from "vue";
-import { BaseButton, BaseBadge } from "./base";
+import {
+    BaseButton,
+    BaseBadge,
+    IconEdit,
+    IconTrash,
+    IconRestore,
+    IconArchive,
+    IconActivate,
+} from "./base";
 import adminApi from "../../router/admin/api";
 
 const props = defineProps({ isOpen: Boolean, category: Object });
