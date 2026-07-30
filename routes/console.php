@@ -42,6 +42,15 @@ Schedule::command('ai:generate-categories --company=1 --range=30')
     ->weekly()
     ->withoutOverlapping();
 
+// Watchdog: the pipeline advances by each stage dispatching the next job, so
+// a single lost dispatch (worker restart, OOM kill, reboot) strands a run
+// forever. This re-dispatches anything that has stopped making progress, so
+// stalled runs recover on their own instead of needing manual intervention.
+Schedule::command('pipeline:recover')
+    ->everyTenMinutes()
+    ->name('pipeline-watchdog')
+    ->withoutOverlapping();
+
 /*
  * Weekly limit-aware AI pipeline.
  *
