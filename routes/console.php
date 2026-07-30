@@ -30,9 +30,8 @@ Schedule::call(function () {
     Cache::put('system:scheduler:last_run', now()->toIso8601String(), 3600);
 })->everyMinute()->name('scheduler-heartbeat');
 
-Schedule::job(new QueueHeartbeatJob())
+Schedule::job(new QueueHeartbeatJob(), 'default')
     ->everyFiveMinutes()
-    ->onQueue('default')
     ->name('queue-heartbeat');
 
 Schedule::command('horizon:snapshot')
