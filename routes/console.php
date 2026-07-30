@@ -1,12 +1,14 @@
 <?php
 
 use App\Jobs\AdminTestPipelineJob;
+use App\Jobs\QueueHeartbeatJob;
 use App\Models\AppSetting;
 use App\Models\Company;
 use App\Models\CompanyWeeklyFetch;
 use App\Models\PipelineRun;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Artisan;
@@ -18,6 +20,27 @@ Artisan::command('inspire', function () {
 Schedule::command('pbx:sync-tenants')
     ->everyMinute()
     ->name('pbx-tenant-sync')
+    ->withoutOverlapping();
+
+// NOTE: these four tasks used to live in app/Console/Kernel.php@schedule().
+// That class is never bootstrapped by this Laravel 11 app (bootstrap/app.php
+// has no Console\Kernel binding), so none of them ever actually ran — moved
+// here to the registration point that Laravel 11 actually uses.
+Schedule::call(function () {
+    Cache::put('system:scheduler:last_run', now()->toIso8601String(), 3600);
+})->everyMinute()->name('scheduler-heartbeat');
+
+Schedule::job(new QueueHeartbeatJob())
+    ->everyFiveMinutes()
+    ->onQueue('default')
+    ->name('queue-heartbeat');
+
+Schedule::command('horizon:snapshot')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+Schedule::command('ai:generate-categories --company=1 --range=30')
+    ->weekly()
     ->withoutOverlapping();
 
 /*
