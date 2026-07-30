@@ -253,24 +253,32 @@ return [
         ],
     ],
 
+    /*
+     * NOTE ON PROCESS COUNTS: production currently runs on a 1 GB instance
+     * shared with nginx, php-fpm and redis. Each Horizon worker costs
+     * roughly 35-60 MB, so the totals below are deliberately conservative —
+     * an OOM kill mid-job is far more damaging than slower throughput,
+     * especially now that stalled runs are auto-recovered by
+     * `pipeline:recover`. Raise these only alongside more RAM.
+     */
     'environments' => [
         'production' => [
             'supervisor-default' => [
-                'maxProcesses' => 6,
-                'balanceMaxShift' => 2,
+                'maxProcesses' => 2,
+                'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
             'supervisor-ingest' => [
-                'maxProcesses' => 4,
+                'maxProcesses' => 1,
             ],
             'supervisor-summarization' => [
-                'maxProcesses' => 8,
-                'balanceMaxShift' => 2,
+                'maxProcesses' => 3,
+                'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
             'supervisor-categorization' => [
-                'maxProcesses' => 8,
-                'balanceMaxShift' => 2,
+                'maxProcesses' => 2,
+                'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
         ],
