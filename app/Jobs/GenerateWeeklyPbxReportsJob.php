@@ -294,7 +294,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                     (int) $weekly['company_pbx_account_id'],
                     $weekStart->toDateString(),
                     $weekEnd->toDateString(),
-                    $categories
+                    $categories,
+                    $timezone
                 );
 
                 // Build category_breakdowns with counts, sub_categories, and sample_calls
@@ -564,7 +565,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         int $companyPbxAccountId,
         string $weekStartDate,
         string $weekEndDate,
-        array $categories
+        array $categories,
+        string $timezone = 'UTC'
     ): array {
         $samplesByCategory = [];
 
@@ -595,11 +597,19 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 ->limit(5)
                 ->get();
 
-            $samplesByCategory[$categoryKey] = $samples->map(function ($call) {
+            $samplesByCategory[$categoryKey] = $samples->map(function ($call) use ($timezone) {
                 $transcript = is_string($call->transcript_text) ? $call->transcript_text : '';
 
+                // started_at is stored in UTC; convert to the company's local
+                // timezone so the frontend renders the day/time the call
+                // actually happened for that company, matching the hourly
+                // distribution's timezone handling.
+                $localDate = $call->started_at
+                    ? CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone)->toIso8601String()
+                    : null;
+
                 return [
-                    'date' => $call->started_at,
+                    'date' => $localDate,
                     'did' => $call->did ?? '',
                     'src' => $call->src ?? '',
                     'transcript' => mb_strlen($transcript) > 300

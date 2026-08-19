@@ -71,11 +71,20 @@ const reportTotalCalls = computed(() => {
     return Number.isFinite(n) ? n : null;
 });
 
+// Breakdown keys are "{id}|{name}" so same-named categories stay distinct;
+// strip the id for display but keep the raw key for :key uniqueness.
+function labelFromKey(key) {
+    const raw = String(key ?? "");
+    const sep = raw.indexOf("|");
+    if (sep === -1) return raw;
+    return /^\d+$/.test(raw.slice(0, sep)) ? raw.slice(sep + 1) : raw;
+}
+
 const sortedCategories = computed(() => {
     const counts = bd.value?.counts ?? {};
     const total  = totalCategorizedCalls.value;
     return Object.entries(counts)
-        .map(([name, count]) => ({ name, count, percent: total > 0 ? Math.round(count / total * 1000) / 10 : 0 }))
+        .map(([key, count]) => ({ key, name: labelFromKey(key), count, percent: total > 0 ? Math.round(count / total * 1000) / 10 : 0 }))
         .sort((a, b) => b.count - a.count);
 });
 
@@ -83,12 +92,12 @@ const categoriesWithSubs = computed(() => {
     const details = bd.value?.details ?? {};
     return Object.entries(details)
         .filter(([, c]) => c.sub_categories && Object.keys(c.sub_categories).length > 0)
-        .map(([name, c]) => {
+        .map(([key, c]) => {
             const subTotal = Object.values(c.sub_categories).reduce((s, v) => s + v, 0);
             return {
-                name, count: c.count,
+                key, name: labelFromKey(key), count: c.count,
                 subCategories: Object.entries(c.sub_categories)
-                    .map(([sn, sc]) => ({ name: sn, count: sc, percent: subTotal > 0 ? Math.round(sc / subTotal * 1000) / 10 : 0 }))
+                    .map(([sk, sc]) => ({ key: sk, name: labelFromKey(sk), count: sc, percent: subTotal > 0 ? Math.round(sc / subTotal * 1000) / 10 : 0 }))
                     .sort((a, b) => b.count - a.count),
             };
         })
@@ -99,9 +108,14 @@ const categoriesWithSamples = computed(() => {
     const details = bd.value?.details ?? {};
     return Object.entries(details)
         .filter(([, c]) => c.sample_calls?.length > 0)
-        .map(([name, c]) => ({ name, samples: c.sample_calls }))
+        .map(([key, c]) => ({ key, name: labelFromKey(key), samples: c.sample_calls }))
         .sort((a, b) => b.samples.length - a.samples.length);
 });
+
+const expandedSampleCategories = ref({});
+function toggleSampleCategory(key) {
+    expandedSampleCategories.value = { ...expandedSampleCategories.value, [key]: !expandedSampleCategories.value[key] };
+}
 
 const hourlyData = computed(() => {
     const dist = bd.value?.hourly_distribution ?? {};
@@ -443,7 +457,7 @@ onMounted(() => { fetchReport(); });
                             <table class="wTable">
                                 <thead><tr><th>Category</th><th class="wTh--num">Calls</th><th class="wTh--num">% of Total</th></tr></thead>
                                 <tbody>
-                                    <tr v-for="cat in sortedCategories" :key="cat.name">
+                                    <tr v-for="cat in sortedCategories" :key="cat.key">
                                         <td>{{ cat.name }}</td>
                                         <td class="wTd--num wMono">{{ fmtNum(cat.count) }}</td>
                                         <td class="wTd--num">
@@ -462,14 +476,14 @@ onMounted(() => { fetchReport(); });
                     <div v-if="hasSubCategories" class="wSection">
                         <h4 class="wSection__title">Sub-category Details</h4>
                         <div class="wSubCatGrid">
-                            <div v-for="cat in categoriesWithSubs" :key="cat.name" class="wSubCatCard">
+                            <div v-for="cat in categoriesWithSubs" :key="cat.key" class="wSubCatCard">
                                 <div class="wSubCatCard__header">
                                     <span class="wSubCatCard__name">{{ cat.name }}</span>
                                     <span class="wSubCatCard__count">{{ cat.count }} calls</span>
                                 </div>
                                 <table class="wTable wTable--mini">
                                     <tbody>
-                                        <tr v-for="sub in cat.subCategories" :key="sub.name">
+                                        <tr v-for="sub in cat.subCategories" :key="sub.key">
                                             <td>{{ sub.name }}</td>
                                             <td class="wTd--num wMono">{{ sub.count }}</td>
                                             <td class="wTd--num">{{ sub.percent }}%</td>
@@ -510,9 +524,17 @@ onMounted(() => { fetchReport(); });
                     <!-- Sample Calls -->
                     <div v-if="hasSampleCalls" class="wSection">
                         <h4 class="wSection__title">Sample Calls by Category</h4>
-                        <div v-for="cat in categoriesWithSamples" :key="cat.name" class="wSampleSection">
-                            <h5 class="wSampleSection__title">{{ cat.name }}</h5>
-                            <div class="wSampleList">
+                        <div v-for="cat in categoriesWithSamples" :key="cat.key" class="wSampleSection">
+                            <button
+                                type="button"
+                                class="wSampleSection__title wSampleSection__toggle"
+                                @click="toggleSampleCategory(cat.key)"
+                            >
+                                <span class="wSampleSection__chevron" :class="{ 'wSampleSection__chevron--open': expandedSampleCategories[cat.key] }">▶</span>
+                                {{ cat.name }}
+                                <span class="wMuted">({{ cat.samples.length }})</span>
+                            </button>
+                            <div v-show="expandedSampleCategories[cat.key]" class="wSampleList">
                                 <div v-for="(sample, idx) in cat.samples" :key="idx" class="wSampleCall">
                                     <div class="wSampleCall__meta">
                                         <span class="wMono">{{ fmtDate(sample.date) }}</span>
@@ -1039,6 +1061,13 @@ onMounted(() => { fetchReport(); });
 /* ── Sample calls ───────────────────────────────────────────────────────── */
 .wSampleSection        { display: flex; flex-direction: column; gap: 8px; }
 .wSampleSection__title { font-size: 0.82rem; font-weight: 600; opacity: 0.7; margin: 0; }
+.wSampleSection__toggle {
+    display: flex; align-items: center; gap: 6px;
+    background: none; border: none; padding: 4px 0; cursor: pointer;
+    color: inherit; text-align: left; width: 100%;
+}
+.wSampleSection__chevron           { display: inline-block; font-size: 0.65rem; transition: transform 0.15s ease; }
+.wSampleSection__chevron--open     { transform: rotate(90deg); }
 .wSampleList  { display: flex; flex-direction: column; gap: 8px; }
 .wSampleCall  {
     border: 1px solid var(--border-default, rgba(15,23,42,0.12));

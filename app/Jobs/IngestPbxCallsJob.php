@@ -339,12 +339,20 @@ class IngestPbxCallsJob implements ShouldQueue
 
                 $startedAt = \Carbon\Carbon::createFromTimestamp((int) $epoch)->toDateTimeString();
 
-                // Map PBX CDR disposition/status to final internal status
+                // Map PBX CDR disposition/status to final internal status.
+                // billsec only accrues once a call is actually answered, so an
+                // unrecognized disposition string with billed seconds is still
+                // treated as answered — otherwise those calls silently never
+                // reach transcription/categorization (status='answered' is
+                // required by FetchTranscriptionsJob) despite clearly having
+                // been picked up.
                 $rawDisposition = is_string($status) ? strtoupper(trim($status)) : strtoupper((string) $status);
                 if ($rawDisposition === 'ANSWERED') {
                     $finalStatus = 'answered';
                 } elseif (in_array($rawDisposition, ['NO ANSWER', 'NO_ANSWER', 'BUSY', 'FAILED'], true)) {
                     $finalStatus = 'missed';
+                } elseif (is_numeric($durationSeconds) && (int) $durationSeconds > 0) {
+                    $finalStatus = 'answered';
                 } else {
                     $finalStatus = 'unknown';
                 }
