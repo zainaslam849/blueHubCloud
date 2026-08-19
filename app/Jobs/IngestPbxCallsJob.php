@@ -6,6 +6,7 @@ use App\Models\Call;
 use App\Models\CompanyPbxAccount;
 use App\Models\PbxRawPayload;
 use App\Services\Pbx\PbxClientResolver;
+use App\Support\CdrParty;
 use App\Jobs\SummarizeSingleCallJob;
 use Illuminate\Support\Facades\Config;
 use App\Exceptions\PbxwareClientException;
@@ -355,16 +356,19 @@ class IngestPbxCallsJob implements ShouldQueue
                 // Ensure duration is an integer billsec
                 $billsec = is_numeric($durationSeconds) ? (int) $durationSeconds : 0;
 
-                // Best-effort extension extraction from CDR From/To fields.
-                // Keep this conservative to avoid false positives from full phone numbers.
-                $callerExtension = null;
-                $answeredByExtension = null;
-                if (is_string($fromValue) && preg_match('/^\d{2,6}$/', $fromValue)) {
-                    $callerExtension = $fromValue;
-                }
-                if (is_string($toValue) && preg_match('/^\d{2,6}$/', $toValue)) {
-                    $answeredByExtension = $toValue;
-                }
+                // Extension extraction from CDR From/To fields. PBXware decorates
+                // internal parties as "Name (extension)" — e.g. "Darius (2009)" —
+                // so a bare-digits test never matches and leaves both columns null.
+                $fromParty = CdrParty::parse($fromValue);
+                $toParty = CdrParty::parse($toValue);
+                $callerExtension = $fromParty['extension'];
+                $answeredByExtension = $toParty['extension'];
+
+                // The CDR payload carries no direction column, so derive it from
+                // which side of the call is internal. Without this every call is
+                // recorded as direction=unknown, which makes outbound activity
+                // invisible in the extension leaderboard and scorecards.
+                $callDirection = CdrParty::direction($fromValue, $toValue);
 
                 // Ring group fallback: use PBX location type when explicit ring group is absent.
                 $ringGroup = null;
@@ -452,8 +456,7 @@ class IngestPbxCallsJob implements ShouldQueue
 
                 $callAttributes = array_filter([
                     'company_id' => $this->companyId,
-                    // Direction is not provided by this CDR payload, keep stable placeholder.
-                    'direction' => 'unknown',
+                    'direction' => $callDirection,
                     'from' => $fromValue,
                     'to' => $toValue,
                     'answered_by_extension' => $answeredByExtension,

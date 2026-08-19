@@ -276,7 +276,7 @@ class SyncPbxTenants extends Command
                     if (!$company) {
                         $company = \App\Models\Company::create([
                             'name' => $tenantName,
-                            'timezone' => 'UTC',
+                            'timezone' => config('app.default_company_timezone', 'UTC'),
                             'status' => 'inactive',
                         ]);
                         $createdCompanies++;

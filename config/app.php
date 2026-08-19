@@ -69,6 +69,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Default Company Timezone
+    |--------------------------------------------------------------------------
+    |
+    | Timezone assigned to companies auto-created by PBX tenant sync. Weekly
+    | reports bucket calls into local hours using the company's timezone, so
+    | leaving this as UTC makes the hourly distribution read in UTC rather
+    | than the customer's local time. Set this to the operating region (e.g.
+    | Australia/Sydney); individual companies can still be overridden in the
+    | admin UI.
+    |
+    */
+
+    'default_company_timezone' => env('DEFAULT_COMPANY_TIMEZONE', 'UTC'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |

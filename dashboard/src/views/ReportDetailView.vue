@@ -112,11 +112,25 @@ const reportTotalCalls  = computed<number | null>(() => {
     return Number.isFinite(n) ? n : null;
 });
 
+/**
+ * Report breakdowns are keyed "{id}|{name}" (see GenerateWeeklyPbxReportsJob)
+ * so categories stay distinct even if two share a name. Only the name is
+ * meaningful to a reader, so strip the id for display while keeping the raw
+ * key for :key uniqueness. Guarded on a numeric prefix so a category whose
+ * name legitimately contains "|" is left intact.
+ */
+function labelFromKey(key: string): string {
+    const raw = String(key ?? "");
+    const sep = raw.indexOf("|");
+    if (sep === -1) return raw;
+    return /^\d+$/.test(raw.slice(0, sep)) ? raw.slice(sep + 1) : raw;
+}
+
 const sortedCategories = computed(() => {
     const counts = bd.value?.counts ?? {};
     const total  = totalCategorizedCalls.value;
     return Object.entries(counts)
-        .map(([name, count]) => ({ name, count: count as number, percent: total > 0 ? Math.round((count as number) / total * 1000) / 10 : 0 }))
+        .map(([key, count]) => ({ key, name: labelFromKey(key), count: count as number, percent: total > 0 ? Math.round((count as number) / total * 1000) / 10 : 0 }))
         .sort((a, b) => b.count - a.count);
 });
 
@@ -124,12 +138,12 @@ const categoriesWithSubs = computed(() => {
     const details = bd.value?.details ?? {};
     return Object.entries(details)
         .filter(([, c]: any) => c.sub_categories && Object.keys(c.sub_categories).length > 0)
-        .map(([name, c]: any) => {
+        .map(([key, c]: any) => {
             const subTotal = Object.values(c.sub_categories as Record<string,number>).reduce((s, v) => s + v, 0);
             return {
-                name, count: c.count as number,
+                key, name: labelFromKey(key), count: c.count as number,
                 subCategories: Object.entries(c.sub_categories as Record<string,number>)
-                    .map(([sn, sc]) => ({ name: sn, count: sc, percent: subTotal > 0 ? Math.round(sc / subTotal * 1000) / 10 : 0 }))
+                    .map(([sk, sc]) => ({ key: sk, name: labelFromKey(sk), count: sc, percent: subTotal > 0 ? Math.round(sc / subTotal * 1000) / 10 : 0 }))
                     .sort((a, b) => b.count - a.count),
             };
         })
@@ -140,7 +154,7 @@ const categoriesWithSamples = computed(() => {
     const details = bd.value?.details ?? {};
     return Object.entries(details)
         .filter(([, c]: any) => c.sample_calls?.length > 0)
-        .map(([name, c]: any) => ({ name, samples: c.sample_calls }))
+        .map(([key, c]: any) => ({ key, name: labelFromKey(key), samples: c.sample_calls }))
         .sort((a, b) => b.samples.length - a.samples.length);
 });
 
@@ -490,7 +504,7 @@ onMounted(() => { fetchReport(); });
                             <table class="rTable">
                                 <thead><tr><th>Category</th><th class="rTh--num">Calls</th><th class="rTh--num">% of Total</th></tr></thead>
                                 <tbody>
-                                    <tr v-for="cat in sortedCategories" :key="cat.name">
+                                    <tr v-for="cat in sortedCategories" :key="cat.key">
                                         <td>{{ cat.name }}</td>
                                         <td class="rTd--num rMono">{{ fmtNum(cat.count) }}</td>
                                         <td class="rTd--num">
@@ -509,14 +523,14 @@ onMounted(() => { fetchReport(); });
                     <div v-if="hasSubCategories" class="rSection">
                         <h4 class="rSection__title">Sub-category Details</h4>
                         <div class="rSubCatGrid">
-                            <div v-for="cat in categoriesWithSubs" :key="cat.name" class="rSubCatCard">
+                            <div v-for="cat in categoriesWithSubs" :key="cat.key" class="rSubCatCard">
                                 <div class="rSubCatCard__header">
                                     <span class="rSubCatCard__name">{{ cat.name }}</span>
                                     <span class="rSubCatCard__count">{{ cat.count }} calls</span>
                                 </div>
                                 <table class="rTable rTable--mini">
                                     <tbody>
-                                        <tr v-for="sub in cat.subCategories" :key="sub.name">
+                                        <tr v-for="sub in cat.subCategories" :key="sub.key">
                                             <td>{{ sub.name }}</td>
                                             <td class="rTd--num rMono">{{ sub.count }}</td>
                                             <td class="rTd--num">{{ sub.percent }}%</td>
@@ -557,7 +571,7 @@ onMounted(() => { fetchReport(); });
                     <!-- Sample Calls -->
                     <div v-if="hasSampleCalls" class="rSection">
                         <h4 class="rSection__title">Sample Calls by Category</h4>
-                        <div v-for="cat in categoriesWithSamples" :key="cat.name" class="rSampleSection">
+                        <div v-for="cat in categoriesWithSamples" :key="cat.key" class="rSampleSection">
                             <h5 class="rSampleSection__title">{{ cat.name }}</h5>
                             <div class="rSampleList">
                                 <div v-for="(sample, idx) in cat.samples" :key="idx" class="rSampleCall">
@@ -693,7 +707,7 @@ onMounted(() => { fetchReport(); });
                                     <thead><tr><th>Category</th><th class="rTh--num">Calls</th></tr></thead>
                                     <tbody>
                                         <tr v-for="row in company.top_categories" :key="row.name">
-                                            <td>{{ row.name }}</td>
+                                            <td>{{ labelFromKey(row.name) }}</td>
                                             <td class="rTd--num rMono">{{ row.count }}</td>
                                         </tr>
                                     </tbody>
@@ -748,7 +762,7 @@ onMounted(() => { fetchReport(); });
                                     <tr v-for="row in ringGroups" :key="row.ring_group">
                                         <td>
                                             <div style="font-weight:500">{{ row.ring_group_name || row.ring_group }}</div>
-                                            <div v-if="(row.top_categories||[]).length" style="font-size:0.82em;color:var(--color-muted,#6b7280);margin-top:2px">{{ row.top_categories.slice(0,2).map((c:any)=>c.name).join(', ') }}</div>
+                                            <div v-if="(row.top_categories||[]).length" style="font-size:0.82em;color:var(--color-muted,#6b7280);margin-top:2px">{{ row.top_categories.slice(0,2).map((c:any)=>labelFromKey(c.name)).join(", ") }}</div>
                                         </td>
                                         <td class="rTd--num rMono">{{ row.total_calls }}</td>
                                         <td class="rTd--num rMono"><span :style="row.missed_calls>0?'color:#dc2626;font-weight:600':''">{{ row.missed_calls }}</span></td>
@@ -776,11 +790,12 @@ onMounted(() => { fetchReport(); });
                         <h4 class="rSection__title">3) Extension Leaderboard</h4>
                         <div class="rTableWrap" v-if="extensions.length">
                             <table class="rTable">
-                                <thead><tr><th>Extension</th><th class="rTh--num">Answered</th><th class="rTh--num">Minutes</th><th>Top 3 Categories</th><th class="rTh--num">Repetitive %</th><th class="rTh--num">Impact Score</th></tr></thead>
+                                <thead><tr><th>Extension</th><th class="rTh--num" title="Inbound and internal calls handled by this extension">Answered (in)</th><th class="rTh--num" title="Outbound calls placed from this extension">Made (out)</th><th class="rTh--num">Minutes</th><th>Top 3 Categories</th><th class="rTh--num">Repetitive %</th><th class="rTh--num">Impact Score</th></tr></thead>
                                 <tbody>
                                     <tr v-for="row in extensions" :key="row.extension">
                                         <td>{{ row.extension }}</td>
                                         <td class="rTd--num rMono">{{ row.calls_answered }}</td>
+                                        <td class="rTd--num rMono">{{ row.calls_made ?? 0 }}</td>
                                         <td class="rTd--num rMono">{{ row.total_minutes }}</td>
                                         <td>{{ topCategoriesLabel(row.top_categories) }}</td>
                                         <td class="rTd--num rMono">{{ row.repetitive_percentage }}</td>

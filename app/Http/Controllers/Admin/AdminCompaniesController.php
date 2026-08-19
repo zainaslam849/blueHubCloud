@@ -340,7 +340,7 @@ class AdminCompaniesController extends Controller
                     if (! $company) {
                         $company = Company::create([
                             'name' => $tenantName,
-                            'timezone' => 'UTC',
+                            'timezone' => config('app.default_company_timezone', 'UTC'),
                             'status' => 'inactive',
                         ]);
                         $createdCompanies++;

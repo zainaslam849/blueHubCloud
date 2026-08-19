@@ -78,7 +78,7 @@
                                 v-for="row in company.top_categories"
                                 :key="row.name"
                             >
-                                <td>{{ row.name }}</td>
+                                <td>{{ labelFromKey(row.name) }}</td>
                                 <td class="admin-table__num admin-mono">
                                     {{ row.count }}
                                 </td>
@@ -291,7 +291,12 @@
                     <thead>
                         <tr>
                             <th>Extension</th>
-                            <th class="admin-table__num">Answered</th>
+                            <th class="admin-table__num" title="Inbound and internal calls handled by this extension">
+                                Answered (in)
+                            </th>
+                            <th class="admin-table__num" title="Outbound calls placed from this extension">
+                                Made (out)
+                            </th>
                             <th class="admin-table__num">Minutes</th>
                             <th>Top 3 Categories</th>
                             <th class="admin-table__num">Repetitive %</th>
@@ -303,6 +308,9 @@
                             <td>{{ row.extension }}</td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.calls_answered }}
+                            </td>
+                            <td class="admin-table__num admin-mono">
+                                {{ row.calls_made ?? 0 }}
                             </td>
                             <td class="admin-table__num admin-mono">
                                 {{ row.total_minutes }}
@@ -687,6 +695,18 @@ function trendLabel(direction, pct) {
     if (direction > 0) return `Up ${pct ?? 0}%`;
     if (direction < 0) return `Down ${Math.abs(pct ?? 0)}%`;
     return "Stable";
+}
+
+/**
+ * Category aggregates are keyed "{id}|{name}" so same-named categories stay
+ * distinct; only the name is meaningful to a reader. Guarded on a numeric
+ * prefix so names legitimately containing "|" are left intact.
+ */
+function labelFromKey(key) {
+    const raw = String(key ?? "");
+    const sep = raw.indexOf("|");
+    if (sep === -1) return raw;
+    return /^\d+$/.test(raw.slice(0, sep)) ? raw.slice(sep + 1) : raw;
 }
 
 function topCategoriesLabel(categories) {

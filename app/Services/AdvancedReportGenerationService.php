@@ -634,7 +634,27 @@ class AdvancedReportGenerationService
             }
         }
 
-        // Fallback to destination endpoints only. Do not use caller/from to avoid external numbers.
+        // On an outbound call the extension that did the work is the CALLER,
+        // and the destination is an external number. Looking only at the
+        // destination (as the inbound path below does) silently drops every
+        // outbound call from the leaderboard.
+        if ($call->direction === 'outbound') {
+            $originCandidates = [
+                $call->from,
+                data_get($call->pbx_metadata, 'From'),
+                data_get($call->pbx_metadata, 'raw_row.0'),
+            ];
+
+            foreach ($originCandidates as $candidate) {
+                $value = $this->normalizeExtensionCandidate($candidate);
+                if ($value !== null) {
+                    return $value;
+                }
+            }
+        }
+
+        // Inbound/internal: attribute to the destination endpoint. Do not use
+        // caller/from here, to avoid picking up external numbers.
         $destinationCandidates = [
             $call->to,
             data_get($call->pbx_metadata, 'To'),

@@ -39,7 +39,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="cat in sortedCategories" :key="cat.name">
+                        <tr v-for="cat in sortedCategories" :key="cat.key">
                             <td>{{ cat.name }}</td>
                             <td class="admin-table__num admin-mono">
                                 {{ formatNumber(cat.count) }}
@@ -66,7 +66,7 @@
                 <div class="admin-subCategoryGrid">
                     <div
                         v-for="cat in categoriesWithSubs"
-                        :key="cat.name"
+                        :key="cat.key"
                         class="admin-subCategoryCard"
                     >
                         <div class="admin-subCategoryCard__header">
@@ -81,7 +81,7 @@
                             <tbody>
                                 <tr
                                     v-for="sub in cat.subCategories"
-                                    :key="sub.name"
+                                    :key="sub.key"
                                 >
                                     <td>{{ sub.name }}</td>
                                     <td class="admin-table__num admin-mono">
@@ -148,7 +148,7 @@
                 </h4>
                 <div
                     v-for="cat in categoriesWithSamples"
-                    :key="cat.name"
+                    :key="cat.key"
                     class="admin-sampleCallsSection"
                 >
                     <h5 class="admin-sampleCallsSection__title">
@@ -246,13 +246,28 @@ const reportTotalCalls = computed(() => {
     return Number.isFinite(num) ? num : null;
 });
 
+/**
+ * Report breakdowns are keyed "{id}|{name}" (see GenerateWeeklyPbxReportsJob)
+ * so categories stay distinct even if two share a name. Only the name is
+ * meaningful to a reader, so strip the id for display while keeping the raw
+ * key for :key uniqueness. Guarded on a numeric prefix so a category whose
+ * name legitimately contains "|" is left intact.
+ */
+function labelFromKey(key) {
+    const raw = String(key ?? "");
+    const sep = raw.indexOf("|");
+    if (sep === -1) return raw;
+    return /^\d+$/.test(raw.slice(0, sep)) ? raw.slice(sep + 1) : raw;
+}
+
 const sortedCategories = computed(() => {
     const counts = props.breakdowns?.counts || {};
     const total = totalCalls.value;
 
     return Object.entries(counts)
-        .map(([name, count]) => ({
-            name,
+        .map(([key, count]) => ({
+            key,
+            name: labelFromKey(key),
             count,
             percent: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
         }))
@@ -268,14 +283,15 @@ const categoriesWithSubs = computed(() => {
                 cat.sub_categories &&
                 Object.keys(cat.sub_categories).length > 0,
         )
-        .map(([name, cat]) => {
+        .map(([key, cat]) => {
             const subTotal = Object.values(cat.sub_categories).reduce(
                 (s, c) => s + c,
                 0,
             );
             const subCategories = Object.entries(cat.sub_categories)
-                .map(([subName, subCount]) => ({
-                    name: subName,
+                .map(([subKey, subCount]) => ({
+                    key: subKey,
+                    name: labelFromKey(subKey),
                     count: subCount,
                     percent:
                         subTotal > 0
@@ -285,7 +301,8 @@ const categoriesWithSubs = computed(() => {
                 .sort((a, b) => b.count - a.count);
 
             return {
-                name,
+                key,
+                name: labelFromKey(key),
                 count: cat.count,
                 subCategories,
             };
@@ -298,8 +315,9 @@ const categoriesWithSamples = computed(() => {
 
     return Object.entries(details)
         .filter(([, cat]) => cat.sample_calls && cat.sample_calls.length > 0)
-        .map(([name, cat]) => ({
-            name,
+        .map(([key, cat]) => ({
+            key,
+            name: labelFromKey(key),
             samples: cat.sample_calls,
         }))
         .sort((a, b) => b.samples.length - a.samples.length);
