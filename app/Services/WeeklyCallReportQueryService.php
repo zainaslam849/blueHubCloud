@@ -67,6 +67,7 @@ class WeeklyCallReportQueryService
             'weekly_call_reports.created_at',
             'weekly_call_reports.updated_at',
             'companies.name as company_name',
+            'companies.slug as company_slug',
         ];
     }
 
@@ -76,13 +77,21 @@ class WeeklyCallReportQueryService
      */
     private function normalizeRow($r): array
     {
+        // Capture these as clean Y-m-d before toArray() serializes the 'date'
+        // casts (no explicit format) to a full ISO datetime string — the
+        // frontend needs the plain date for the /reports/{company}/{week} URL.
+        $weekStart = $r->week_start_date?->toDateString();
+        $weekEnd = $r->week_end_date?->toDateString();
+
         if (is_object($r) && method_exists($r, 'toArray')) {
             $arr = $r->toArray();
         } else {
             $arr = (array) $r;
         }
 
-        $arr['company'] = ['name' => $arr['company_name'] ?? null];
+        $arr['week_start_date'] = $weekStart;
+        $arr['week_end_date'] = $weekEnd;
+        $arr['company'] = ['name' => $arr['company_name'] ?? null, 'slug' => $arr['company_slug'] ?? null];
 
         return $arr;
     }

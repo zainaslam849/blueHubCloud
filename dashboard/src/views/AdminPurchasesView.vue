@@ -139,6 +139,7 @@ onMounted(load);
                             'apStatus--pending':   p.status === 'pending',
                             'apStatus--failed':    p.status === 'failed',
                             'apStatus--refunded':  p.status === 'refunded',
+                            'apStatus--cancelled': p.status === 'cancelled',
                         }"
                     >{{ p.status }}</span>
                     <span class="apRow__date">{{ formatDate(p.purchased_at ?? p.created_at) }}</span>
@@ -245,6 +246,7 @@ onMounted(load);
 .apStatus--pending   { background: color-mix(in srgb, var(--color-warning) 12%, transparent); color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent); }
 .apStatus--failed    { background: color-mix(in srgb, var(--color-error)   12%, transparent); color: var(--color-error);   border: 1px solid color-mix(in srgb, var(--color-error)   25%, transparent); }
 .apStatus--refunded  { background: color-mix(in srgb, var(--color-muted)   12%, transparent); color: var(--color-muted);   border: 1px solid color-mix(in srgb, var(--color-muted)   25%, transparent); }
+.apStatus--cancelled { background: color-mix(in srgb, var(--color-muted)   12%, transparent); color: var(--color-muted);   border: 1px solid color-mix(in srgb, var(--color-muted)   25%, transparent); }
 
 /* Skeleton */
 .apRow--sk { pointer-events: none; }

@@ -240,11 +240,12 @@ function priorityBadgeStyle(priority) {
 
 // ── Fetch ─────────────────────────────────────────────────────────────────
 async function fetchReport() {
-    const id = route.params.id;
+    const companySlug = route.params.companySlug;
+    const weekStart    = route.params.weekStart;
     loading.value = true;
     error.value   = "";
     try {
-        const res    = await adminApi.get(`/weekly-call-reports/${id}`);
+        const res    = await adminApi.get(`/weekly-call-reports/${companySlug}/${weekStart}`);
         report.value = res?.data?.data ?? null;
     } catch (e) {
         report.value = null;
@@ -257,7 +258,7 @@ async function fetchReport() {
 
 function goBack() { router.push({ name: "admin.weeklyReports" }); }
 
-watch(() => route.params.id, () => { fetchReport(); });
+watch(() => [route.params.companySlug, route.params.weekStart], () => { fetchReport(); });
 onMounted(() => { fetchReport(); });
 </script>
 

@@ -14,10 +14,18 @@ use Illuminate\Support\Facades\Log;
 
 class WeeklyCallReportShowQueryService
 {
-    public function getReportOrFail(int $id): WeeklyCallReport
+    /**
+     * A company only ever has one weekly report per period (unique on
+     * company_id + reporting period), so company + week start date is a
+     * stable, human-readable identifier — used for the /reports/{company}/{week}
+     * URL instead of the raw numeric id.
+     */
+    public function getReportByCompanyAndWeek(int $companyId, string $weekStart): WeeklyCallReport
     {
-        return WeeklyCallReport::with(['company:id,name', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
-            ->findOrFail($id);
+        return WeeklyCallReport::with(['company:id,name,slug', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
+            ->where('company_id', $companyId)
+            ->whereDate('week_start_date', $weekStart)
+            ->firstOrFail();
     }
 
     public function getCallEndpoints(WeeklyCallReport $report): array

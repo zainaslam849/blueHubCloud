@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { auth } from "../composables/useAuth";
 import { userApi } from "../api/user";
+import { useToasts } from "../composables/useToasts";
 import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 const router = useRouter();
+const route  = useRoute();
+const toasts = useToasts();
 
 type Plan = {
     id: number;
@@ -28,7 +31,7 @@ type CreditHistoryEntry = {
     credits: number;
     balance_after: number | null;
     date: string | null;
-    report_id: number | null;
+    report_week: string | null;
 };
 
 type AutoTopup = {
@@ -265,14 +268,39 @@ function historyTypeClass(entry: CreditHistoryEntry): string {
 }
 
 function openHistoryReport(entry: CreditHistoryEntry) {
-    if (!entry.report_id) return;
-    router.push({ name: "report-detail", params: { id: entry.report_id } });
+    if (!entry.report_week || !auth.state.user?.company_slug) return;
+    router.push({
+        name: "report-detail",
+        params: { companySlug: auth.state.user.company_slug, weekStart: entry.report_week },
+    });
+}
+
+// If the customer backed out of Stripe Checkout, Stripe bounces them back
+// here via cancel_url with ?cancelled=1&session_id=... — mark that specific
+// pending purchase as cancelled right away instead of leaving it "Pending"
+// forever, then strip the query string so a refresh doesn't repeat it.
+async function handleCheckoutCancelled() {
+    if (route.query.cancelled !== "1") return;
+
+    const sessionId = route.query.session_id as string | undefined;
+    if (sessionId) {
+        try {
+            await userApi.post(`/stripe/cancel/${sessionId}`);
+        } catch {
+            // Non-fatal — worst case it just stays pending until Stripe's
+            // own session expiry reaches the webhook.
+        }
+    }
+
+    toasts.push({ variant: "success", title: "Checkout cancelled", message: "No charge was made." });
+    router.replace({ name: "select-plan" });
 }
 
 onMounted(() => {
     loadPlans();
     loadPlanEconomics();
     loadHistory();
+    handleCheckoutCancelled();
 });
 </script>
 
@@ -483,11 +511,11 @@ onMounted(() => {
                                 <tr
                                     v-for="e in historyEntries"
                                     :key="e.key"
-                                    :class="{ 'bcHistRow--link': e.report_id }"
+                                    :class="{ 'bcHistRow--link': e.report_week }"
                                     @click="openHistoryReport(e)"
                                 >
                                     <td class="bcMono">{{ formatDate(e.date) }}</td>
-                                    <td>{{ e.label }}<svg v-if="e.report_id" viewBox="0 0 24 24" fill="none" class="bcHistRow__arrow"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></td>
+                                    <td>{{ e.label }}<svg v-if="e.report_week" viewBox="0 0 24 24" fill="none" class="bcHistRow__arrow"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></td>
                                     <td><span class="bcBadge" :class="historyTypeClass(e)">{{ historyTypeLabel(e) }}</span></td>
                                     <td class="bcMono bcCol--right" :class="e.credits > 0 ? 'bcCredits' : 'bcCreditsNeg'">{{ formatCredits(e.credits) }}</td>
                                     <td class="bcMono bcCol--right">{{ e.balance_after !== null ? formatCredits(e.balance_after).replace('+', '') : '—' }}</td>
@@ -502,7 +530,7 @@ onMounted(() => {
                             v-for="e in historyEntries"
                             :key="e.key"
                             class="bcHistCard"
-                            :class="{ 'bcHistRow--link': e.report_id }"
+                            :class="{ 'bcHistRow--link': e.report_week }"
                             @click="openHistoryReport(e)"
                         >
                             <div class="bcHistCard__top">

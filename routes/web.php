@@ -144,8 +144,8 @@ Route::prefix('admin/api')->group(function () {
             Route::post('/ai-settings', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'store']);
             Route::post('/ai-settings/test', [\App\Http\Controllers\Admin\AdminAiSettingsController::class, 'test']);
         Route::get('/weekly-call-reports', [AdminWeeklyCallReportsController::class, 'index']);
-        Route::get('/weekly-call-reports/{id}', [AdminWeeklyCallReportsController::class, 'show'])
-            ->whereNumber('id');
+        Route::get('/weekly-call-reports/{companySlug}/{weekStart}', [AdminWeeklyCallReportsController::class, 'show'])
+            ->where('weekStart', '\d{4}-\d{2}-\d{2}');
         Route::get('/ai/pending', [AdminAiRegenerateController::class, 'pendingStats']);
         Route::post('/ai/regenerate', [AdminAiRegenerateController::class, 'regenerate']);
         
@@ -288,7 +288,8 @@ Route::prefix('api/v1')->group(function () {
 
         Route::get('/dashboard',     [UserDashboardController::class, 'show']);
         Route::get('/reports',       [UserWeeklyCallReportsController::class, 'index']);
-        Route::get('/reports/{id}',  [UserWeeklyCallReportsController::class, 'show'])->whereNumber('id');
+        Route::get('/reports/{companySlug}/{weekStart}', [UserWeeklyCallReportsController::class, 'show'])
+            ->where('weekStart', '\d{4}-\d{2}-\d{2}');
         Route::get('/calls',                                  [UserCallsController::class, 'index']);
         Route::get('/calls/{callId}',                         [UserCallsController::class, 'show']);
         Route::post('/calls/{callId}/regenerate-ai',          [UserCallsController::class, 'regenerate']);
@@ -309,6 +310,7 @@ Route::prefix('api/v1')->group(function () {
         // Stripe checkout
         Route::post('/stripe/create-checkout', [\App\Http\Controllers\User\StripeController::class, 'createCheckout']);
         Route::get('/stripe/verify/{sessionId}', [\App\Http\Controllers\User\StripeController::class, 'verify']);
+        Route::post('/stripe/cancel/{sessionId}', [\App\Http\Controllers\User\StripeController::class, 'cancel']);
 
         // Auto top-up configuration (saved card, off-session)
         Route::post('/auto-topup/setup-intent', [\App\Http\Controllers\User\AutoTopupController::class, 'createSetupIntent']);

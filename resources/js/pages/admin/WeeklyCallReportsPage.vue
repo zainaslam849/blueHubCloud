@@ -284,13 +284,13 @@
                 </template>
 
                 <template #cell-actions="{ row }">
-                    <template v-if="row?.id">
+                    <template v-if="row?.id && row?.companySlug && row?.weekStart">
                         <BaseButton
                             variant="ghost"
                             size="sm"
                             :to="{
                                 name: 'admin.weeklyReports.detail',
-                                params: { id: row.id },
+                                params: { companySlug: row.companySlug, weekStart: row.weekStart },
                             }"
                         >
                             View
@@ -404,6 +404,7 @@ function normalizeRow(item) {
     return {
         id: item.id,
         company: item.company?.name || item.company_name || "—",
+        companySlug: item.company?.slug || item.company_slug || null,
         weekStart: item.week_start_date,
         weekEnd: item.week_end_date,
         totalCalls: item.total_calls ?? 0,

@@ -52,7 +52,13 @@ class UserWeeklyCallReportsController extends Controller
         return response()->json(['data' => $reports]);
     }
 
-    public function show(int $id): JsonResponse
+    /**
+     * The company slug in the URL is cosmetic only — authorization always
+     * comes from the authenticated user's own company_id below, never from
+     * anything in the URL, so there's no way to view another company's
+     * report by editing it.
+     */
+    public function show(string $companySlug, string $weekStart): JsonResponse
     {
         $user = Auth::guard('web')->user();
 
@@ -60,9 +66,9 @@ class UserWeeklyCallReportsController extends Controller
             return response()->json(['message' => 'No company assigned to your account yet.'], 403);
         }
 
-        $report = $this->showQueryService->getReportOrFail($id);
-
-        if ((int) $report->company_id !== (int) $user->company_id) {
+        try {
+            $report = $this->showQueryService->getReportByCompanyAndWeek((int) $user->company_id, $weekStart);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
             return response()->json(['message' => 'Not found.'], 404);
         }
 

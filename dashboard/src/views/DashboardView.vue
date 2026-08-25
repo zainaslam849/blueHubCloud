@@ -550,7 +550,7 @@ onBeforeUnmount(() => {
                             <RouterLink
                                 v-for="r in data.recent_reports"
                                 :key="r.id"
-                                :to="{ name: 'report-detail', params: { id: r.id } }"
+                                :to="{ name: 'report-detail', params: { companySlug: auth.state.user?.company_slug ?? '', weekStart: r.week_start_date } }"
                                 class="reportRow"
                             >
                                 <div class="reportRow__icon">

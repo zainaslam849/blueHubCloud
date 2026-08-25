@@ -35,13 +35,15 @@ class WeeklyCallReportListPresenter
         }
 
         $companyName = $r['company']['name'] ?? $r['company_name'] ?? null;
+        $companySlug = $r['company_slug'] ?? null;
 
         return [
             'id' => $r['id'] ?? null,
 
             // Company (both object and flat name for compatibility)
-            'company' => ['name' => $companyName],
+            'company' => ['name' => $companyName, 'slug' => $companySlug],
             'company_name' => $companyName,
+            'company_slug' => $companySlug,
 
             // Week range (both snake_case and camelCase)
             'week_start_date' => $weekStart,

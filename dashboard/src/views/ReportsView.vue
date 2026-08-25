@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { userApi } from "../api/user";
+import { auth } from "../composables/useAuth";
 import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 type ReportRow = {
@@ -137,7 +138,11 @@ async function fetchReports() {
 }
 
 function view(row: ReportRow) {
-    router.push({ name: "report-detail", params: { id: row.id } });
+    if (!row.weekStart || !auth.state.user?.company_slug) return;
+    router.push({
+        name: "report-detail",
+        params: { companySlug: auth.state.user.company_slug, weekStart: row.weekStart },
+    });
 }
 
 onMounted(fetchReports);

@@ -62,7 +62,7 @@ const router = createRouter({
                 import("../../pages/admin/WeeklyCallReportsPage.vue"),
         },
         {
-            path: "/weekly-call-reports/:id",
+            path: "/weekly-call-reports/:companySlug/:weekStart",
             name: "admin.weeklyReports.detail",
             meta: { title: "Weekly Report", breadcrumb: "Weekly Report" },
             component: () =>

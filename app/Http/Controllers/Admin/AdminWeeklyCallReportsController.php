@@ -43,7 +43,7 @@ class AdminWeeklyCallReportsController extends Controller
     }
 
     /**
-     * GET /admin/api/weekly-call-reports/{id}
+     * GET /admin/api/weekly-call-reports/{companySlug}/{weekStart}
      *
      * Returns full report details including:
      * - Header info (company, week range)
@@ -52,10 +52,8 @@ class AdminWeeklyCallReportsController extends Controller
      * - Category breakdowns
      * - Insights
      */
-    public function show(int $id): JsonResponse
+    public function show(string $companySlug, string $weekStart): JsonResponse
     {
-        $report = $this->showQueryService->getReportOrFail($id);
-
         // Attempt to get authenticated user from admin guard first, fallback to web guard
         $adminGuardUser = Auth::guard('admin')->user();
         $webGuardUser = Auth::user();
@@ -63,7 +61,8 @@ class AdminWeeklyCallReportsController extends Controller
 
         // Debug logging for authentication issues
         Log::channel('daily')->info('Weekly report access attempt', [
-            'report_id' => $id,
+            'company_slug' => $companySlug,
+            'week_start' => $weekStart,
             'admin_guard_user' => $adminGuardUser ? ['id' => $adminGuardUser->id, 'email' => $adminGuardUser->email, 'role' => $adminGuardUser->role] : null,
             'web_guard_user' => $webGuardUser ? ['id' => $webGuardUser->id, 'email' => $webGuardUser->email, 'role' => $webGuardUser->role] : null,
             'final_user' => $user ? ['id' => $user->id, 'email' => $user->email, 'role' => $user->role, 'is_admin' => $user->isAdmin()] : null,
@@ -71,18 +70,30 @@ class AdminWeeklyCallReportsController extends Controller
 
         // Return 401 if completely unauthenticated
         if (!$user) {
-            Log::channel('daily')->warning('Report access denied: no authenticated user', ['report_id' => $id]);
+            Log::channel('daily')->warning('Report access denied: no authenticated user', ['company_slug' => $companySlug, 'week_start' => $weekStart]);
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
         // Return 403 if user lacks admin role
         if (!$user->isAdmin()) {
             Log::channel('daily')->warning('Report access denied: user not admin', [
-                'report_id' => $id,
+                'company_slug' => $companySlug,
+                'week_start' => $weekStart,
                 'user_id' => $user->id,
                 'user_role' => $user->role,
             ]);
             return response()->json(['message' => 'This action is unauthorized.'], 403);
+        }
+
+        $company = \App\Models\Company::where('slug', $companySlug)->first();
+        if (! $company) {
+            return response()->json(['message' => 'Not found.'], 404);
+        }
+
+        try {
+            $report = $this->showQueryService->getReportByCompanyAndWeek($company->id, $weekStart);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException) {
+            return response()->json(['message' => 'Not found.'], 404);
         }
 
         $metrics = $report->metrics ?? [];

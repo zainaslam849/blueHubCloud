@@ -209,6 +209,7 @@ class AuthController extends Controller
             'role'         => $user->role,
             'company_id'   => $user->company_id,
             'company_name' => $user->company?->name,
+            'company_slug' => $user->company?->slug,
             'created_at'   => $user->created_at?->toIso8601String(),
         ];
     }

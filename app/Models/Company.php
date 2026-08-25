@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Company extends Model
 {
@@ -14,6 +15,7 @@ class Company extends Model
 
     protected $fillable = [
         'name',
+        'slug',
         'timezone',
         'status',
         'monthly_call_limit',
@@ -26,6 +28,26 @@ class Company extends Model
         'call_limit_used'       => 'integer',
         'call_limit_expires_at' => 'date',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Company $company) {
+            if (! empty($company->slug)) {
+                return;
+            }
+
+            $base = Str::slug($company->name) ?: 'company';
+            $slug = $base;
+            $suffix = 2;
+
+            while (static::withTrashed()->where('slug', $slug)->exists()) {
+                $slug = $base . '-' . $suffix;
+                $suffix++;
+            }
+
+            $company->slug = $slug;
+        });
+    }
 
     public function companyPbxAccounts(): HasMany
     {

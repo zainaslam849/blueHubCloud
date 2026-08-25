@@ -110,7 +110,7 @@ class StripeController extends Controller
                 'quantity' => 1,
             ]],
             'success_url' => "{$appUrl}/purchase/success?session_id={CHECKOUT_SESSION_ID}",
-            'cancel_url'  => "{$appUrl}/select-plan?cancelled=1",
+            'cancel_url'  => "{$appUrl}/select-plan?cancelled=1&session_id={CHECKOUT_SESSION_ID}",
             'metadata'    => [
                 'user_id'    => $user->id,
                 'company_id' => $user->company_id,
@@ -120,6 +120,13 @@ class StripeController extends Controller
             'payment_intent_data' => [
                 'setup_future_usage' => 'off_session',
             ],
+            // Bounds how long an abandoned checkout stays "pending" before
+            // Stripe expires it (default would be 24h) — paired with the
+            // checkout.session.expired webhook below to auto-clean it up.
+            // Stripe requires at least 30 minutes from creation; padded a
+            // little so a few seconds of request latency can't push it under
+            // that floor and cause the session creation call to fail.
+            'expires_at' => now()->addMinutes(35)->timestamp,
         ];
 
         if ($balanceRow->stripe_customer_id) {
@@ -205,7 +212,47 @@ class StripeController extends Controller
             $this->handleCheckoutCompleted($event->data->object);
         }
 
+        // Safety net for a checkout the customer simply abandoned (closed the
+        // tab, hit the browser back button — anything that skips our own
+        // cancel_url round trip). Stripe expires the session on its own once
+        // 'expires_at' passes; this just reflects that back onto our pending
+        // row so it doesn't sit there forever.
+        if ($event->type === 'checkout.session.expired') {
+            $this->markPurchaseCancelled($event->data->object->id ?? null);
+        }
+
         return response()->json(['received' => true]);
+    }
+
+    /**
+     * POST /api/v1/stripe/cancel/{sessionId}
+     * Called when the customer is bounced back to our cancel_url after
+     * backing out of Stripe Checkout — marks that specific pending purchase
+     * as cancelled immediately, instead of leaving it "Pending" until the
+     * session naturally expires.
+     */
+    public function cancel(string $sessionId): JsonResponse
+    {
+        $user = Auth::guard('web')->user();
+
+        $purchase = PlanPurchase::where('stripe_session_id', $sessionId)->first();
+
+        if ($purchase && (int) $purchase->company_id === (int) $user->company_id && $purchase->status === 'pending') {
+            $purchase->update(['status' => 'cancelled']);
+        }
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function markPurchaseCancelled(?string $sessionId): void
+    {
+        if (! $sessionId) {
+            return;
+        }
+
+        PlanPurchase::where('stripe_session_id', $sessionId)
+            ->where('status', 'pending')
+            ->update(['status' => 'cancelled']);
     }
 
     /**

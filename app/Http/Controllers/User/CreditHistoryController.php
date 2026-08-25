@@ -52,7 +52,7 @@ class CreditHistoryController extends Controller
                     'credits' => (float) $t->credits,
                     'balance_after' => (float) $t->balance_after,
                     'date' => $t->created_at?->toIso8601String(),
-                    'report_id' => null,
+                    'report_week' => null,
                 ];
             });
 
@@ -99,7 +99,7 @@ class CreditHistoryController extends Controller
                 'credits' => (float) $g->credits,
                 'balance_after' => isset($balancesByTxnId[$g->last_txn_id]) ? (float) $balancesByTxnId[$g->last_txn_id] : null,
                 'date' => $g->last_at ? Carbon::parse($g->last_at)->toIso8601String() : null,
-                'report_id' => $report?->id,
+                'report_week' => $report?->week_start_date?->toDateString(),
             ];
         });
 
