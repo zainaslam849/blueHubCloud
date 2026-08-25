@@ -61,6 +61,7 @@ class WeeklyCallReportQueryService
             'weekly_call_reports.calls_with_transcription',
             'weekly_call_reports.total_call_duration_seconds',
             'weekly_call_reports.avg_call_duration_seconds',
+            'weekly_call_reports.minutes_consumed',
             'weekly_call_reports.first_call_at',
             'weekly_call_reports.last_call_at',
             'weekly_call_reports.created_at',

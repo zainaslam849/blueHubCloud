@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\WeeklyCallReport;
 use App\Services\Admin\WeeklyCallReportShowPresenter;
 use App\Services\Admin\WeeklyCallReportShowQueryService;
+use App\Services\Billing\CreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +18,7 @@ class UserWeeklyCallReportsController extends Controller
         private readonly WeeklyCallReportShowPresenter $showPresenter,
     ) {}
 
-    public function index(): JsonResponse
+    public function index(CreditService $creditService): JsonResponse
     {
         $user = Auth::guard('web')->user();
 
@@ -44,6 +45,7 @@ class UserWeeklyCallReportsController extends Controller
                 'answered_calls' => $r->answered_calls,
                 'missed_calls' => $r->missed_calls,
                 'minutes_consumed' => $r->minutes_consumed,
+                'credits_used' => $creditService->costForSeconds((int) ($r->total_call_duration_seconds ?? 0)),
                 'generated_at' => $r->generated_at?->toIso8601String(),
             ]);
 

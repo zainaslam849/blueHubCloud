@@ -13,6 +13,8 @@ type ReportRow = {
     totalCalls: number;
     answeredCalls: number;
     missedCalls: number;
+    minutesConsumed: number | null;
+    creditsUsed: number | null;
     generatedAt: string | null;
 };
 
@@ -35,6 +37,8 @@ function normalize(item: any): ReportRow {
         totalCalls:    item.total_calls ?? 0,
         answeredCalls: item.answered_calls ?? 0,
         missedCalls:   item.missed_calls ?? 0,
+        minutesConsumed: item.minutes_consumed ?? null,
+        creditsUsed:     item.credits_used ?? null,
         generatedAt:   item.generated_at ?? null,
     };
 }
@@ -52,6 +56,11 @@ function fmtWeek(row: ReportRow): string {
 function fmtNum(v: number | null | undefined): string {
     const n = Number(v);
     return Number.isFinite(n) ? n.toLocaleString() : "—";
+}
+
+function fmtCredits(v: number | null | undefined): string {
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "—";
 }
 
 function answerRate(row: ReportRow): number {
@@ -194,19 +203,21 @@ onMounted(fetchReports);
                                 </button>
                             </th>
                             <th class="rCol--right">Answer Rate</th>
+                            <th class="rCol--right">Minutes</th>
+                            <th class="rCol--right">Credits Used</th>
                             <th class="rCol--actions"></th>
                         </tr>
                     </thead>
 
                     <tbody v-if="loading">
                         <tr v-for="n in 8" :key="n">
-                            <td colspan="5"><div class="rSkeleton"></div></td>
+                            <td colspan="7"><div class="rSkeleton"></div></td>
                         </tr>
                     </tbody>
 
                     <tbody v-else-if="filtered.length === 0">
                         <tr>
-                            <td colspan="5" class="rEmpty">
+                            <td colspan="7" class="rEmpty">
                                 <div class="rEmpty__title">No reports found</div>
                                 <div class="rEmpty__desc">No weekly call reports match the current search.</div>
                             </td>
@@ -221,6 +232,8 @@ onMounted(fetchReports);
                             <td class="rCol--right">
                                 <span class="rBadge" :class="rateBadge(row)">{{ answerRate(row) }}%</span>
                             </td>
+                            <td class="rMono rCol--right">{{ fmtNum(row.minutesConsumed) }}</td>
+                            <td class="rMono rCol--right">{{ fmtCredits(row.creditsUsed) }}</td>
                             <td class="rCol--actions" @click.stop>
                                 <button type="button" class="rChevronBtn" aria-label="View report" @click.stop="view(row)">
                                     <svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
@@ -250,6 +263,10 @@ onMounted(fetchReports);
                             <span class="rMono">{{ fmtNum(row.totalCalls) }} calls</span>
                             <span class="rReportCard__dot"></span>
                             <span class="rMono">{{ fmtNum(row.answeredCalls) }} answered</span>
+                            <span class="rReportCard__dot"></span>
+                            <span class="rMono">{{ fmtNum(row.minutesConsumed) }} min</span>
+                            <span class="rReportCard__dot"></span>
+                            <span class="rMono">{{ fmtCredits(row.creditsUsed) }} credits</span>
                         </div>
                     </button>
                 </div>

@@ -2,8 +2,14 @@
 
 namespace App\Services\Admin;
 
+use App\Services\Billing\CreditService;
+
 class WeeklyCallReportListPresenter
 {
+    public function __construct(private readonly CreditService $creditService)
+    {
+    }
+
     /**
      * Map a raw weekly report row to the existing index payload contract.
      *
@@ -14,6 +20,8 @@ class WeeklyCallReportListPresenter
     {
         $total = (int) ($r['total_calls'] ?? 0);
         $answered = (int) ($r['answered_calls'] ?? 0);
+        $minutesConsumed = $r['minutes_consumed'] ?? null;
+        $creditsUsed = $this->creditService->costForSeconds((int) ($r['total_call_duration_seconds'] ?? 0));
 
         $weekStart = $r['week_start_date'] ?? null;
         $weekEnd = $r['week_end_date'] ?? null;
@@ -48,6 +56,8 @@ class WeeklyCallReportListPresenter
             'totalCalls' => $total,
             'answeredCalls' => $answered,
             'missedCalls' => (int) ($r['missed_calls'] ?? 0),
+            'minutes_consumed' => $minutesConsumed,
+            'credits_used' => $creditsUsed,
 
             // Derived metric
             'answer_rate' => $total > 0 ? round(($answered / $total) * 100) : 0,

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { auth } from "../composables/useAuth";
 import { userApi } from "../api/user";
 import Breadcrumb from "../components/ui/Breadcrumb.vue";
+
+const router = useRouter();
 
 type Plan = {
     id: number;
@@ -18,15 +21,14 @@ type Plan = {
     is_featured: boolean;
 };
 
-type Purchase = {
-    id: number;
-    plan_name: string;
-    credits_added: number;
-    amount_paid: string;
-    currency: string;
-    status: string;
-    purchased_at: string | null;
-    created_at: string;
+type CreditHistoryEntry = {
+    key: string;
+    type: "purchase" | "auto_topup" | "adjustment" | "refund" | "deduction" | "usage";
+    label: string;
+    credits: number;
+    balance_after: number | null;
+    date: string | null;
+    report_id: number | null;
 };
 
 type AutoTopup = {
@@ -212,8 +214,11 @@ async function saveAutoTopup(paymentMethodId?: string) {
     }
 }
 
-// ── Purchase history ─────────────────────────────────────────────────────────
-const purchases      = ref<Purchase[]>([]);
+// ── Credit history ────────────────────────────────────────────────────────────
+// Purchases, auto top-ups, manual adjustments and refunds each as their own
+// row, plus per-call usage rolled up by the weekly report it paid for — a
+// deduction-per-call ledger isn't useful to read one row at a time.
+const historyEntries = ref<CreditHistoryEntry[]>([]);
 const historyLoading = ref(true);
 const historyError   = ref<string | null>(null);
 
@@ -221,10 +226,10 @@ async function loadHistory() {
     historyLoading.value = true;
     historyError.value   = null;
     try {
-        const res = await userApi.get<{ data: Purchase[] }>("/purchases");
-        purchases.value = res.data.data ?? [];
+        const res = await userApi.get<{ data: CreditHistoryEntry[] }>("/credits/history");
+        historyEntries.value = res.data.data ?? [];
     } catch {
-        historyError.value = "Unable to load purchase history.";
+        historyError.value = "Unable to load credit history.";
     } finally {
         historyLoading.value = false;
     }
@@ -235,24 +240,33 @@ function formatDate(iso: string | null): string {
     return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-function formatAmount(amount: string, currency: string): string {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(amount));
+function formatCredits(v: number): string {
+    const sign = v > 0 ? "+" : "";
+    return sign + v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-function statusLabel(status: string): string {
-    const map: Record<string, string> = {
-        completed: "Paid",
-        pending:   "Pending",
-        failed:    "Card declined",
-        refunded:  "Refunded",
-    };
-    return map[status] ?? status;
+const HISTORY_TYPE_LABEL: Record<string, string> = {
+    purchase: "Purchase",
+    auto_topup: "Auto top-up",
+    adjustment: "Adjustment",
+    refund: "Refund",
+    deduction: "Adjustment",
+    usage: "Usage",
+};
+
+function historyTypeLabel(entry: CreditHistoryEntry): string {
+    return HISTORY_TYPE_LABEL[entry.type] ?? entry.type;
 }
 
-function statusClass(status: string): string {
-    if (status === "completed") return "badge--active";
-    if (status === "failed")    return "badge--failed";
-    return "badge--processing";
+function historyTypeClass(entry: CreditHistoryEntry): string {
+    if (entry.credits > 0) return "badge--active";
+    if (entry.type === "usage") return "badge--processing";
+    return "badge--failed";
+}
+
+function openHistoryReport(entry: CreditHistoryEntry) {
+    if (!entry.report_id) return;
+    router.push({ name: "report-detail", params: { id: entry.report_id } });
 }
 
 onMounted(() => {
@@ -438,39 +452,45 @@ onMounted(() => {
                 </template>
             </div>
 
-            <!-- Purchase history -->
+            <!-- Credit history -->
             <div class="bcPanel bcPanel--history">
-                <h2 class="bcPanel__title">Purchase history</h2>
+                <h2 class="bcPanel__title">Credit history</h2>
+                <p class="bcPanel__sub">Every purchase, top-up and report that spent your credits.</p>
 
                 <div v-if="historyError" class="bcAlert bcAlert--error">{{ historyError }}</div>
 
                 <div v-if="historyLoading" class="bcHistTableWrap">
                     <table class="bcHistTable">
-                        <thead><tr><th>Date</th><th>Pack</th><th class="bcCol--right">Credits</th><th class="bcCol--right">Paid</th><th>Status</th></tr></thead>
+                        <thead><tr><th>Date</th><th>Description</th><th>Type</th><th class="bcCol--right">Credits</th><th class="bcCol--right">Balance</th></tr></thead>
                         <tbody>
                             <tr v-for="n in 4" :key="n"><td colspan="5"><div class="bcSk bcSk--line" style="height:16px"></div></td></tr>
                         </tbody>
                     </table>
                 </div>
 
-                <div v-else-if="purchases.length === 0" class="bcEmpty bcEmpty--sm">
-                    <p class="bcEmpty__title">No purchases yet</p>
-                    <p class="bcEmpty__sub">Your purchases will appear here.</p>
+                <div v-else-if="historyEntries.length === 0" class="bcEmpty bcEmpty--sm">
+                    <p class="bcEmpty__title">No credit activity yet</p>
+                    <p class="bcEmpty__sub">Purchases, top-ups and report usage will appear here.</p>
                 </div>
 
                 <template v-else>
                     <div class="bcHistTableWrap">
                         <table class="bcHistTable">
                             <thead>
-                                <tr><th>Date</th><th>Pack</th><th class="bcCol--right">Credits</th><th class="bcCol--right">Paid</th><th>Status</th></tr>
+                                <tr><th>Date</th><th>Description</th><th>Type</th><th class="bcCol--right">Credits</th><th class="bcCol--right">Balance</th></tr>
                             </thead>
                             <tbody>
-                                <tr v-for="p in purchases" :key="p.id">
-                                    <td class="bcMono">{{ formatDate(p.purchased_at ?? p.created_at) }}</td>
-                                    <td>{{ p.plan_name }}</td>
-                                    <td class="bcMono bcCol--right bcCredits">+{{ Number(p.credits_added ?? 0).toLocaleString() }}</td>
-                                    <td class="bcMono bcCol--right">{{ formatAmount(p.amount_paid, p.currency) }}</td>
-                                    <td><span class="bcBadge" :class="statusClass(p.status)">{{ statusLabel(p.status) }}</span></td>
+                                <tr
+                                    v-for="e in historyEntries"
+                                    :key="e.key"
+                                    :class="{ 'bcHistRow--link': e.report_id }"
+                                    @click="openHistoryReport(e)"
+                                >
+                                    <td class="bcMono">{{ formatDate(e.date) }}</td>
+                                    <td>{{ e.label }}<svg v-if="e.report_id" viewBox="0 0 24 24" fill="none" class="bcHistRow__arrow"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></td>
+                                    <td><span class="bcBadge" :class="historyTypeClass(e)">{{ historyTypeLabel(e) }}</span></td>
+                                    <td class="bcMono bcCol--right" :class="e.credits > 0 ? 'bcCredits' : 'bcCreditsNeg'">{{ formatCredits(e.credits) }}</td>
+                                    <td class="bcMono bcCol--right">{{ e.balance_after !== null ? formatCredits(e.balance_after).replace('+', '') : '—' }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -478,17 +498,21 @@ onMounted(() => {
 
                     <!-- Mobile card list -->
                     <div class="bcHistCards">
-                        <div v-for="p in purchases" :key="p.id" class="bcHistCard">
+                        <div
+                            v-for="e in historyEntries"
+                            :key="e.key"
+                            class="bcHistCard"
+                            :class="{ 'bcHistRow--link': e.report_id }"
+                            @click="openHistoryReport(e)"
+                        >
                             <div class="bcHistCard__top">
-                                <span class="bcHistCard__pack">{{ p.plan_name }}</span>
-                                <span class="bcBadge" :class="statusClass(p.status)">{{ statusLabel(p.status) }}</span>
+                                <span class="bcHistCard__pack">{{ e.label }}</span>
+                                <span class="bcBadge" :class="historyTypeClass(e)">{{ historyTypeLabel(e) }}</span>
                             </div>
                             <div class="bcHistCard__meta">
-                                <span class="bcMono">{{ formatDate(p.purchased_at ?? p.created_at) }}</span>
+                                <span class="bcMono">{{ formatDate(e.date) }}</span>
                                 <span class="bcHistCard__dot"></span>
-                                <span class="bcMono bcCredits">+{{ Number(p.credits_added ?? 0).toLocaleString() }} credits</span>
-                                <span class="bcHistCard__dot"></span>
-                                <span class="bcMono">{{ formatAmount(p.amount_paid, p.currency) }}</span>
+                                <span class="bcMono" :class="e.credits > 0 ? 'bcCredits' : 'bcCreditsNeg'">{{ formatCredits(e.credits) }} credits</span>
                             </div>
                         </div>
                     </div>
@@ -637,6 +661,7 @@ onMounted(() => {
 .bcPanel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .bcPanel__title { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--color-text); }
 .bcPanel__sub { margin: 4px 0 0; font-size: 0.83rem; color: var(--color-muted); line-height: 1.5; max-width: 32em; }
+.bcPanel--history .bcPanel__sub { margin-bottom: 14px; }
 
 /* Toggle */
 .bcToggle { position: relative; flex-shrink: 0; cursor: pointer; }
@@ -700,9 +725,12 @@ onMounted(() => {
 .bcHistTable td { padding: 11px 10px; border-bottom: 1px solid var(--color-border); }
 .bcHistTable tbody tr:last-child td { border-bottom: none; }
 .bcHistTable tbody tr:hover td { background: var(--color-surface-2); }
+.bcHistRow--link { cursor: pointer; }
+.bcHistRow__arrow { width: 12px; height: 12px; margin-left: 4px; vertical-align: middle; color: var(--color-muted); display: inline-block; }
 .bcCol--right { text-align: right; }
 .bcMono { font-family: var(--font-mono); font-size: 0.82rem; }
 .bcCredits { color: var(--color-success); font-weight: 600; }
+.bcCreditsNeg { color: var(--color-error); font-weight: 600; }
 
 .bcBadge {
     display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px;

@@ -304,6 +304,7 @@ Route::prefix('api/v1')->group(function () {
         Route::get('/plan', [\App\Http\Controllers\User\UserPlanController::class, 'show']);
         Route::get('/plans/available', [\App\Http\Controllers\User\UserAvailablePlansController::class, 'index']);
         Route::get('/purchases', [\App\Http\Controllers\User\PurchaseHistoryController::class, 'index']);
+        Route::get('/credits/history', [\App\Http\Controllers\User\CreditHistoryController::class, 'index']);
 
         // Stripe checkout
         Route::post('/stripe/create-checkout', [\App\Http\Controllers\User\StripeController::class, 'createCheckout']);
