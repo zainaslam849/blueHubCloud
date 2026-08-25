@@ -443,14 +443,15 @@ onBeforeUnmount(() => {
 
 .tSearchWrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .tSearchIcon { position: absolute; left: 12px; width: 15px; height: 15px; color: var(--color-muted); pointer-events: none; }
-.tInput--search { padding-left: 36px; }
-
 .tInput {
     height: 38px; padding: 0 11px; border: 1px solid var(--color-border);
     border-radius: 9px; background: var(--color-surface-2); color: inherit;
     font-size: 0.85rem; width: 100%; min-width: 0; box-sizing: border-box;
 }
 .tInput--select { appearance: auto; }
+/* Must come after .tInput — equal specificity, so source order decides
+   which padding wins; this needs to override the base rule's shorthand. */
+.tInput--search { padding-left: 36px; }
 .tInput:focus {
     outline: none; border-color: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
     background: var(--color-surface); box-shadow: 0 0 0 3px var(--ring);

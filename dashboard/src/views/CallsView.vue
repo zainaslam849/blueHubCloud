@@ -804,8 +804,6 @@ onBeforeUnmount(() => {
 
 .cSearchWrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .cSearchIcon { position: absolute; left: 12px; width: 15px; height: 15px; color: var(--color-muted); pointer-events: none; }
-.cInput--search { padding-left: 36px; }
-
 .cInput {
     height: 38px; padding: 0 11px; border: 1px solid var(--color-border);
     border-radius: 9px; background: var(--color-surface-2); color: inherit;
@@ -813,6 +811,9 @@ onBeforeUnmount(() => {
 }
 .cInput--select { appearance: auto; }
 .cInput--sm { height: 30px; font-size: 0.82rem; width: auto; }
+/* Must come after .cInput — equal specificity, so source order decides
+   which padding wins; this needs to override the base rule's shorthand. */
+.cInput--search { padding-left: 36px; }
 .cInput:focus {
     outline: none; border-color: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
     background: var(--color-surface); box-shadow: 0 0 0 3px var(--ring);

@@ -670,7 +670,6 @@ function isActive(name: string | undefined) {
        clickable through the dimmed backdrop while the drawer is open. */
     z-index: 26;
     background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(2px);
 }
 
 @media (max-width: 960px) {
