@@ -52,7 +52,7 @@ class AdminCompaniesController extends Controller
 
         $query = Company::query()
             ->when($includeDeleted, fn ($q) => $q->withTrashed())
-            ->with('companyPbxAccounts.pbxProvider:id,name')
+            ->with(['companyPbxAccounts.pbxProvider:id,name', 'users:id,company_id,name'])
             ->select('id', 'name', 'status', 'timezone', 'monthly_call_limit', 'call_limit_used', 'call_limit_expires_at', 'created_at', 'deleted_at');
 
         // Apply search
@@ -95,6 +95,7 @@ class AdminCompaniesController extends Controller
         // Map to response format
         $companiesData = array_map(function ($company) {
             $account = $company->companyPbxAccounts->first();
+            $assignedUser = $company->users->first();
 
             return [
                 'id' => $company->id,
@@ -106,6 +107,8 @@ class AdminCompaniesController extends Controller
                 'package_name' => $account?->package_name,
                 'pbx_provider_id' => $account?->pbx_provider_id,
                 'pbx_provider_name' => $account?->pbxProvider?->name,
+                'assigned_user_id' => $assignedUser?->id,
+                'assigned_user_name' => $assignedUser?->name,
                 'monthly_call_limit' => $company->monthly_call_limit,
                 'call_limit_used' => (int) $company->call_limit_used,
                 'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,

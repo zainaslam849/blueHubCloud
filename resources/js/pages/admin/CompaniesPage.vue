@@ -1163,7 +1163,7 @@ function openEditForm(company) {
     formData.pbx_provider_id = company.pbx_provider_id || "";
     formData.server_id = company.server_id || "";
     formData.tenant_code = company.tenant_code || "";
-    formData.user_id = "";
+    formData.user_id = company.assigned_user_id || "";
     formData.monthly_call_limit = company.monthly_call_limit ?? "";
     formData.call_limit_expires_at = company.call_limit_expires_at || "";
     validationErrors.value = {};
