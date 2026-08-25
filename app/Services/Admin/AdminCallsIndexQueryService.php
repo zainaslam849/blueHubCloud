@@ -85,6 +85,14 @@ class AdminCallsIndexQueryService
             $query->where('calls.category_id', $validated['category_id']);
         }
 
+        if (isset($validated['call_direction'])) {
+            $query->where('calls.direction', $validated['call_direction']);
+        }
+
+        if (isset($validated['call_status'])) {
+            $query->where('calls.status', $validated['call_status']);
+        }
+
         if (isset($validated['source'])) {
             $query->where('calls.category_source', $validated['source']);
         }

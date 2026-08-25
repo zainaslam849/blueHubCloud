@@ -23,6 +23,7 @@ class AdminCallPresenter
             'callTime' => optional($call->started_at ?? $call->created_at)->toISOString(),
             'fromNumber' => $call->from,
             'toNumber' => $call->to,
+            'direction' => $call->direction,
             'company' => $call->company?->name ?? '—',
             'provider' => $providerName,
             'durationSeconds' => (int) ($call->duration_seconds ?? 0),

@@ -61,6 +61,15 @@ function cycleTheme() {
 let mq: MediaQueryList | null = null;
 let mqListener: (() => void) | null = null;
 
+// The sidebar becomes a full-width overlay drawer below this width — the
+// desktop "collapsed to icon rail" state doesn't make sense there, so
+// rendering must ignore props.collapsed once we're in that range (see
+// effectiveCollapsed below). Mirrors the 960px breakpoint in <style>.
+const MOBILE_BREAKPOINT = "(max-width: 960px)";
+const isMobile = ref(false);
+let mobileMq: MediaQueryList | null = null;
+let mobileMqListener: (() => void) | null = null;
+
 onMounted(() => {
     applyTheme(resolvedTheme.value);
     mq = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
@@ -68,11 +77,21 @@ onMounted(() => {
         mqListener = () => { if (themePref.value === "system") applyTheme(getSystemTheme()); };
         mq.addEventListener("change", mqListener);
     }
+
+    mobileMq = window.matchMedia?.(MOBILE_BREAKPOINT) ?? null;
+    if (mobileMq) {
+        isMobile.value = mobileMq.matches;
+        mobileMqListener = () => { isMobile.value = mobileMq!.matches; };
+        mobileMq.addEventListener("change", mobileMqListener);
+    }
 });
 
 onUnmounted(() => {
     if (mq && mqListener) mq.removeEventListener("change", mqListener);
+    if (mobileMq && mobileMqListener) mobileMq.removeEventListener("change", mobileMqListener);
 });
+
+const effectiveCollapsed = computed(() => props.collapsed && !isMobile.value);
 
 // ── Nav ────────────────────────────────────────────────
 const openGroups = ref<{ [key: string]: boolean }>({});
@@ -145,12 +164,12 @@ function isActive(name: string | undefined) {
 <template>
     <aside
         class="sidebar"
-        :class="{ open: props.open, collapsed: props.collapsed }"
+        :class="{ open: props.open, collapsed: effectiveCollapsed }"
         aria-label="Sidebar navigation"
     >
         <!-- Brand/Logo -->
         <div class="sidebarHeader">
-            <div class="brand" :class="{ 'brand--centered': props.collapsed }">
+            <div class="brand" :class="{ 'brand--centered': effectiveCollapsed }">
                 <!-- Logo image fills the header area when available -->
                 <div v-if="props.logoUrl" class="logoWrap">
                     <img :src="props.logoUrl" :alt="props.appName ?? 'Logo'" class="logoImg" />
@@ -160,26 +179,35 @@ function isActive(name: string | undefined) {
                     <div class="brandMark" aria-hidden="true">
                         <span class="brandInitial">{{ (props.appName ?? 'B').charAt(0).toUpperCase() }}</span>
                     </div>
-                    <span v-if="!props.collapsed" class="brandName">{{ props.appName ?? 'BlueHub' }}</span>
+                    <span v-if="!effectiveCollapsed" class="brandName">{{ props.appName ?? 'BlueHub' }}</span>
                 </template>
             </div>
 
             <button
                 class="collapseBtn"
                 type="button"
-                :aria-label="props.collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+                :aria-label="effectiveCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
                 @click="$emit('toggle-collapsed')"
             >
-                <span class="collapseIcon" :class="{ flipped: !props.collapsed }" aria-hidden="true">
+                <span class="collapseIcon" :class="{ flipped: !effectiveCollapsed }" aria-hidden="true">
                     <AppIcon name="collapse" />
                 </span>
+            </button>
+
+            <button
+                class="mobileCloseBtn"
+                type="button"
+                aria-label="Close menu"
+                @click="onNavigate"
+            >
+                <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
         </div>
 
         <!-- Nav Groups -->
         <div class="navGroups">
             <template v-for="group in navGroups" :key="group.label">
-                <div v-if="!props.collapsed" class="navSectionHeader">{{ group.label }}</div>
+                <div v-if="!effectiveCollapsed" class="navSectionHeader">{{ group.label }}</div>
                 <nav class="nav" :aria-label="group.label">
                     <router-link
                         v-for="item in group.items"
@@ -188,10 +216,10 @@ function isActive(name: string | undefined) {
                         :class="{ active: isActive(item.to.name) }"
                         :to="item.to"
                         @click="onNavigate"
-                        :title="props.collapsed ? item.name : undefined"
+                        :title="effectiveCollapsed ? item.name : undefined"
                     >
                         <span class="navIcon"><AppIcon :name="item.icon as any" /></span>
-                        <span v-if="!props.collapsed" class="navLabel">{{ item.name }}</span>
+                        <span v-if="!effectiveCollapsed" class="navLabel">{{ item.name }}</span>
                         <span v-if="isActive(item.to?.name)" class="activeBar"></span>
                     </router-link>
                 </nav>
@@ -199,7 +227,7 @@ function isActive(name: string | undefined) {
         </div>
 
         <!-- Credits meter -->
-        <div v-if="!props.collapsed" class="creditsCard" :class="{ 'creditsCard--low': creditsLow }">
+        <div v-if="!effectiveCollapsed" class="creditsCard" :class="{ 'creditsCard--low': creditsLow }">
             <div class="creditsCard__row">
                 <span class="creditsCard__label">Credits left</span>
                 <span class="creditsCard__value">{{ creditsLabel }}</span>
@@ -220,7 +248,7 @@ function isActive(name: string | undefined) {
 
         <!-- Footer -->
         <div class="sidebarFooter">
-            <div v-if="!props.collapsed" class="footerUser">
+            <div v-if="!effectiveCollapsed" class="footerUser">
                 <div class="footerName">{{ auth.state.user?.name ?? '—' }}</div>
                 <div class="footerRole">{{ auth.state.user?.role ?? '' }}</div>
             </div>
@@ -242,9 +270,15 @@ function isActive(name: string | undefined) {
                 </button>
             </div>
         </div>
-
-        <div v-if="props.open" class="backdrop" @click="onNavigate"></div>
     </aside>
+
+    <!-- Rendered as a sibling of <aside>, not nested inside it: the sidebar
+         has a `transform` (for the slide animation) and `overflow: hidden`,
+         and a transformed ancestor becomes the containing block for
+         position:fixed descendants — nesting the backdrop inside it clipped
+         it to the drawer's own width, so taps outside the drawer never
+         reached it. -->
+    <div v-if="props.open" class="backdrop" @click="onNavigate"></div>
 </template>
 
 <style scoped>
@@ -375,6 +409,30 @@ function isActive(name: string | undefined) {
 }
 
 .collapseIcon.flipped { transform: rotate(180deg); }
+
+/* Mobile close (X) button — the collapse button above only shrinks the
+   sidebar to an icon rail (a desktop concept); on mobile the sidebar is
+   a full-width overlay, so it needs an explicit close action instead. */
+.mobileCloseBtn {
+    display: none;
+    flex-shrink: 0;
+    width: 34px;
+    height: 34px;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--sidebar-text-muted);
+    align-items: center;
+    justify-content: center;
+}
+
+.mobileCloseBtn svg { width: 20px; height: 20px; }
+
+.mobileCloseBtn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+}
 
 /* ── Nav ─────────────────────────────────────────────── */
 .navGroups {
@@ -576,28 +634,38 @@ function isActive(name: string | undefined) {
 
 /* ── Mobile backdrop ─────────────────────────────────── */
 .backdrop {
-    display: block;
+    display: none;
     position: fixed;
     inset: 0;
-    z-index: -1;
+    z-index: 19;
     background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(2px);
 }
 
 @media (max-width: 960px) {
-    .sidebar {
+    .backdrop { display: block; }
+
+    .sidebar,
+    .sidebar.collapsed {
         position: fixed;
         left: 0;
         top: 0;
         height: 100vh;
+        width: min(300px, 84vw);
         transform: translateX(-105%);
         transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
         box-shadow: var(--shadow-lg);
+        z-index: 20;
     }
 
     .sidebar.open {
         transform: translateX(0);
     }
+
+    /* effectiveCollapsed (script) already keeps the .collapsed class off
+       the sidebar on mobile, so no icon-rail overrides are needed here. */
+    .collapseBtn { display: none; }
+    .mobileCloseBtn { display: flex; }
 }
 
 @media (prefers-reduced-motion: reduce) {

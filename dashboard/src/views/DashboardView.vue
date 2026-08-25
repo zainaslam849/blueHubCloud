@@ -172,12 +172,82 @@ onMounted(() => {
 
 <template>
     <div class="page">
-        <div v-if="loading" class="skeleton-row">
-            <div class="sk-card"></div>
-            <div class="sk-card"></div>
-            <div class="sk-card"></div>
-            <div class="sk-card"></div>
-        </div>
+        <template v-if="loading">
+            <!-- Header skeleton -->
+            <div class="dashHead">
+                <div>
+                    <div class="sk sk-title"></div>
+                    <div class="sk sk-sub"></div>
+                </div>
+                <div class="sk sk-btn"></div>
+            </div>
+
+            <!-- Stat cards skeleton -->
+            <section class="statGrid">
+                <div class="statCard" v-for="i in 4" :key="i">
+                    <div class="sk sk-label"></div>
+                    <div class="sk sk-value"></div>
+                    <div class="sk sk-hint"></div>
+                </div>
+            </section>
+
+            <!-- Setup strip skeleton -->
+            <div class="setupStrip">
+                <div class="setupStrip__label">
+                    <div class="sk sk-label" style="width: 110px"></div>
+                    <div class="sk sk-hint" style="width: 60px; margin-top: 6px"></div>
+                </div>
+                <div class="setupStrip__steps">
+                    <div class="sk sk-step" v-for="i in 3" :key="i"></div>
+                </div>
+            </div>
+
+            <!-- Two-column body skeleton -->
+            <div class="dashGrid">
+                <div class="panel">
+                    <div class="panel__head">
+                        <div>
+                            <div class="sk sk-label" style="width: 130px"></div>
+                            <div class="sk sk-hint" style="width: 180px; margin-top: 6px"></div>
+                        </div>
+                    </div>
+                    <div class="histList">
+                        <div class="histRow" v-for="i in 4" :key="i">
+                            <div class="sk sk-cell"></div>
+                            <div class="sk sk-cell sk-cell--sm"></div>
+                            <div class="sk sk-cell sk-cell--sm"></div>
+                            <div class="sk sk-pill"></div>
+                            <div class="sk sk-cell sk-cell--btn"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashSide">
+                    <div class="panel">
+                        <div class="sk sk-label" style="width: 140px"></div>
+                        <div class="sk sk-hint" style="width: 170px; margin-top: 6px; margin-bottom: 14px"></div>
+                        <div class="catList">
+                            <div class="catRow" v-for="i in 4" :key="i">
+                                <div class="sk sk-cell" style="margin-bottom: 6px"></div>
+                                <div class="sk sk-bar"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="sk sk-label" style="width: 110px; margin-bottom: 12px"></div>
+                        <div class="reportList">
+                            <div class="reportRow" v-for="i in 3" :key="i">
+                                <div class="sk sk-icon"></div>
+                                <div style="flex: 1">
+                                    <div class="sk sk-cell" style="width: 60%; margin-bottom: 5px"></div>
+                                    <div class="sk sk-cell sk-cell--sm" style="width: 40%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
 
         <div v-else-if="error" class="errorBanner">{{ error }}</div>
 
@@ -528,8 +598,43 @@ onMounted(() => {
 .infoBanner { background: color-mix(in srgb, var(--color-primary) 10%, transparent); border: 1px solid var(--border); }
 .warnBanner { background: var(--color-warning-soft); border: 1px solid var(--color-warning-soft-border); font-size: 0.9rem; line-height: 1.5; }
 
-.skeleton-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.sk-card { height: 100px; border-radius: 14px; background: color-mix(in srgb, var(--color-text) 8%, transparent); }
+/* ── Skeletons ───────────────────────────────────────────
+   Shown only while `loading` is true — no artificial minimum
+   duration, they disappear the instant the real response lands. */
+.sk {
+    border-radius: 6px;
+    background: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--color-text) 7%, transparent) 25%,
+        color-mix(in srgb, var(--color-text) 13%, transparent) 37%,
+        color-mix(in srgb, var(--color-text) 7%, transparent) 63%
+    );
+    background-size: 400% 100%;
+    animation: skShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skShimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
+.sk-title { width: 220px; height: 30px; margin-bottom: 8px; }
+.sk-sub { width: 300px; height: 15px; }
+.sk-btn { width: 130px; height: 40px; border-radius: 10px; }
+.sk-label { width: 90px; height: 12px; }
+.sk-value { width: 70px; height: 32px; margin-top: 10px; }
+.sk-hint { width: 100px; height: 12px; margin-top: 8px; }
+.sk-step { flex: 1 1 180px; height: 40px; border-radius: 10px; }
+.sk-cell { width: 100%; height: 13px; }
+.sk-cell--sm { width: 60%; }
+.sk-cell--btn { width: 80px; height: 30px; border-radius: 8px; justify-self: end; }
+.sk-pill { width: 70px; height: 20px; border-radius: 999px; }
+.sk-bar { width: 100%; height: 6px; border-radius: 999px; }
+.sk-icon { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+    .sk { animation: none; }
+}
 
 .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -548,7 +653,7 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
-    .statGrid, .skeleton-row { grid-template-columns: repeat(2, 1fr); }
+    .statGrid { grid-template-columns: repeat(2, 1fr); }
     .dashHead { flex-direction: column; align-items: flex-start; }
     .dashHead__cta { align-self: stretch; justify-content: center; }
     .setupStrip { flex-direction: column; align-items: stretch; }

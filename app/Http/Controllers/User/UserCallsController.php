@@ -45,6 +45,8 @@ class UserCallsController extends Controller
             'sort'       => ['nullable', 'string', 'max:40'],
             'direction'  => ['nullable', 'in:asc,desc'],
             'category_id' => ['nullable', 'integer', 'exists:call_categories,id'],
+            'call_direction' => ['nullable', 'in:inbound,outbound,internal'],
+            'call_status' => ['nullable', 'in:answered,missed,unknown'],
             'start_date' => ['nullable', 'date'],
             'end_date'   => ['nullable', 'date', 'after_or_equal:start_date'],
         ]);
