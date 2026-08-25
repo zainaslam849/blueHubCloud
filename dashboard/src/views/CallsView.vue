@@ -662,7 +662,7 @@ onBeforeUnmount(() => {
 
                                     <div class="cPipeline__step">
                                         <span class="cPipeline__label">Category</span>
-                                        <span v-if="row.category" class="cPipeline__ok">✓ <span class="cPipeline__catName">{{ row.category }}</span></span>
+                                        <span v-if="row.category" class="cPipeline__ok">✓</span>
                                         <span v-else-if="row.aiCategoryStatus === 'queued' || row.aiCategoryStatus === 'running'" class="cPipeline__badge">Generating…</span>
                                         <template v-else-if="row.aiRecovery?.canRegenerate && row.aiRecovery?.action === 'category_only'">
                                             <span class="cPipeline__missing">Not generated</span>
@@ -992,7 +992,6 @@ onBeforeUnmount(() => {
 .cPipeline__step { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cPipeline__label { font-size: 0.68rem; font-weight: 600; color: var(--color-muted); min-width: 58px; }
 .cPipeline__ok { color: var(--color-success); font-weight: 700; font-size: 0.8rem; }
-.cPipeline__catName { font-size: 0.72rem; color: var(--color-muted); margin-left: 2px; }
 .cPipeline__badge {
     font-size: 0.68rem; font-weight: 600; padding: 1px 7px; border-radius: 999px;
     background: var(--color-warning-soft); color: var(--color-warning);

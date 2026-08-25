@@ -104,6 +104,14 @@ function badgeClass(status: string | undefined): string {
     return "dBadge--processing";
 }
 
+const DIRECTION_LABELS: Record<string, string> = {
+    inbound: "Inbound", outbound: "Outbound", internal: "Internal",
+};
+function directionLabel(direction: string | null | undefined): string {
+    if (!direction) return "—";
+    return DIRECTION_LABELS[direction] ?? direction;
+}
+
 function humanizeAiStatus(status: string | null | undefined): string {
     const s = String(status || "").toLowerCase();
     if (!s) return "Pending";
@@ -200,64 +208,74 @@ onMounted(() => { fetchDetail(); });
 
 <template>
     <div class="dPage">
+        <!-- Mobile back bar — always visible, large tap target -->
+        <button type="button" class="dMobileBack" @click="goBack">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Back to Calls
+        </button>
+
         <!-- Header -->
         <header class="dHeader">
-            <div class="dHeader__left">
-                <div class="dHeader__icon">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" stroke="currentColor" stroke-width="1.5" fill="none"/>
-                    </svg>
-                </div>
+            <div class="dHeader__top">
+                <button type="button" class="dBreadLink" @click="goBack">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Calls
+                </button>
+                <span class="dBreadSep">/</span>
+                <span class="dMono">{{ call?.callId || "Loading…" }}</span>
+            </div>
+
+            <div class="dHeader__row">
                 <div class="dHeader__content">
-                    <div class="dHeader__breadcrumb">
-                        <button type="button" class="dBreadLink" @click="goBack">Calls</button>
-                        <span class="dBreadSep">/</span>
-                        <span>{{ call?.callId || "Loading…" }}</span>
-                    </div>
                     <h1 class="dHeader__title">{{ call?.company || "Unknown Company" }}</h1>
-                    <p class="dHeader__subtitle">Call on {{ formatDate(call?.createdAt) }}</p>
+                    <p class="dHeader__subtitle">{{ call?.from || '—' }} → {{ call?.to || '—' }} · {{ formatDate(call?.createdAt) }}</p>
+                </div>
+
+                <div class="dHeader__actions">
+                    <button type="button" class="dBtn dBtn--secondary" :disabled="loading" @click="refresh">
+                        <svg viewBox="0 0 24 24" fill="none" class="dBtn__icon">
+                            <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                            <path d="M20 4v6h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Refresh
+                    </button>
+                    <button
+                        v-if="!loading && aiRecovery?.canRegenerate"
+                        type="button"
+                        class="dBtn dBtn--primary"
+                        :disabled="regenerating"
+                        @click="regenerateAi"
+                    >
+                        {{ regenerating ? 'Queuing…' : aiRecovery?.actionLabel }}
+                    </button>
                 </div>
             </div>
 
             <div class="dHeader__stats">
-                <div class="dHeader__stat">
-                    <div class="dHeader__statLabel">Duration</div>
-                    <div class="dHeader__statValue">{{ formatDuration(call?.durationSeconds) }}</div>
+                <div class="dStat">
+                    <span class="dDirIcon" :class="`dDirIcon--${call?.direction}`">
+                        <svg v-if="call?.direction === 'outbound'" viewBox="0 0 24 24" fill="none"><path d="M19 13V5m0 0h-8m8 0-9 9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <svg v-else-if="call?.direction === 'internal'" viewBox="0 0 24 24" fill="none"><path d="M8 7h8M8 12h8M8 17h5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>
+                        <svg v-else viewBox="0 0 24 24" fill="none"><path d="M5 11v8m0 0h8m-8 0 9-9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
+                    <div>
+                        <div class="dStat__label">Direction</div>
+                        <div class="dStat__value">{{ directionLabel(call?.direction) }}</div>
+                    </div>
                 </div>
-                <div class="dHeader__stat">
-                    <div class="dHeader__statLabel">Status</div>
-                    <div class="dHeader__statValue">
+                <div class="dStat">
+                    <div class="dStat__label">Duration</div>
+                    <div class="dStat__value dMono">{{ formatDuration(call?.durationSeconds) }}</div>
+                </div>
+                <div class="dStat">
+                    <div class="dStat__label">Status</div>
+                    <div class="dStat__value">
                         <span v-if="!loading && call?.status" class="dBadge" :class="badgeClass(call?.status)">
                             {{ String(call?.status || '').toUpperCase() }}
                         </span>
                         <span v-else>—</span>
                     </div>
                 </div>
-            </div>
-
-            <div class="dHeader__actions">
-                <button type="button" class="dBtn dBtn--ghost" @click="goBack">
-                    <svg viewBox="0 0 24 24" fill="none" class="dBtn__icon">
-                        <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    Back
-                </button>
-                <button type="button" class="dBtn dBtn--ghost" :disabled="loading" @click="refresh">
-                    <svg viewBox="0 0 24 24" fill="none" class="dBtn__icon">
-                        <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                        <path d="M20 4v6h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    Refresh
-                </button>
-                <button
-                    v-if="!loading && aiRecovery?.canRegenerate"
-                    type="button"
-                    class="dBtn dBtn--primary"
-                    :disabled="regenerating"
-                    @click="regenerateAi"
-                >
-                    {{ regenerating ? 'Queuing…' : aiRecovery?.actionLabel }}
-                </button>
             </div>
         </header>
 
@@ -397,89 +415,101 @@ onMounted(() => { fetchDetail(); });
 
 <style scoped>
 /* ── Layout ──────────────────────────────────────────────────────────────── */
-.dPage { display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
+.dPage { display: flex; flex-direction: column; gap: 16px; }
+
+/* ── Mobile back bar ─────────────────────────────────────────────────────── */
+.dMobileBack {
+    display: none; align-items: center; gap: 8px; height: 44px; padding: 0 14px; width: 100%;
+    border-radius: 10px; border: 1px solid var(--color-border); background: var(--color-surface);
+    color: var(--color-text); font-size: 0.88rem; font-weight: 600; cursor: pointer;
+}
+.dMobileBack svg { width: 17px; height: 17px; flex-shrink: 0; }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .dHeader {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
-    padding: var(--space-5, 1.25rem) var(--space-6, 1.5rem);
-    background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 14px;
+    display: flex; flex-direction: column; gap: 14px;
+    padding: 18px 20px;
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px;
 }
-.dHeader__left { display: flex; align-items: flex-start; gap: 1rem; }
-.dHeader__icon {
-    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
-    background: color-mix(in srgb, var(--color-primary, #3b82f6) 15%, transparent);
-    color: var(--color-primary, #3b82f6); display: grid; place-items: center;
+.dHeader__top { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--color-muted); }
+.dBreadLink {
+    display: inline-flex; align-items: center; gap: 5px; background: none; border: none; cursor: pointer;
+    font-size: 0.82rem; color: var(--color-primary); padding: 0; font-weight: 500;
 }
-.dHeader__icon svg { width: 20px; height: 20px; }
-.dHeader__breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; opacity: 0.65; margin-bottom: 4px; }
-.dBreadLink { background: none; border: none; cursor: pointer; font-size: 0.82rem; color: var(--color-primary, #3b82f6); padding: 0; }
+.dBreadLink svg { width: 14px; height: 14px; }
 .dBreadLink:hover { text-decoration: underline; }
-.dBreadSep { opacity: 0.4; }
-.dHeader__title { font-size: 1.25rem; font-weight: 800; margin: 0 0 2px; }
-.dHeader__subtitle { font-size: 0.85rem; opacity: 0.65; margin: 0; }
+.dBreadSep { opacity: 0.5; }
 
-.dHeader__stats { display: flex; gap: 1rem; align-items: flex-start; }
-.dHeader__stat {
-    padding: 0.5rem 1rem; border-radius: 8px; text-align: center; min-width: 80px;
-    background: color-mix(in srgb, var(--color-primary, #3b82f6) 8%, transparent);
+.dHeader__row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.dHeader__title { font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.dHeader__subtitle { font-size: 0.85rem; color: var(--color-muted); margin: 4px 0 0 0; }
+
+.dHeader__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+
+.dHeader__stats { display: flex; gap: 22px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--color-border); }
+.dStat { display: flex; align-items: center; gap: 10px; }
+.dStat__label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; color: var(--color-muted); text-transform: uppercase; }
+.dStat__value { font-size: 0.92rem; font-weight: 600; margin-top: 2px; }
+
+/* Direction icon (matches Calls list) */
+.dDirIcon {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
 }
-.dHeader__statLabel { font-size: 0.7rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; }
-.dHeader__statValue { font-size: 1rem; font-weight: 700; margin-top: 2px; }
-
-.dHeader__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dDirIcon svg { width: 15px; height: 15px; }
+.dDirIcon--inbound  { background: var(--color-success-soft); color: var(--color-success); }
+.dDirIcon--outbound { background: var(--color-primary-soft); color: var(--color-primary); }
+.dDirIcon--internal { background: var(--color-warning-soft); color: var(--color-warning); }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .dBtn {
-    display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
-    border-radius: 8px; font-size: 0.82rem; font-weight: 600; border: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px;
+    border-radius: 9px; font-size: 0.83rem; font-weight: 600; border: none; cursor: pointer;
     white-space: nowrap; transition: filter 0.15s, opacity 0.15s;
 }
-.dBtn--sm { height: 28px; padding: 0 10px; font-size: 0.78rem; }
-.dBtn--primary { background: var(--color-primary, #3b82f6); color: #fff; }
+.dBtn--sm { height: 30px; padding: 0 11px; font-size: 0.78rem; }
+.dBtn--primary { background: var(--color-primary); color: #fff; }
 .dBtn--primary:hover:not(:disabled) { filter: brightness(1.08); }
-.dBtn--secondary { background: var(--surface-2, #f3f4f6); color: inherit; border: 1px solid var(--border, #e5e7eb); }
-.dBtn--secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--border) 60%, var(--surface-2)); }
-.dBtn--ghost { background: transparent; color: inherit; border: 1px solid var(--border, #e5e7eb); }
-.dBtn--ghost:hover:not(:disabled) { background: var(--surface-2, #f3f4f6); }
+.dBtn--secondary { background: var(--color-surface); color: inherit; border: 1px solid var(--color-border-strong); }
+.dBtn--secondary:hover:not(:disabled) { background: var(--color-surface-2); }
 .dBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 .dBtn__icon { width: 14px; height: 14px; flex-shrink: 0; }
 
 /* ── Alert ───────────────────────────────────────────────────────────────── */
-.dAlert { padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; }
-.dAlert--error { background: color-mix(in srgb, #e53e3e 10%, transparent); border: 1px solid #e53e3e; color: #e53e3e; }
+.dAlert { padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; }
+.dAlert--error { background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border); color: var(--color-error); }
 
 /* Card */
 .dCard {
-    background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb);
-    border-radius: 14px; padding: var(--space-5, 1.25rem); display: flex; flex-direction: column; gap: 12px;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 12px;
 }
-.dCard__title { font-size: 1rem; font-weight: 700; margin: 0; }
-.dCard__desc { font-size: 0.82rem; opacity: 0.55; margin-top: -8px; }
+.dCard__title { font-size: 0.98rem; font-weight: 700; margin: 0; }
+.dCard__desc { font-size: 0.82rem; color: var(--color-muted); margin-top: -8px; }
 
 /* Cards column */
-.dColumns { display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
+.dColumns { display: flex; flex-direction: column; gap: 16px; }
 
 /* Key-value grid */
-.dKvGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-.dKv { display: flex; flex-direction: column; gap: 4px; }
-.dKv__k { font-size: 0.72rem; font-weight: 600; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.04em; }
-.dKv__v { font-size: 0.9rem; }
-.dMono { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+.dKvGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.dKv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dKv__k { font-size: 0.7rem; font-weight: 600; color: var(--color-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.dKv__v { font-size: 0.88rem; word-break: break-word; }
+.dMono { font-family: var(--font-mono); font-size: 0.82rem; }
 
 /* Badge */
 .dBadge {
-    padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+    padding: 3px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;
     display: inline-block; white-space: nowrap;
 }
-.dBadge--active     { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
-.dBadge--failed     { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
-.dBadge--processing { background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-primary-hover, var(--color-primary)); }
+.dBadge--active     { background: var(--color-success-soft); color: var(--color-success); }
+.dBadge--failed     { background: var(--color-error-soft); color: var(--color-error); }
+.dBadge--processing { background: var(--color-primary-soft); color: var(--color-primary); }
 
 /* Transcript / pre */
 .dTranscript {
     margin: 0; white-space: pre-wrap; word-break: break-word;
-    font-family: inherit; font-size: 0.875rem; line-height: 1.6; opacity: 0.9;
+    font-family: inherit; font-size: 0.88rem; line-height: 1.6; color: var(--color-text);
     max-height: 400px; overflow-y: auto;
     background: transparent; padding: 0; border-radius: 0;
 }
@@ -493,7 +523,7 @@ onMounted(() => { fetchDetail(); });
 }
 .dSkeletonLines::before, .dSkeletonLines::after {
     content: ''; height: 16px; border-radius: 6px;
-    background: color-mix(in srgb, var(--color-text, #111) 8%, transparent);
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
     animation: pulse 1.2s ease-in-out infinite;
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
@@ -504,23 +534,36 @@ onMounted(() => { fetchDetail(); });
 .dTimeline__rail { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; width: 20px; }
 .dTimeline__dot {
     width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px;
-    background: var(--color-primary, #3b82f6);
-    border: 2px solid var(--surface, #fff);
-    box-shadow: 0 0 0 2px var(--color-primary, #3b82f6);
+    background: var(--color-primary);
+    border: 2px solid var(--color-surface);
+    box-shadow: 0 0 0 2px var(--color-primary);
 }
 .dTimeline__item:not(:last-child) .dTimeline__rail::after {
-    content: ''; flex: 1; width: 2px; background: var(--border, #e5e7eb); margin-top: 6px;
+    content: ''; flex: 1; width: 2px; background: var(--color-border); margin-top: 6px;
 }
 .dTimeline__content { padding-bottom: 16px; flex: 1; min-width: 0; }
 .dTimeline__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
 .dTimeline__title { font-size: 0.875rem; font-weight: 600; }
-.dTimeline__meta { font-size: 0.78rem; opacity: 0.55; }
+.dTimeline__meta { font-size: 0.78rem; color: var(--color-muted); }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-    .dHeader { flex-direction: column; }
-    .dHeader__stats { align-self: stretch; }
-    .dStats { flex-direction: column; gap: 1rem; }
+@media (max-width: 900px) {
+    .dKvGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+    .dMobileBack { display: flex; }
+    .dHeader__top { display: none; }
+    .dHeader { padding: 14px 16px; gap: 12px; }
+    .dHeader__row { flex-direction: column; align-items: stretch; }
+    .dHeader__actions { width: 100%; }
+    .dHeader__actions .dBtn { flex: 1; justify-content: center; }
+    .dHeader__stats { gap: 16px; }
+    .dKvGrid { grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dCard { padding: 16px; }
+}
+
+@media (max-width: 420px) {
     .dKvGrid { grid-template-columns: 1fr; }
 }
 </style>
