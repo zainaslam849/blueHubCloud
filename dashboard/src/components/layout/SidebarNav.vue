@@ -293,7 +293,10 @@ function isActive(name: string | undefined) {
     display: flex;
     flex-direction: column;
     transition: width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-    z-index: 20;
+    /* Above MobileTabBar's z-index:25 so the open mobile drawer fully
+       covers the bottom tab bar instead of it poking through on top —
+       the tab bar should only be usable once the sidebar is closed. */
+    z-index: 30;
     overflow: hidden;
 }
 
@@ -631,12 +634,46 @@ function isActive(name: string | undefined) {
     color: var(--sidebar-text);
 }
 
+/* ── Compact density (medium/small laptop) ──────────────
+   Below ~1440px the full 260px sidebar with desktop-scale spacing feels
+   oversized relative to the available content width — this keeps it as a
+   real labeled nav (not the icon-only rail), just proportionally tighter:
+   narrower shell, smaller type, less padding throughout. Scoped above the
+   960px mobile-overlay breakpoint, which replaces the sizing wholesale. */
+@media (max-width: 1440px) and (min-width: 961px) {
+    .sidebar { width: 220px; }
+
+    .sidebarHeader { height: 64px; padding: 0 10px; }
+    .logoWrap { height: 40px; padding: 6px 10px; }
+    .brandMark { width: 30px; height: 30px; }
+    .brandName { font-size: 0.85rem; }
+
+    .navGroups { padding: 8px 0 6px; }
+    .navSectionHeader { font-size: 0.64rem; margin: 12px 0 3px 14px; }
+    .nav { padding: 0 6px; gap: 1px; }
+    .navItem { padding: 8px 10px; gap: 10px; font-size: 0.82rem; }
+    .navIcon { font-size: 1rem; }
+
+    .creditsCard { margin: 3px 10px 8px; padding: 10px 11px; }
+    .creditsCard__label { font-size: 0.64rem; }
+    .creditsCard__value { font-size: 0.78rem; }
+    .creditsCard__cta { font-size: 0.68rem; margin-top: 6px; }
+
+    .sidebarFooter { padding: 10px 10px; }
+    .footerName { font-size: 0.8rem; }
+    .footerRole { font-size: 0.68rem; }
+    .iconBtn { padding: 6px; }
+    .iconBtn svg { width: 16px; height: 16px; }
+}
+
 /* ── Mobile backdrop ─────────────────────────────────── */
 .backdrop {
     display: none;
     position: fixed;
     inset: 0;
-    z-index: 19;
+    /* Also above MobileTabBar (z-index:25) — otherwise the tab bar stays
+       clickable through the dimmed backdrop while the drawer is open. */
+    z-index: 26;
     background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(2px);
 }
