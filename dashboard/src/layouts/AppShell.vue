@@ -148,6 +148,11 @@ async function handleSignOut() {
 
 .appContent {
     padding: var(--space-6);
+    /* Grid items default to min-width:auto (their content's min-content
+       size), so a page with a wide child (e.g. a filter bar that can't
+       shrink further) would silently force this whole track — and the
+       page — wider than the viewport instead of clipping to it. */
+    min-width: 0;
 }
 
 /* Page transition */

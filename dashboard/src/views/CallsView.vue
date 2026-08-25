@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
                     <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                 </select>
             </div>
-            <div class="cField">
+            <div class="cField cField--dates">
                 <label class="cField__label">DATE RANGE</label>
                 <div class="cDateRange">
                     <input v-model="draftFilterStartDate" type="date" class="cInput" />
@@ -677,7 +677,7 @@ onBeforeUnmount(() => {
 /* ── Filter bar ──────────────────────────────────────────────────────────── */
 .cFilterBar {
     display: grid;
-    grid-template-columns: minmax(180px, 1.7fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(140px, 1.2fr) minmax(230px, 1.5fr) auto;
+    grid-template-columns: minmax(160px, 1.7fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(120px, 1.2fr) minmax(200px, 1.5fr) auto;
     gap: 12px;
     align-items: flex-end;
     background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px 16px;
@@ -687,7 +687,7 @@ onBeforeUnmount(() => {
 
 /* Medium screens (tablet / narrow laptop window): a deliberate 3-column
    grid instead of letting flex-wrap fall back onto an uneven ragged row. */
-@media (max-width: 1280px) and (min-width: 721px) {
+@media (max-width: 1480px) and (min-width: 721px) {
     .cFilterBar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .cField--search { grid-column: 1 / -1; }
     .cFilterBar__apply { grid-column: 3; justify-self: end; }
@@ -821,7 +821,7 @@ onBeforeUnmount(() => {
     display: flex; align-items: center; justify-content: center;
 }
 .cDirIcon svg { width: 13px; height: 13px; }
-.cDirIcon--inbound  { background: var(--color-surface-2); color: var(--color-muted); }
+.cDirIcon--inbound  { background: var(--color-success-soft); color: var(--color-success); }
 .cDirIcon--outbound { background: var(--color-primary-soft); color: var(--color-primary); }
 .cDirIcon--internal { background: var(--color-warning-soft); color: var(--color-warning); }
 
@@ -911,9 +911,13 @@ onBeforeUnmount(() => {
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
-    .cFilterBar { grid-template-columns: 1fr; }
-    .cField--search { grid-column: auto; }
-    .cFilterBar__apply { grid-column: auto; justify-self: stretch; justify-content: center; }
+    /* Compact 2-up grid instead of stacking all 6 fields full-width —
+       Search / Date range / Apply span both columns, Direction / Status /
+       Category pair up so the filter card doesn't dominate the screen. */
+    .cFilterBar { grid-template-columns: 1fr 1fr; gap: 10px 10px; padding: 12px 14px; }
+    .cField--search,
+    .cField--dates { grid-column: 1 / -1; }
+    .cFilterBar__apply { grid-column: 1 / -1; justify-self: stretch; justify-content: center; margin-top: 2px; }
     .cDateRange .cInput { flex: 1; width: auto; }
     .cPageHead { flex-direction: column; align-items: flex-start; }
     .cFooter { flex-direction: column; justify-content: center; text-align: center; }
