@@ -59,6 +59,10 @@ const draftFilterStatus = ref("");
 const draftFilterStartDate = ref("");
 const draftFilterEndDate = ref("");
 
+const filtersOpen = ref(false);
+const filterWrap = ref<HTMLElement | null>(null);
+const isDesktop = ref(true);
+
 const categories = ref<Category[]>([]);
 
 const rows = ref<CallRow[]>([]);
@@ -177,8 +181,17 @@ function applyFilters() {
     filterStatus.value    = draftFilterStatus.value;
     filterStartDate.value = draftFilterStartDate.value;
     filterEndDate.value   = draftFilterEndDate.value;
+    filtersOpen.value      = false;
     page.value             = 1;
     fetchCalls();
+}
+
+function resetDraftFilters() {
+    draftFilterCategory.value  = "";
+    draftFilterDirection.value = "";
+    draftFilterStatus.value    = "";
+    draftFilterStartDate.value = "";
+    draftFilterEndDate.value   = "";
 }
 
 function syncDraftFilters() {
@@ -187,6 +200,23 @@ function syncDraftFilters() {
     draftFilterStatus.value    = filterStatus.value;
     draftFilterStartDate.value = filterStartDate.value;
     draftFilterEndDate.value   = filterEndDate.value;
+}
+
+function toggleFilters() {
+    filtersOpen.value = !filtersOpen.value;
+    if (filtersOpen.value) syncDraftFilters();
+}
+
+function updateViewport() {
+    isDesktop.value = window.innerWidth >= 1024;
+}
+
+function onDocumentClick(event: Event) {
+    if (!filtersOpen.value || !isDesktop.value) return;
+    const target = event.target;
+    if (!filterWrap.value || !(target instanceof Node)) return;
+    if (filterWrap.value.contains(target)) return;
+    filtersOpen.value = false;
 }
 
 type Chip = { key: string; label: string; clear: () => void };
@@ -315,12 +345,17 @@ onMounted(() => {
         search.value = q;
     }
     syncDraftFilters();
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    document.addEventListener("click", onDocumentClick);
     loadCategories();
     fetchCalls();
 });
 
 onBeforeUnmount(() => {
     stopProcessingPoller();
+    window.removeEventListener("resize", updateViewport);
+    document.removeEventListener("click", onDocumentClick);
     if (searchTimer) window.clearTimeout(searchTimer);
 });
 </script>
@@ -333,19 +368,11 @@ onBeforeUnmount(() => {
                 <h1 class="cPageHead__title">Calls</h1>
                 <p class="cPageHead__sub">Every call pulled from your phone system, with its transcript and AI category.</p>
             </div>
-            <button type="button" class="cBtn cBtn--secondary" :disabled="loading" @click="refresh">
-                <svg viewBox="0 0 24 24" fill="none" class="cBtn__icon">
-                    <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                    <path d="M20 4v6h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                Refresh
-            </button>
         </div>
 
-        <!-- Filter bar -->
-        <div class="cFilterBar">
+        <!-- Toolbar: search + filter popover trigger + refresh -->
+        <div class="cToolbar">
             <div class="cField cField--search">
-                <label class="cField__label" for="calls-search">SEARCH</label>
                 <div class="cSearchWrap">
                     <svg class="cSearchIcon" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7.2" stroke="currentColor" stroke-width="1.8"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
                     <input
@@ -358,40 +385,70 @@ onBeforeUnmount(() => {
                     />
                 </div>
             </div>
-            <div class="cField">
-                <label class="cField__label" for="filter-direction">DIRECTION</label>
-                <select id="filter-direction" v-model="draftFilterDirection" class="cInput cInput--select">
-                    <option value="">All</option>
-                    <option value="inbound">Inbound</option>
-                    <option value="outbound">Outbound</option>
-                    <option value="internal">Internal</option>
-                </select>
-            </div>
-            <div class="cField">
-                <label class="cField__label" for="filter-status">STATUS</label>
-                <select id="filter-status" v-model="draftFilterStatus" class="cInput cInput--select">
-                    <option value="">All</option>
-                    <option value="answered">Answered</option>
-                    <option value="missed">Missed</option>
-                    <option value="unknown">Unknown</option>
-                </select>
-            </div>
-            <div class="cField">
-                <label class="cField__label" for="filter-category">CATEGORY</label>
-                <select id="filter-category" v-model="draftFilterCategory" class="cInput cInput--select">
-                    <option value="">All</option>
-                    <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-                </select>
-            </div>
-            <div class="cField cField--dates">
-                <label class="cField__label">DATE RANGE</label>
-                <div class="cDateRange">
-                    <input v-model="draftFilterStartDate" type="date" class="cInput" />
-                    <span class="cDateRange__sep">–</span>
-                    <input v-model="draftFilterEndDate" type="date" class="cInput" :min="draftFilterStartDate" />
+
+            <div class="cToolbar__actions">
+                <div ref="filterWrap" class="cFilterPopover">
+                    <button type="button" class="cBtn cBtn--secondary" @click="toggleFilters">
+                        <svg viewBox="0 0 24 24" fill="none" class="cBtn__icon">
+                            <path d="M4 5H20L14 12V19L10 21V12L4 5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Filter
+                        <span v-if="activeChips.length" class="cFilterDot">{{ activeChips.length }}</span>
+                    </button>
+
+                    <!-- Desktop popover -->
+                    <div v-if="filtersOpen && isDesktop" class="cFilterPanel" role="dialog" aria-label="Filter options">
+                        <div class="cFilterPanel__header">Filter Options</div>
+                        <div class="cFilterGrid">
+                            <div class="cField">
+                                <label class="cField__label" for="filter-direction">Direction</label>
+                                <select id="filter-direction" v-model="draftFilterDirection" class="cInput cInput--select">
+                                    <option value="">All</option>
+                                    <option value="inbound">Inbound</option>
+                                    <option value="outbound">Outbound</option>
+                                    <option value="internal">Internal</option>
+                                </select>
+                            </div>
+                            <div class="cField">
+                                <label class="cField__label" for="filter-status">Status</label>
+                                <select id="filter-status" v-model="draftFilterStatus" class="cInput cInput--select">
+                                    <option value="">All</option>
+                                    <option value="answered">Answered</option>
+                                    <option value="missed">Missed</option>
+                                    <option value="unknown">Unknown</option>
+                                </select>
+                            </div>
+                            <div class="cField" style="grid-column: 1 / -1">
+                                <label class="cField__label" for="filter-category">Category</label>
+                                <select id="filter-category" v-model="draftFilterCategory" class="cInput cInput--select">
+                                    <option value="">All</option>
+                                    <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                                </select>
+                            </div>
+                            <div class="cField">
+                                <label class="cField__label" for="filter-start-date">Start date</label>
+                                <input id="filter-start-date" v-model="draftFilterStartDate" type="date" class="cInput" />
+                            </div>
+                            <div class="cField">
+                                <label class="cField__label" for="filter-end-date">End date</label>
+                                <input id="filter-end-date" v-model="draftFilterEndDate" type="date" class="cInput" :min="draftFilterStartDate" />
+                            </div>
+                        </div>
+                        <div class="cFilterActions">
+                            <button type="button" class="cBtn cBtn--ghost" @click="resetDraftFilters">Reset</button>
+                            <button type="button" class="cBtn cBtn--primary" @click="applyFilters">Apply</button>
+                        </div>
+                    </div>
                 </div>
+
+                <button type="button" class="cBtn cBtn--secondary" :disabled="loading" @click="refresh">
+                    <svg viewBox="0 0 24 24" fill="none" class="cBtn__icon">
+                        <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        <path d="M20 4v6h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Refresh
+                </button>
             </div>
-            <button type="button" class="cBtn cBtn--primary cFilterBar__apply" @click="applyFilters">Apply</button>
         </div>
 
         <!-- Active filter chips -->
@@ -404,6 +461,63 @@ onBeforeUnmount(() => {
                 </button>
             </span>
         </div>
+
+        <!-- Mobile filter modal -->
+        <Teleport to="body">
+            <Transition name="cModal">
+                <div v-if="filtersOpen && !isDesktop" class="cOverlay" @click="filtersOpen = false">
+                    <div class="cModal" @click.stop>
+                        <div class="cModal__header">
+                            <h2 class="cModal__title">Filter Options</h2>
+                            <button type="button" class="cModal__close" aria-label="Close" @click="filtersOpen = false">
+                                <svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                            </button>
+                        </div>
+                        <div class="cModal__body">
+                            <div class="cFilterGrid">
+                                <div class="cField">
+                                    <label class="cField__label">Direction</label>
+                                    <select v-model="draftFilterDirection" class="cInput cInput--select">
+                                        <option value="">All</option>
+                                        <option value="inbound">Inbound</option>
+                                        <option value="outbound">Outbound</option>
+                                        <option value="internal">Internal</option>
+                                    </select>
+                                </div>
+                                <div class="cField">
+                                    <label class="cField__label">Status</label>
+                                    <select v-model="draftFilterStatus" class="cInput cInput--select">
+                                        <option value="">All</option>
+                                        <option value="answered">Answered</option>
+                                        <option value="missed">Missed</option>
+                                        <option value="unknown">Unknown</option>
+                                    </select>
+                                </div>
+                                <div class="cField" style="grid-column: 1 / -1">
+                                    <label class="cField__label">Category</label>
+                                    <select v-model="draftFilterCategory" class="cInput cInput--select">
+                                        <option value="">All</option>
+                                        <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                                    </select>
+                                </div>
+                                <div class="cField">
+                                    <label class="cField__label">Start date</label>
+                                    <input v-model="draftFilterStartDate" type="date" class="cInput" />
+                                </div>
+                                <div class="cField">
+                                    <label class="cField__label">End date</label>
+                                    <input v-model="draftFilterEndDate" type="date" class="cInput" :min="draftFilterStartDate" />
+                                </div>
+                            </div>
+                        </div>
+                        <div class="cModal__footer">
+                            <button type="button" class="cBtn cBtn--secondary" @click="resetDraftFilters">Reset</button>
+                            <button type="button" class="cBtn cBtn--primary" @click="applyFilters">Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
 
         <!-- Alerts -->
         <div v-if="error" class="cAlert cAlert--error">{{ error }}</div>
@@ -674,24 +788,16 @@ onBeforeUnmount(() => {
 .cPageHead__title { margin: 0; font-size: 1.9rem; font-weight: 700; letter-spacing: -0.015em; }
 .cPageHead__sub { margin: 6px 0 0 0; color: var(--color-muted); font-size: 0.88rem; }
 
-/* ── Filter bar ──────────────────────────────────────────────────────────── */
-.cFilterBar {
-    display: grid;
-    grid-template-columns: minmax(160px, 1.7fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(120px, 1.2fr) minmax(200px, 1.5fr) auto;
-    gap: 12px;
-    align-items: flex-end;
-    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px 16px;
+/* ── Toolbar (search + filter trigger + refresh) ────────────────────────── */
+.cToolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 12px 14px;
 }
 .cField { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cField--search { flex: 1 1 260px; min-width: 200px; }
 .cField__label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; color: var(--color-muted); }
 
-/* Medium screens (tablet / narrow laptop window): a deliberate 3-column
-   grid instead of letting flex-wrap fall back onto an uneven ragged row. */
-@media (max-width: 1480px) and (min-width: 721px) {
-    .cFilterBar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .cField--search { grid-column: 1 / -1; }
-    .cFilterBar__apply { grid-column: 3; justify-self: end; }
-}
+.cToolbar__actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .cSearchWrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .cSearchIcon { position: absolute; left: 12px; width: 15px; height: 15px; color: var(--color-muted); pointer-events: none; }
@@ -709,11 +815,39 @@ onBeforeUnmount(() => {
     background: var(--color-surface); box-shadow: 0 0 0 3px var(--ring);
 }
 
-.cDateRange { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.cDateRange .cInput { width: auto; min-width: 0; flex: 1; }
-.cDateRange__sep { color: var(--color-muted); flex-shrink: 0; }
+/* ── Filter popover (desktop) ────────────────────────────────────────────── */
+.cFilterPopover { position: relative; }
+.cFilterDot {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px;
+    padding: 0 4px; border-radius: 999px; background: var(--color-primary); color: #fff;
+    font-size: 0.62rem; font-weight: 700; margin-left: 2px;
+}
+.cFilterPanel {
+    position: absolute; top: calc(100% + 10px); right: 0; z-index: 30;
+    width: min(420px, 90vw); padding: 16px; border-radius: 16px;
+    border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-lg);
+}
+.cFilterPanel__header { font-size: 0.9rem; font-weight: 700; margin-bottom: 12px; }
+.cFilterGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cFilterActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
-.cFilterBar__apply { flex-shrink: 0; }
+/* ── Mobile filter modal ─────────────────────────────────────────────────── */
+.cOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); display: grid; place-items: center; z-index: 100; padding: 16px;
+}
+.cModal {
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px;
+    width: min(420px, 100%); max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column;
+}
+.cModal__header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--color-border); }
+.cModal__title { margin: 0; font-size: 1rem; font-weight: 700; }
+.cModal__close { display: flex; background: none; border: none; cursor: pointer; color: var(--color-muted); padding: 2px; }
+.cModal__close svg { width: 18px; height: 18px; }
+.cModal__body { padding: 18px; }
+.cModal__footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 18px; border-top: 1px solid var(--color-border); }
+
+.cModal-enter-active, .cModal-leave-active { transition: opacity 0.2s; }
+.cModal-enter-from, .cModal-leave-to { opacity: 0; }
 
 /* ── Active filter chips ─────────────────────────────────────────────────── */
 .cChipsRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -909,16 +1043,18 @@ onBeforeUnmount(() => {
 .cPageBtn--active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; font-weight: 600; }
 .cPageBtn svg { width: 15px; height: 15px; }
 
+@media (max-width: 640px) {
+    .cFilterGrid { grid-template-columns: 1fr; }
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
-    /* Compact 2-up grid instead of stacking all 6 fields full-width —
-       Search / Date range / Apply span both columns, Direction / Status /
-       Category pair up so the filter card doesn't dominate the screen. */
-    .cFilterBar { grid-template-columns: 1fr 1fr; gap: 10px 10px; padding: 12px 14px; }
-    .cField--search,
-    .cField--dates { grid-column: 1 / -1; }
-    .cFilterBar__apply { grid-column: 1 / -1; justify-self: stretch; justify-content: center; margin-top: 2px; }
-    .cDateRange .cInput { flex: 1; width: auto; }
+    .cToolbar { padding: 10px 12px; }
+    .cField--search { flex-basis: 100%; }
+    .cToolbar__actions { width: 100%; }
+    .cToolbar__actions .cFilterPopover,
+    .cToolbar__actions .cBtn { flex: 1; }
+    .cToolbar__actions .cBtn { justify-content: center; width: 100%; }
     .cPageHead { flex-direction: column; align-items: flex-start; }
     .cFooter { flex-direction: column; justify-content: center; text-align: center; }
 
