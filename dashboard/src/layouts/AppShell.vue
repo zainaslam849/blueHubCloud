@@ -126,7 +126,7 @@ async function handleSignOut() {
             </main>
         </div>
 
-        <MobileTabBar />
+        <MobileTabBar v-if="!navOpen" />
 
         <ToastViewport />
     </div>

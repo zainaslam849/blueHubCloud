@@ -661,15 +661,17 @@ function isActive(name: string | undefined) {
     .iconBtn svg { width: 16px; height: 16px; }
 }
 
-/* ── Mobile backdrop ─────────────────────────────────── */
+/* ── Mobile backdrop ─────────────────────────────────────
+   Invisible on purpose — no dim, no blur, so the page behind the open
+   drawer stays fully clear. This is only a tap-outside-to-close target,
+   not a visual scrim (MobileTabBar is hidden separately while open, so
+   there's nothing left underneath that needs dimming). */
 .backdrop {
     display: none;
     position: fixed;
     inset: 0;
-    /* Also above MobileTabBar (z-index:25) — otherwise the tab bar stays
-       clickable through the dimmed backdrop while the drawer is open. */
     z-index: 26;
-    background: rgba(0, 0, 0, 0.45);
+    background: transparent;
 }
 
 @media (max-width: 960px) {
