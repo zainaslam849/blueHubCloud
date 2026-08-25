@@ -7,7 +7,9 @@ use App\Jobs\AdminTestPipelineJob;
 use App\Models\AppSetting;
 use App\Models\Call;
 use App\Models\Company;
+use App\Models\CompanyWeeklyFetch;
 use App\Models\PipelineRun;
+use App\Services\Billing\CreditService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
@@ -206,6 +208,7 @@ class AdminJobsController extends Controller
                     'running' => $workerHealth['horizon_running'],
                 ],
                 'automation' => $this->buildAutomationStatus($workerHealth['horizon_running']),
+                'credit_blocked_companies' => $this->buildCreditBlockedCompanies(),
             ],
         ]);
     }
@@ -779,6 +782,130 @@ class AdminJobsController extends Controller
             'last_weekly_run_at'    => $lastRun?->started_at?->toIso8601String(),
             'last_weekly_run_status'=> $lastRun?->status,
         ];
+    }
+
+    /**
+     * Active companies the scheduled weekly pipeline is currently skipping
+     * because their credit balance is exhausted (see routes/console.php's
+     * weekly-pipeline task, which calls CreditService::secondsBudget() and
+     * skips the company entirely — no PipelineRun row is ever created for
+     * these weeks, so this has to be surfaced separately from pipeline_runs).
+     */
+    private function buildCreditBlockedCompanies(): array
+    {
+        $creditService = app(CreditService::class);
+
+        $companies = Company::query()->where('status', 'active')->get(['id', 'name']);
+
+        $blocked = [];
+        foreach ($companies as $company) {
+            $balance = $creditService->availableCredits($company);
+            if ($balance > 0) {
+                continue;
+            }
+
+            $lastFetch = CompanyWeeklyFetch::query()
+                ->where('company_id', $company->id)
+                ->orderByDesc('week_start_date')
+                ->first(['week_start_date', 'week_end_date', 'status', 'last_attempted_at']);
+
+            $blocked[] = [
+                'company_id' => $company->id,
+                'company_name' => $company->name,
+                'balance' => $balance,
+                'week_start_date' => $lastFetch?->week_start_date?->toDateString(),
+                'week_end_date' => $lastFetch?->week_end_date?->toDateString(),
+                'last_attempted_at' => $lastFetch?->last_attempted_at?->toIso8601String(),
+            ];
+        }
+
+        return $blocked;
+    }
+
+    /**
+     * POST /admin/api/jobs/pipeline/run-now/{companyId}
+     * Credit-gated retry for a single company that the scheduled weekly run
+     * skipped for insufficient credits. Mirrors UserCallLimitController::processWeek
+     * but admin-triggered — checks the balance again (in case credits were just
+     * added) and either dispatches or returns a clear "not enough credits" error.
+     */
+    public function runPipelineForCompany(int $companyId, CreditService $creditService): JsonResponse
+    {
+        if (! Schema::hasTable('pipeline_runs')) {
+            return response()->json(['message' => 'Pipeline tables not ready. Run migrations first.'], 422);
+        }
+
+        $company = Company::query()->where('status', 'active')->findOrFail($companyId);
+
+        $secondsBudget = $creditService->secondsBudget($company);
+        if ($secondsBudget <= 0) {
+            return response()->json([
+                'message' => 'This company still has no credits available. Add credits before running the pipeline.',
+                'status' => 'insufficient_credits',
+            ], 422);
+        }
+
+        $lastFetch = CompanyWeeklyFetch::query()
+            ->where('company_id', $company->id)
+            ->orderByDesc('week_start_date')
+            ->first();
+
+        if ($lastFetch) {
+            $weekFrom = $lastFetch->week_start_date->toDateString();
+            $weekTo = $lastFetch->week_end_date->toDateString();
+        } else {
+            $timezone = is_string($company->timezone) && $company->timezone !== '' ? $company->timezone : 'UTC';
+            $periodStart = CarbonImmutable::now($timezone)->startOfWeek(CarbonImmutable::MONDAY)->subWeek();
+            $weekFrom = $periodStart->toDateString();
+            $weekTo = $periodStart->addDays(6)->toDateString();
+        }
+
+        $activeKey = $this->buildActiveKey($company->id, $weekFrom, $weekTo);
+        $hasActivePeer = PipelineRun::query()
+            ->where('active_key', $activeKey)
+            ->whereNotIn('status', ['failed', 'completed', 'cancelled'])
+            ->exists();
+
+        if ($hasActivePeer) {
+            return response()->json([
+                'message' => 'A pipeline is already running or queued for this company/date range.',
+            ], 409);
+        }
+
+        $run = PipelineRun::create([
+            'company_id'    => $company->id,
+            'range_from'    => $weekFrom,
+            'range_to'      => $weekTo,
+            'status'        => 'queued',
+            'trigger_type'  => 'manual',
+            'active_key'    => $activeKey,
+            'started_at'    => now(),
+            'metrics'       => ['source' => 'admin-credit-retry', 'max_seconds' => $secondsBudget],
+        ]);
+
+        AdminTestPipelineJob::dispatch(
+            companyId: $company->id,
+            fromDate: $weekFrom,
+            toDate: $weekTo,
+            summarizeLimit: 5000,
+            categorizeLimit: 5000,
+            pipelineQueue: 'default',
+            pipelineRunId: $run->id,
+            isResume: false,
+            maxCalls: null,
+            trackCompanyLimit: true,
+            maxSeconds: $secondsBudget,
+            deductCredits: true,
+        )->onQueue('default');
+
+        if ($lastFetch) {
+            $lastFetch->update(['last_attempted_at' => now()]);
+        }
+
+        return response()->json([
+            'message' => "Pipeline dispatched for {$company->name}.",
+            'data' => ['pipeline_run_id' => $run->id],
+        ]);
     }
 
     private function dispatchPipelineRun(PipelineRun $run, array $metrics = []): void

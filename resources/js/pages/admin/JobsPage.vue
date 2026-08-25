@@ -149,6 +149,76 @@
             </p>
         </section>
 
+        <!-- ── Credit-blocked companies ────────────────────────────────── -->
+        <section v-if="overview.credit_blocked_companies?.length" class="automation-panel admin-card admin-card--glass credit-blocked-panel">
+            <div class="automation-panel__header">
+                <div>
+                    <h2 class="admin-card__headline" style="margin-bottom:2px">Blocked on credits</h2>
+                    <p class="automation-panel__sub">
+                        These companies have no credits left, so the weekly pipeline skips them automatically.
+                        Add credits and run again to catch them up.
+                    </p>
+                </div>
+            </div>
+
+            <p v-if="creditFeedback.message" class="automation-feedback" :class="`is-${creditFeedback.type}`">
+                {{ creditFeedback.message }}
+            </p>
+
+            <div class="credit-blocked-list">
+                <div v-for="c in overview.credit_blocked_companies" :key="c.company_id" class="credit-blocked-row">
+                    <div class="credit-blocked-row__info">
+                        <div class="credit-blocked-row__name">{{ c.company_name }}</div>
+                        <div class="credit-blocked-row__meta">
+                            Balance: {{ Number(c.balance).toFixed(2) }} credits
+                            <template v-if="c.week_start_date">
+                                · Last skipped week: {{ c.week_start_date }} to {{ c.week_end_date }}
+                            </template>
+                        </div>
+                    </div>
+                    <div class="credit-blocked-row__actions">
+                        <BaseButton variant="secondary" size="sm" @click="openCreditForm(c.company_id)">
+                            {{ creditFormOpenFor === c.company_id ? "Cancel" : "Add Credits" }}
+                        </BaseButton>
+                        <BaseButton
+                            variant="primary"
+                            size="sm"
+                            :loading="creditRetryLoadingId === c.company_id"
+                            :disabled="creditRetryLoadingId === c.company_id"
+                            @click="retryCreditBlockedCompany(c.company_id)"
+                        >
+                            Run Again
+                        </BaseButton>
+                    </div>
+
+                    <div v-if="creditFormOpenFor === c.company_id" class="credit-blocked-row__form">
+                        <input
+                            v-model="creditAmountInput"
+                            type="number"
+                            step="0.01"
+                            placeholder="Credits to add (e.g. 100)"
+                            class="credit-blocked-row__input"
+                        />
+                        <input
+                            v-model="creditNoteInput"
+                            type="text"
+                            placeholder="Note (optional)"
+                            class="credit-blocked-row__input credit-blocked-row__input--note"
+                        />
+                        <BaseButton
+                            variant="primary"
+                            size="sm"
+                            :loading="creditAdjustLoadingId === c.company_id"
+                            :disabled="creditAdjustLoadingId === c.company_id"
+                            @click="submitCreditAdjustment(c.company_id)"
+                        >
+                            Save
+                        </BaseButton>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section class="admin-dashboard__grid">
             <PanelCard title="Queue overview" :meta="queueMeta">
                 <div v-if="loading" class="admin-metricRows">
@@ -410,7 +480,65 @@ const overview = ref({
         last_weekly_run_at: null,
         last_weekly_run_status: null,
     },
+    credit_blocked_companies: [],
 });
+
+const creditFormOpenFor = ref(null);
+const creditAmountInput = ref("");
+const creditNoteInput = ref("");
+const creditAdjustLoadingId = ref(null);
+const creditRetryLoadingId = ref(null);
+const creditFeedback = ref({ type: "info", message: "" });
+
+function openCreditForm(companyId) {
+    creditFormOpenFor.value = creditFormOpenFor.value === companyId ? null : companyId;
+    creditAmountInput.value = "";
+    creditNoteInput.value = "";
+}
+
+async function submitCreditAdjustment(companyId) {
+    const credits = Number(creditAmountInput.value);
+    if (!Number.isFinite(credits) || credits === 0) {
+        creditFeedback.value = { type: "error", message: "Enter a non-zero credit amount." };
+        return;
+    }
+
+    creditAdjustLoadingId.value = companyId;
+    creditFeedback.value = { type: "info", message: "" };
+    try {
+        await adminApi.post(`/companies/${companyId}/credits/adjust`, {
+            credits,
+            note: creditNoteInput.value || null,
+        });
+        creditFeedback.value = { type: "success", message: "Credits added. Balance updated." };
+        creditFormOpenFor.value = null;
+        await load();
+    } catch (e) {
+        creditFeedback.value = {
+            type: "error",
+            message: e?.response?.data?.message || "Failed to add credits.",
+        };
+    } finally {
+        creditAdjustLoadingId.value = null;
+    }
+}
+
+async function retryCreditBlockedCompany(companyId) {
+    creditRetryLoadingId.value = companyId;
+    creditFeedback.value = { type: "info", message: "" };
+    try {
+        const res = await adminApi.post(`/jobs/pipeline/run-now/${companyId}`);
+        creditFeedback.value = { type: "success", message: res.data?.message || "Pipeline dispatched." };
+        setTimeout(load, 3000);
+    } catch (e) {
+        creditFeedback.value = {
+            type: "error",
+            message: e?.response?.data?.message || "Sorry, not enough credits to run this pipeline.",
+        };
+    } finally {
+        creditRetryLoadingId.value = null;
+    }
+}
 
 const queueColumns = [
     { key: "queue", label: "Queue" },
@@ -1055,8 +1183,27 @@ async function startWorkers() {
 .automation-feedback.is-error   { color: #b91c1c; background: rgba(220,38,38,0.08); }
 .automation-feedback.is-info    { color: #1d4ed8; background: rgba(37,99,235,0.08); }
 
+.credit-blocked-panel { border-color: rgba(217,119,6,0.35); }
+.credit-blocked-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.credit-blocked-row {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(217,119,6,0.06); border: 1px solid rgba(217,119,6,0.18);
+}
+.credit-blocked-row__info    { flex: 1 1 220px; min-width: 0; }
+.credit-blocked-row__name    { font-weight: 600; font-size: 13px; }
+.credit-blocked-row__meta    { font-size: 12px; opacity: 0.75; margin-top: 2px; }
+.credit-blocked-row__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.credit-blocked-row__form    { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; margin-top: 4px; }
+.credit-blocked-row__input {
+    padding: 6px 10px; border-radius: 6px; border: 1px solid var(--admin-border, #d1d5db);
+    font-size: 13px; min-width: 160px;
+}
+.credit-blocked-row__input--note { flex: 1 1 200px; }
+
 @media (max-width: 768px) {
     .automation-pillars { grid-template-columns: 1fr; }
     .automation-panel__header { flex-direction: column; }
+    .credit-blocked-row { flex-direction: column; align-items: stretch; }
 }
 </style>

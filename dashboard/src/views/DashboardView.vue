@@ -74,9 +74,12 @@ async function load() {
 }
 
 // Smart button per week: action depends on state.
-function weekAction(w: WeeklyHistory): { label: string; kind: "view" | "process" | "done" | "renew"; disabled: boolean } {
+function weekAction(w: WeeklyHistory): { label: string; kind: "view" | "process" | "done" | "renew" | "credits"; disabled: boolean } {
     if (w.report_available && w.calls_blocked === 0 && w.status === "complete") {
         return { label: "Already available", kind: "done", disabled: true };
+    }
+    if (w.status === "insufficient_credits") {
+        return { label: "Add Credits", kind: "credits", disabled: false };
     }
     if (w.status === "paused") {
         return { label: "Renew needed", kind: "renew", disabled: true };
@@ -114,6 +117,7 @@ function statusLabel(status: string): string {
     const map: Record<string, string> = {
         completed: "Completed", pending: "Pending", generating: "Generating",
         failed: "Failed", complete: "Complete", partial: "Partial", paused: "Paused",
+        insufficient_credits: "Needs credits",
     };
     return map[status] ?? status;
 }
@@ -208,6 +212,20 @@ onMounted(load);
                             <template v-if="weekAction(w).kind === 'done'">
                                 <RouterLink :to="{ name: 'reports' }" class="histLink">View reports</RouterLink>
                             </template>
+                            <template v-else-if="weekAction(w).kind === 'credits'">
+                                <span class="histActions">
+                                    <RouterLink :to="{ name: 'select-plan' }" class="histBtn histBtn--credits">
+                                        Add Credits
+                                    </RouterLink>
+                                    <button
+                                        class="histBtn"
+                                        :disabled="processingId === w.id"
+                                        @click="processWeek(w)"
+                                    >
+                                        {{ processingId === w.id ? 'Checking…' : 'Run Again' }}
+                                    </button>
+                                </span>
+                            </template>
                             <template v-else>
                                 <button
                                     class="histBtn"
@@ -219,6 +237,11 @@ onMounted(load);
                                 </button>
                             </template>
                         </span>
+                    </div>
+                    <div v-if="data.weekly_history.some((w) => w.status === 'insufficient_credits')" class="creditsBanner">
+                        Some weeks weren't processed because your company ran out of credits.
+                        <RouterLink :to="{ name: 'select-plan' }">Add credits</RouterLink>
+                        then click "Run Again" below (or wait for the pipeline to run automatically) to catch up.
                     </div>
                 </div>
             </Card>
@@ -288,16 +311,27 @@ onMounted(load);
 .pill--complete { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
 .pill--partial { background: color-mix(in srgb, #f59e0b 16%, transparent); color: #b45309; }
 .pill--paused { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+.pill--insufficient_credits { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
 
 .histBtn {
     height: 30px; padding: 0 12px; border-radius: 7px; cursor: pointer; font-size: 0.8rem; font-weight: 600;
     background: var(--color-primary, #3b82f6); color: #fff; border: none; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
 }
 .histBtn:hover:not(:disabled) { filter: brightness(1.05); }
 .histBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .histBtn--muted { background: var(--surface-2); color: var(--color-text); }
+.histBtn--credits { background: #dc2626; }
 .histLink { font-size: 0.82rem; font-weight: 600; color: var(--color-primary, #3b82f6); text-decoration: none; }
 .histLink:hover { text-decoration: underline; }
+
+.histActions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.creditsBanner {
+    margin-top: 4px; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem;
+    background: color-mix(in srgb, #ef4444 10%, transparent); border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+}
+.creditsBanner a { color: var(--color-primary, #3b82f6); font-weight: 600; }
 
 .reportRow { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: var(--space-3); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; }
 .reportRow--head { font-weight: 700; background: var(--surface-2); }

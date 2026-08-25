@@ -221,6 +221,8 @@ Route::prefix('admin/api')->group(function () {
         Route::post('/jobs/pipelines/{pipelineRunId}/resume', [\App\Http\Controllers\Admin\AdminJobsController::class, 'resumePipeline'])
             ->whereNumber('pipelineRunId');
         Route::post('/jobs/pipeline/run-now', [\App\Http\Controllers\Admin\AdminJobsController::class, 'runPipelineNow']);
+        Route::post('/jobs/pipeline/run-now/{companyId}', [\App\Http\Controllers\Admin\AdminJobsController::class, 'runPipelineForCompany'])
+            ->whereNumber('companyId');
         Route::get('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'show']);
         Route::post('/settings', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'update']);
         Route::post('/settings/password', [\App\Http\Controllers\Admin\AdminSettingsController::class, 'updatePassword']);
