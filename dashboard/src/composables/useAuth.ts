@@ -8,6 +8,7 @@ export type UserProfile = {
     role: string;
     company_id: number | null;
     company_name: string | null;
+    created_at: string | null;
 };
 
 type AuthState = {

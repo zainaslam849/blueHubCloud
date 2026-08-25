@@ -87,6 +87,7 @@ class UserCallLimitController extends Controller
         return response()->json([
             'message' => 'Processing started for the selected week. This may take a few minutes.',
             'status' => 'queued',
+            'pipeline_run_id' => $pipelineRun->id,
         ]);
     }
 }

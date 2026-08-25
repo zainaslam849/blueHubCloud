@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { userApi } from "../api/user";
 import { auth } from "../composables/useAuth";
 import { useCreditBalance } from "../composables/useCreditBalance";
@@ -21,6 +21,8 @@ type WeeklyHistory = {
     calls_blocked: number;
     status: string; // complete | partial | paused | insufficient_credits
     report_available: boolean;
+    pipeline_status: string | null; // queued | running | null — a job is genuinely working right now
+    pipeline_stage: string | null;
 };
 
 type RecentReport = {
@@ -55,6 +57,7 @@ const error = ref<string | null>(null);
 const processingId = ref<number | null>(null);
 const toast = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const firstName = computed(() => (auth.state.user?.name ?? "").split(/\s+/)[0] || "there");
 
@@ -113,10 +116,60 @@ async function load() {
     } finally {
         loading.value = false;
     }
+    syncPolling();
 }
 
+// Silent refresh used while polling — updates data in place without
+// re-triggering the full-page skeleton.
+async function refreshSilently() {
+    try {
+        const res = await userApi.get<DashboardData>("/dashboard");
+        data.value = res.data;
+    } catch {
+        // Keep the last known state; the next tick will retry.
+    }
+    syncPolling();
+}
+
+// Start/stop background polling based on whether any week is actively
+// being processed right now — so the UI reflects real job state even if
+// the user reloads the page or comes back later, not just right after
+// they click the button.
+function syncPolling() {
+    if (hasActivePipeline.value) {
+        if (!pollTimer) {
+            pollTimer = setInterval(refreshSilently, 6000);
+        }
+    } else if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
+const STAGE_LABELS: Record<string, string> = {
+    call_discovery: "Fetching calls…",
+    transcription_fetch: "Fetching transcripts…",
+    ai_summary: "Generating summaries…",
+    category_generation: "Building categories…",
+    call_categorization: "Categorizing calls…",
+    report_generation: "Generating report…",
+};
+
+function stageLabel(stage: string | null): string {
+    return STAGE_LABELS[stage ?? ""] ?? "Processing…";
+}
+
+const hasActivePipeline = computed(() =>
+    (data.value?.weekly_history ?? []).some(
+        (w) => w.pipeline_status === "queued" || w.pipeline_status === "running",
+    ),
+);
+
 // Smart button per week: action depends on state.
-function weekAction(w: WeeklyHistory): { label: string; kind: "view" | "process" | "done" | "renew" | "credits"; disabled: boolean } {
+function weekAction(w: WeeklyHistory): { label: string; kind: "view" | "process" | "done" | "renew" | "credits" | "processing"; disabled: boolean } {
+    if (w.pipeline_status === "queued" || w.pipeline_status === "running") {
+        return { label: stageLabel(w.pipeline_stage), kind: "processing", disabled: true };
+    }
     if (w.report_available && w.calls_blocked === 0 && w.status === "complete") {
         return { label: "Already available", kind: "done", disabled: true };
     }
@@ -141,7 +194,17 @@ async function processWeek(w: WeeklyHistory) {
             `/weekly-fetches/${w.id}/process-remaining`,
         );
         showToast(res.data.message);
-        await load();
+        // Optimistic: flip this row to "processing" immediately rather than
+        // waiting for the next poll, then let refreshSilently() take over
+        // with the real stage as the job progresses.
+        if (res.data.status === "queued") {
+            const row = data.value?.weekly_history.find((r) => r.id === w.id);
+            if (row) {
+                row.pipeline_status = "queued";
+                row.pipeline_stage = "call_discovery";
+            }
+        }
+        await refreshSilently();
     } catch (e) {
         const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
         showToast(msg ?? "Could not start processing. Please try again.");
@@ -164,9 +227,25 @@ function statusLabel(status: string): string {
     return map[status] ?? status;
 }
 
+// The status pill reflects the live pipeline run when one is active, rather
+// than the (now stale) week status stored before the job started.
+function rowStatusKind(w: WeeklyHistory): string {
+    if (w.pipeline_status === "queued" || w.pipeline_status === "running") return "processing";
+    return w.status;
+}
+function rowStatusLabel(w: WeeklyHistory): string {
+    if (w.pipeline_status === "queued") return "Queued";
+    if (w.pipeline_status === "running") return "Processing";
+    return statusLabel(w.status);
+}
+
 onMounted(() => {
     load();
     refreshCredits();
+});
+
+onBeforeUnmount(() => {
+    if (pollTimer) clearInterval(pollTimer);
 });
 </script>
 
@@ -372,9 +451,20 @@ onMounted(() => {
                             <span data-label="Week">{{ fmtDate(w.week_start_date) }} → {{ fmtDate(w.week_end_date) }}</span>
                             <span class="mono" data-label="Fetched">{{ w.calls_fetched.toLocaleString() }}</span>
                             <span class="mono" :class="w.calls_blocked > 0 ? 'warn' : 'muted'" data-label="Blocked">{{ w.calls_blocked.toLocaleString() }}</span>
-                            <span data-label="Status"><span class="pill" :class="`pill--${w.status}`">{{ statusLabel(w.status) }}</span></span>
+                            <span data-label="Status">
+                                <span class="pill" :class="`pill--${rowStatusKind(w)}`">
+                                    <span v-if="rowStatusKind(w) === 'processing'" class="pill__dot"></span>
+                                    {{ rowStatusLabel(w) }}
+                                </span>
+                            </span>
                             <span class="histRow__action">
-                                <template v-if="weekAction(w).kind === 'done'">
+                                <template v-if="weekAction(w).kind === 'processing'">
+                                    <button class="histBtn histBtn--processing" type="button" disabled>
+                                        <span class="histSpinner"></span>
+                                        {{ weekAction(w).label }}
+                                    </button>
+                                </template>
+                                <template v-else-if="weekAction(w).kind === 'done'">
                                     <RouterLink :to="{ name: 'reports' }" class="histLink">View report →</RouterLink>
                                 </template>
                                 <template v-else-if="weekAction(w).kind === 'credits'">
@@ -545,16 +635,35 @@ onMounted(() => {
 .pill--partial { background: var(--color-warning-soft); color: var(--color-warning); }
 .pill--paused { background: var(--color-error-soft); color: var(--color-error); }
 .pill--insufficient_credits { background: var(--color-error-soft); color: var(--color-error); }
+.pill--processing { background: var(--color-primary-soft); color: var(--color-primary); display: inline-flex; align-items: center; gap: 5px; }
+
+.pill__dot {
+    width: 6px; height: 6px; border-radius: 999px; background: var(--color-primary); flex-shrink: 0;
+    animation: histPulse 1.3s ease-in-out infinite;
+}
+@keyframes histPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 .histBtn {
     height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 600;
     background: var(--color-primary); color: #fff; border: none; white-space: nowrap;
-    display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
 }
 .histBtn:hover:not(:disabled) { filter: brightness(1.05); }
 .histBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .histBtn--muted { background: transparent; color: var(--color-text); border: 1px solid var(--color-border-strong); }
 .histBtn--credits { background: var(--color-error); }
+.histBtn--processing {
+    background: var(--color-primary-soft); color: var(--color-primary);
+    border: 1px solid var(--color-primary-soft-border); opacity: 1;
+}
+
+.histSpinner {
+    width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+    border-top-color: var(--color-primary);
+    animation: histSpin 0.7s linear infinite;
+}
+@keyframes histSpin { to { transform: rotate(360deg); } }
 .histLink { font-size: 0.82rem; font-weight: 500; color: var(--color-primary); text-decoration: none; }
 .histLink:hover { text-decoration: underline; }
 

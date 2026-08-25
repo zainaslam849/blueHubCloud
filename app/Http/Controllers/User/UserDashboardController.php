@@ -4,6 +4,7 @@ namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
 use App\Models\CompanyWeeklyFetch;
+use App\Models\PipelineRun;
 use App\Models\WeeklyCallReport;
 use App\Services\Billing\CreditService;
 use Illuminate\Http\JsonResponse;
@@ -82,13 +83,28 @@ class UserDashboardController extends Controller
         $reportWeeks = WeeklyCallReport::where('company_id', $companyId)
             ->pluck('status', 'week_start_date');
 
-        $weeklyHistory = CompanyWeeklyFetch::where('company_id', $companyId)
+        $weeklyFetches = CompanyWeeklyFetch::where('company_id', $companyId)
             ->orderByDesc('week_start_date')
             ->limit(26)
-            ->get()
-            ->map(function (CompanyWeeklyFetch $w) use ($reportWeeks) {
+            ->get();
+
+        // Latest pipeline run per week (drives the "processing" live status on
+        // the smart button — a queued/running run means a job is genuinely
+        // working in the background right now, not just a stale DB status).
+        $weekStarts = $weeklyFetches->pluck('week_start_date')->filter()->map(fn ($d) => $d->toDateString())->values();
+        $latestRunByWeek = PipelineRun::where('company_id', $companyId)
+            ->whereIn('range_from', $weekStarts)
+            ->orderByDesc('id')
+            ->get(['id', 'range_from', 'status', 'current_stage'])
+            ->groupBy(fn (PipelineRun $r) => $r->range_from->toDateString())
+            ->map(fn ($group) => $group->first());
+
+        $weeklyHistory = $weeklyFetches
+            ->map(function (CompanyWeeklyFetch $w) use ($reportWeeks, $latestRunByWeek) {
                 $weekKey = $w->week_start_date?->toDateString();
                 $reportStatus = $weekKey ? ($reportWeeks[$weekKey] ?? null) : null;
+                $run = $weekKey ? $latestRunByWeek->get($weekKey) : null;
+                $isActive = $run && in_array($run->status, ['queued', 'running'], true);
 
                 return [
                     'id' => $w->id,
@@ -101,6 +117,8 @@ class UserDashboardController extends Controller
                     'report_available' => $reportStatus === 'completed',
                     'last_attempted_at' => $w->last_attempted_at?->toIso8601String(),
                     'completed_at' => $w->completed_at?->toIso8601String(),
+                    'pipeline_status' => $isActive ? $run->status : null,
+                    'pipeline_stage' => $isActive ? $run->current_stage : null,
                 ];
             });
 

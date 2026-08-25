@@ -11,6 +11,7 @@ use App\Services\MailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules\Password;
 
@@ -208,6 +209,29 @@ class AuthController extends Controller
             'role'         => $user->role,
             'company_id'   => $user->company_id,
             'company_name' => $user->company?->name,
+            'created_at'   => $user->created_at?->toIso8601String(),
         ];
+    }
+
+    public function updatePassword(Request $request): JsonResponse
+    {
+        $user = Auth::guard('web')->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password'     => ['required', 'string', Password::min(8), 'confirmed'],
+        ]);
+
+        if (! Hash::check($validated['current_password'], $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect.'], 422);
+        }
+
+        $user->password = Hash::make($validated['new_password']);
+        $user->save();
+
+        return response()->json(['message' => 'Password updated.']);
     }
 }

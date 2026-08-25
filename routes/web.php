@@ -284,6 +284,7 @@ Route::prefix('api/v1')->group(function () {
     Route::middleware('user')->group(function () {
         Route::get('/auth/me',       [UserAuthController::class, 'me']);
         Route::post('/auth/logout',  [UserAuthController::class, 'logout']);
+        Route::post('/account/password', [UserAuthController::class, 'updatePassword']);
 
         Route::get('/dashboard',     [UserDashboardController::class, 'show']);
         Route::get('/reports',       [UserWeeklyCallReportsController::class, 'index']);
