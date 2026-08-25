@@ -575,6 +575,63 @@ onBeforeUnmount(() => {
                 </table>
             </div>
 
+            <!-- Mobile card list — shown instead of the table below 720px -->
+            <div class="cCardList">
+                <div v-if="loading" class="cCardList__body">
+                    <div v-for="i in 6" :key="i" class="cCardSkeleton"></div>
+                </div>
+
+                <div v-else-if="rows.length === 0" class="cEmpty">
+                    <div class="cEmpty__title">No calls</div>
+                    <div class="cEmpty__desc">No calls match the current filters.</div>
+                </div>
+
+                <div v-else class="cCardList__body">
+                    <button
+                        v-for="row in rows"
+                        :key="row.id"
+                        type="button"
+                        class="cCallCard"
+                        @click="viewRow(row)"
+                    >
+                        <div class="cCallCard__top">
+                            <span class="cDirIcon" :class="`cDirIcon--${row.direction}`" :title="directionLabel(row.direction)">
+                                <svg v-if="row.direction === 'outbound'" viewBox="0 0 24 24" fill="none"><path d="M19 13V5m0 0h-8m8 0-9 9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                <svg v-else-if="row.direction === 'internal'" viewBox="0 0 24 24" fill="none"><path d="M8 7h8M8 12h8M8 17h5" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>
+                                <svg v-else viewBox="0 0 24 24" fill="none"><path d="M5 11v8m0 0h8m-8 0 9-9" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </span>
+                            <div class="cCallCard__parties">
+                                <div class="cCallCard__from">{{ row.fromNumber || '—' }}</div>
+                                <div class="cCallCard__to cMono">→ {{ row.toNumber || '—' }}</div>
+                            </div>
+                            <span class="cBadge" :class="badgeClass(row.status)">
+                                {{ String(row.status || '').toUpperCase() }}
+                            </span>
+                        </div>
+
+                        <div class="cCallCard__meta">
+                            <span class="cMono">{{ formatDateParts(row.callTime).date }} {{ formatDateParts(row.callTime).time }}</span>
+                            <span class="cCallCard__dot"></span>
+                            <span class="cMono">{{ formatDuration(row.durationSeconds) }}</span>
+                        </div>
+
+                        <div v-if="row.category" class="cCallCard__category">
+                            {{ row.category }}
+                            <span v-if="row.subCategory" class="cCategory__sub">· {{ row.subCategory }}</span>
+                        </div>
+
+                        <div class="cCallCard__bottom">
+                            <span v-if="row.aiRecovery?.hasTranscript" class="cReady">
+                                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="m8 12.2 2.7 2.6L16 9.5" stroke="var(--color-surface)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                Transcript ready
+                            </span>
+                            <span v-else class="cNotReady">No transcript</span>
+                            <svg class="cCallCard__chevron" viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
             <!-- Footer / Pagination -->
             <div class="cFooter">
                 <span class="cPagerHint">Showing {{ rows.length ? ((meta.currentPage - 1) * meta.perPage) + 1 : 0 }}–{{ ((meta.currentPage - 1) * meta.perPage) + rows.length }} of {{ formatNumber(meta.total) }}</span>
@@ -619,32 +676,42 @@ onBeforeUnmount(() => {
 
 /* ── Filter bar ──────────────────────────────────────────────────────────── */
 .cFilterBar {
-    display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(180px, 1.7fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(140px, 1.2fr) minmax(230px, 1.5fr) auto;
+    gap: 12px;
+    align-items: flex-end;
     background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 14px 16px;
 }
-.cField { display: flex; flex-direction: column; gap: 6px; }
-.cField--search { flex: 1 1 220px; min-width: 200px; }
+.cField { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .cField__label { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; color: var(--color-muted); }
 
-.cSearchWrap { position: relative; display: flex; align-items: center; }
+/* Medium screens (tablet / narrow laptop window): a deliberate 3-column
+   grid instead of letting flex-wrap fall back onto an uneven ragged row. */
+@media (max-width: 1280px) and (min-width: 721px) {
+    .cFilterBar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .cField--search { grid-column: 1 / -1; }
+    .cFilterBar__apply { grid-column: 3; justify-self: end; }
+}
+
+.cSearchWrap { position: relative; display: flex; align-items: center; min-width: 0; }
 .cSearchIcon { position: absolute; left: 12px; width: 15px; height: 15px; color: var(--color-muted); pointer-events: none; }
 .cInput--search { padding-left: 36px; }
 
 .cInput {
     height: 38px; padding: 0 11px; border: 1px solid var(--color-border);
     border-radius: 9px; background: var(--color-surface-2); color: inherit;
-    font-size: 0.85rem; width: 100%; box-sizing: border-box;
+    font-size: 0.85rem; width: 100%; min-width: 0; box-sizing: border-box;
 }
-.cInput--select { appearance: auto; min-width: 120px; }
+.cInput--select { appearance: auto; }
 .cInput--sm { height: 30px; font-size: 0.82rem; width: auto; }
 .cInput:focus {
     outline: none; border-color: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
     background: var(--color-surface); box-shadow: 0 0 0 3px var(--ring);
 }
 
-.cDateRange { display: flex; align-items: center; gap: 6px; }
-.cDateRange .cInput { width: 148px; }
-.cDateRange__sep { color: var(--color-muted); }
+.cDateRange { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cDateRange .cInput { width: auto; min-width: 0; flex: 1; }
+.cDateRange__sep { color: var(--color-muted); flex-shrink: 0; }
 
 .cFilterBar__apply { flex-shrink: 0; }
 
@@ -685,6 +752,38 @@ onBeforeUnmount(() => {
     background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: 14px; overflow: hidden;
 }
+
+/* ── Mobile card list (hidden on desktop, shown <=720px) ────────────────── */
+.cCardList { display: none; }
+.cCardList__body { display: flex; flex-direction: column; }
+
+.cCallCard {
+    display: flex; flex-direction: column; gap: 8px; width: 100%;
+    padding: 14px 16px; border: none; border-bottom: 1px solid var(--color-border);
+    background: none; text-align: left; cursor: pointer; font-family: inherit; color: inherit;
+}
+.cCallCard:last-child { border-bottom: none; }
+.cCallCard:active { background: var(--color-surface-2); }
+
+.cCallCard__top { display: flex; align-items: center; gap: 10px; }
+.cCallCard__parties { flex: 1; min-width: 0; }
+.cCallCard__from { font-size: 0.88rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cCallCard__to { font-size: 0.74rem; color: var(--color-muted); }
+
+.cCallCard__meta { display: flex; align-items: center; gap: 7px; font-size: 0.76rem; color: var(--color-muted); }
+.cCallCard__dot { width: 3px; height: 3px; border-radius: 999px; background: var(--color-muted); flex-shrink: 0; }
+
+.cCallCard__category { font-size: 0.82rem; }
+
+.cCallCard__bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
+.cCallCard__chevron { width: 16px; height: 16px; color: var(--color-muted); flex-shrink: 0; }
+
+.cCardSkeleton {
+    height: 76px; margin: 0 16px 12px; border-radius: 12px;
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    animation: pulse 1.2s ease-in-out infinite;
+}
+.cCardSkeleton:first-child { margin-top: 12px; }
 
 /* ── Table ───────────────────────────────────────────────────────────────── */
 .cTableWrap { overflow-x: auto; }
@@ -797,7 +896,7 @@ onBeforeUnmount(() => {
 }
 .cPageSizeWrap { display: flex; align-items: center; gap: 6px; }
 .cPageSizeLabel { font-size: 0.8rem; color: var(--color-muted); }
-.cPager { display: flex; align-items: center; gap: 5px; }
+.cPager { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: wrap; }
 .cPagerHint { font-size: 0.8rem; color: var(--color-muted); }
 
 .cPageBtn {
@@ -811,11 +910,16 @@ onBeforeUnmount(() => {
 .cPageBtn svg { width: 15px; height: 15px; }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
-@media (max-width: 960px) {
-    .cFilterBar { flex-direction: column; align-items: stretch; }
-    .cFilterBar__apply { align-self: stretch; justify-content: center; }
+@media (max-width: 720px) {
+    .cFilterBar { grid-template-columns: 1fr; }
+    .cField--search { grid-column: auto; }
+    .cFilterBar__apply { grid-column: auto; justify-self: stretch; justify-content: center; }
     .cDateRange .cInput { flex: 1; width: auto; }
     .cPageHead { flex-direction: column; align-items: flex-start; }
-    .cFooter { justify-content: center; text-align: center; }
+    .cFooter { flex-direction: column; justify-content: center; text-align: center; }
+
+    /* App-like card list instead of a squeezed desktop table. */
+    .cTableWrap { display: none; }
+    .cCardList { display: block; }
 }
 </style>

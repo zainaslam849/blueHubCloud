@@ -410,7 +410,14 @@ class UserCallsController extends Controller
 
     public function categories(): JsonResponse
     {
+        $user = Auth::guard('web')->user();
+
+        if (! $user->company_id) {
+            return response()->json(['data' => []]);
+        }
+
         $cats = CallCategory::query()
+            ->where('company_id', $user->company_id)
             ->where('is_enabled', true)
             ->orderBy('name')
             ->get(['id', 'name']);
