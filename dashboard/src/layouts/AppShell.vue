@@ -24,6 +24,7 @@ const navCollapsed = ref(typeof window !== "undefined" && window.innerWidth <= 1
 const logoUrl      = ref("");      // default / fallback
 const logoLightUrl = ref("");      // light logo (for dark backgrounds)
 const logoDarkUrl  = ref("");      // dark logo (for light backgrounds)
+const faviconUrl   = ref("");      // small square mark — collapsed sidebar rail + browser tab icon
 const appName      = ref("BlueHub");
 
 // Resolve correct URL based on current document theme
@@ -40,6 +41,19 @@ function resolvedLogoUrl(): string {
 // Reactive logo that updates when theme changes (via MutationObserver)
 const activeLogoUrl = ref("");
 
+// The admin-uploaded favicon has no <link rel="icon"> in the HTML shell to
+// bind to (it's set purely from JS after the branding fetch), so point the
+// browser tab icon at it directly here.
+function applyFavicon(url: string) {
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link) {
+        link = document.createElement("link");
+        link.rel = "icon";
+        document.head.appendChild(link);
+    }
+    link.href = url;
+}
+
 provideToasts();
 
 onMounted(async () => {
@@ -50,6 +64,10 @@ onMounted(async () => {
         if (data.logo_light_url) logoLightUrl.value = fixUrl(data.logo_light_url);
         if (data.logo_dark_url)  logoDarkUrl.value  = fixUrl(data.logo_dark_url);
         if (data.site_name)      appName.value      = data.site_name;
+        if (data.favicon_url) {
+            faviconUrl.value = fixUrl(data.favicon_url);
+            applyFavicon(faviconUrl.value);
+        }
         activeLogoUrl.value = resolvedLogoUrl();
     } catch {
         // use defaults
@@ -99,6 +117,7 @@ async function handleSignOut() {
             :open="navOpen"
             :collapsed="navCollapsed"
             :logo-url="activeLogoUrl"
+            :favicon-url="faviconUrl"
             :app-name="appName"
             :credits="creditState.credits"
             :credits-loaded="creditState.loaded"

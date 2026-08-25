@@ -7,6 +7,13 @@
 
         <title>{{ config("app.name", "BlueHubCloud") }} — Admin</title>
 
+        @php
+            $__faviconUrl = \App\Models\AppSetting::query()->value('admin_favicon_url');
+        @endphp
+        @if($__faviconUrl)
+            <link rel="icon" href="{{ str_starts_with($__faviconUrl, 'http') ? $__faviconUrl : asset(ltrim($__faviconUrl, '/')) }}" />
+        @endif
+
         <script>
             (function () {
                 try {

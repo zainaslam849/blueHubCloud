@@ -8,6 +8,7 @@ type Props = {
     open: boolean;
     collapsed: boolean;
     logoUrl?: string;
+    faviconUrl?: string;
     appName?: string;
     credits?: number | null;
     creditsLoaded?: boolean;
@@ -169,9 +170,13 @@ function isActive(name: string | undefined) {
         <!-- Brand/Logo -->
         <div class="sidebarHeader">
             <div class="brand" :class="{ 'brand--centered': effectiveCollapsed }">
-                <!-- Collapsed rail: always the compact mark — the full wordmark
-                     logo has no room to breathe squeezed into an icon-sized box. -->
-                <div v-if="effectiveCollapsed" class="brandMark" aria-hidden="true">
+                <!-- Collapsed rail: the small square favicon mark when one is
+                     configured — the full wordmark logo has no room to breathe
+                     squeezed into an icon-sized box. Falls back to the initial. -->
+                <div v-if="effectiveCollapsed && props.faviconUrl" class="brandMark brandMark--img" aria-hidden="true">
+                    <img :src="props.faviconUrl" :alt="props.appName ?? 'Logo'" class="brandMarkImg" />
+                </div>
+                <div v-else-if="effectiveCollapsed" class="brandMark" aria-hidden="true">
                     <span class="brandInitial">{{ (props.appName ?? 'B').charAt(0).toUpperCase() }}</span>
                 </div>
                 <!-- Expanded: the real logo image when one is configured -->
@@ -362,6 +367,20 @@ function isActive(name: string | undefined) {
     justify-content: center;
     background: linear-gradient(135deg, #52b3df 0%, #27699b 100%);
     box-shadow: 0 4px 12px rgba(43, 110, 159, 0.25);
+}
+
+/* Real favicon image — on a light patch like the main logo, and without
+   the gradient background since the image supplies its own look. */
+.brandMark--img {
+    background: #ffffff;
+    padding: 4px;
+}
+
+.brandMarkImg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
 }
 
 .brandInitial {
@@ -699,12 +718,12 @@ function isActive(name: string | undefined) {
     .collapseBtn { display: none; }
     .mobileCloseBtn { display: flex; }
 
-    /* The sidebar overlay is full viewport height, but MobileTabBar sits
-       fixed on top of it at a higher z-index — without this, the footer
-       (user info, theme toggle, sign out) renders right where the tab bar
-       covers it and is invisible/unclickable. */
+    /* MobileTabBar is hidden while the drawer is open (AppShell.vue), so
+       the footer just needs to clear the device's own bottom inset (home
+       indicator / gesture bar on notched phones) — not the tab bar's
+       height, which would leave a large dead gap above it. */
     .sidebarFooter {
-        padding-bottom: calc(14px + 62px + env(safe-area-inset-bottom, 0px));
+        padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     }
 }
 

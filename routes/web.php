@@ -265,6 +265,7 @@ Route::prefix('api/v1')->group(function () {
                 'logo_url'       => $resolveUrl($settings?->admin_logo_url),
                 'logo_light_url' => $resolveUrl($settings?->admin_logo_light_url),
                 'logo_dark_url'  => $resolveUrl($settings?->admin_logo_dark_url),
+                'favicon_url'    => $resolveUrl($settings?->admin_favicon_url),
             ],
         ]);
     });
