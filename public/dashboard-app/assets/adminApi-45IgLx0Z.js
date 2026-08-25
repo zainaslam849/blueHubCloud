@@ -1,1 +1,0 @@
-import{s as e}from"./main-jgaQkcDy.js";function t(e){return e.startsWith(`/`)?`/admin/api${e}`:`/admin/api/${e}`}const n={get(n,r){return e.get(t(n),r)},post(n,r,i){return e.post(t(n),r,i)},put(n,r,i){return e.put(t(n),r,i)},delete(n,r){return e.delete(t(n),r)}};export{n as t};

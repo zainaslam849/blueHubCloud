@@ -31,11 +31,13 @@ bootstrap/cache/*
 # Public build files
 # ----------------------------
 /public/build
+/public/dashboard-app
 /public/hot
 /public/storage
 
 # If public path is changed
 /public_html/build
+/public_html/dashboard-app
 /public_html/hot
 /public_html/storage
 

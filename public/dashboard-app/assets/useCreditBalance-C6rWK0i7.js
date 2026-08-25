@@ -1,1 +1,0 @@
-import{U as e}from"./main-jgaQkcDy.js";import{t}from"./user-DI7eRCGG.js";var n=e({credits:null,autoTopupEnabled:!1,loaded:!1}),r=null;async function i(){return r||(r=t.get(`/plan`).then(e=>{n.credits=e.data.credits,n.autoTopupEnabled=e.data.auto_topup?.enabled??!1,n.loaded=!0}).catch(()=>{}).finally(()=>{r=null}),r)}function a(){return{state:n,refresh:i}}export{a as t};
