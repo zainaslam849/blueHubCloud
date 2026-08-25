@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Stripe;
 use Stripe\Webhook;
@@ -63,7 +64,20 @@ class StripeController extends Controller
 
         $secretKey = $this->stripeSecretKey();
 
+        // Diagnostic only — never logs the actual key. sk_test_/sk_live_ prefix
+        // is enough to catch "no key configured" and "test/live key mismatch
+        // with the public key on the checkout page" without exposing secrets.
+        Log::info('Stripe createCheckout: key check', [
+            'user_id' => $user->id,
+            'plan_id' => $plan->id,
+            'key_present' => $secretKey !== '',
+            'key_length' => strlen($secretKey),
+            'key_prefix' => $secretKey !== '' ? substr($secretKey, 0, 8) : null,
+            'key_source' => AppSetting::query()->value('stripe_secret_key') ? 'app_setting' : 'env_fallback',
+        ]);
+
         if (empty($secretKey)) {
+            Log::error('Stripe createCheckout: no secret key configured', ['user_id' => $user->id, 'plan_id' => $plan->id]);
             return response()->json(['message' => 'Stripe is not configured. Please contact the administrator.'], 500);
         }
 
@@ -114,22 +128,50 @@ class StripeController extends Controller
             $sessionParams['customer_email'] = $user->email;
         }
 
-        $session = \Stripe\Checkout\Session::create($sessionParams);
+        try {
+            $session = \Stripe\Checkout\Session::create($sessionParams);
+        } catch (ApiErrorException $e) {
+            Log::error('Stripe createCheckout: Stripe API rejected the session', [
+                'user_id' => $user->id,
+                'plan_id' => $plan->id,
+                'stripe_error_type' => $e->getError()?->type,
+                'stripe_error_code' => $e->getError()?->code,
+                'stripe_message' => $e->getError()?->message ?? $e->getMessage(),
+                'http_status' => $e->getHttpStatus(),
+            ]);
+
+            return response()->json([
+                'message' => 'Stripe could not create the checkout session: ' . ($e->getError()?->message ?? $e->getMessage()),
+            ], 502);
+        }
 
         // Create a pending purchase record
-        PlanPurchase::create([
-            'user_id'          => $user->id,
-            'company_id'       => $user->company_id,
-            'plan_id'          => $plan->id,
-            'stripe_session_id'=> $session->id,
-            'amount_paid'      => $plan->effective_price,
-            'currency'         => 'usd',
-            'minutes_added'    => 0,
-            'credits_added'    => $creditsIncluded,
-            'plan_name'        => $plan->name,
-            'plan_price'       => $plan->effective_price,
-            'status'           => 'pending',
-        ]);
+        try {
+            PlanPurchase::create([
+                'user_id'          => $user->id,
+                'company_id'       => $user->company_id,
+                'plan_id'          => $plan->id,
+                'stripe_session_id'=> $session->id,
+                'amount_paid'      => $plan->effective_price,
+                'currency'         => 'usd',
+                'minutes_added'    => 0,
+                'credits_added'    => $creditsIncluded,
+                'plan_name'        => $plan->name,
+                'plan_price'       => $plan->effective_price,
+                'status'           => 'pending',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Stripe createCheckout: failed to record pending purchase (Stripe session was created)', [
+                'user_id' => $user->id,
+                'plan_id' => $plan->id,
+                'stripe_session_id' => $session->id,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Could not start checkout — please try again or contact support.',
+            ], 500);
+        }
 
         return response()->json(['checkout_url' => $session->url]);
     }
