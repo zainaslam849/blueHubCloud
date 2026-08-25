@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { userApi } from "../api/user";
 import { auth } from "../composables/useAuth";
 import { useCreditBalance } from "../composables/useCreditBalance";
+import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 type CallLimit = {
     monthly_call_limit: number | null;
@@ -165,6 +166,12 @@ const hasActivePipeline = computed(() =>
     ),
 );
 
+// True only while the company is actually out of credits right now — the
+// per-week status can say "insufficient_credits" from when it was blocked
+// even after the balance has since been topped up, so that stored status
+// alone isn't enough to decide whether "Add Credits" still makes sense.
+const hasCredits = computed(() => (data.value?.credit_balance ?? 0) > 0);
+
 // Smart button per week: action depends on state.
 function weekAction(w: WeeklyHistory): { label: string; kind: "view" | "process" | "done" | "renew" | "credits" | "processing"; disabled: boolean } {
     if (w.pipeline_status === "queued" || w.pipeline_status === "running") {
@@ -174,6 +181,11 @@ function weekAction(w: WeeklyHistory): { label: string; kind: "view" | "process"
         return { label: "Already available", kind: "done", disabled: true };
     }
     if (w.status === "insufficient_credits") {
+        // Credits have since been added — just let them retry, no need to
+        // point back at the Buy Credits page again.
+        if (hasCredits.value) {
+            return { label: "Run Again", kind: "process", disabled: false };
+        }
         return { label: "Add Credits", kind: "credits", disabled: false };
     }
     if (w.status === "paused") {
@@ -227,15 +239,18 @@ function statusLabel(status: string): string {
     return map[status] ?? status;
 }
 
-// The status pill reflects the live pipeline run when one is active, rather
-// than the (now stale) week status stored before the job started.
+// The status pill reflects the live pipeline run when one is active, and
+// re-labels a stale "insufficient_credits" week once the balance has since
+// been topped up — otherwise it'd contradict the "Run Again" button next to it.
 function rowStatusKind(w: WeeklyHistory): string {
     if (w.pipeline_status === "queued" || w.pipeline_status === "running") return "processing";
+    if (w.status === "insufficient_credits" && hasCredits.value) return "ready";
     return w.status;
 }
 function rowStatusLabel(w: WeeklyHistory): string {
     if (w.pipeline_status === "queued") return "Queued";
     if (w.pipeline_status === "running") return "Processing";
+    if (w.status === "insufficient_credits" && hasCredits.value) return "Ready to retry";
     return statusLabel(w.status);
 }
 
@@ -251,6 +266,8 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="page">
+        <Breadcrumb :items="[{ label: 'Overview' }, { label: 'Dashboard' }]" />
+
         <template v-if="loading">
             <!-- Header skeleton -->
             <div class="dashHead">
@@ -493,10 +510,13 @@ onBeforeUnmount(() => {
                                 </template>
                             </span>
                         </div>
-                        <div v-if="data.weekly_history.some((w) => w.status === 'insufficient_credits')" class="creditsBanner">
+                        <div v-if="data.weekly_history.some((w) => w.status === 'insufficient_credits') && !hasCredits" class="creditsBanner">
                             Some weeks weren't processed because your company ran out of credits.
                             <RouterLink :to="{ name: 'select-plan' }">Add credits</RouterLink>
                             then click "Run Again" (or wait for the pipeline to run automatically) to catch up.
+                        </div>
+                        <div v-else-if="data.weekly_history.some((w) => w.status === 'insufficient_credits')" class="creditsBanner creditsBanner--ready">
+                            Credits are available now — click "Run Again" on the weeks above to catch up (or wait for the pipeline to run automatically).
                         </div>
                     </div>
                 </div>
@@ -635,6 +655,7 @@ onBeforeUnmount(() => {
 .pill--partial { background: var(--color-warning-soft); color: var(--color-warning); }
 .pill--paused { background: var(--color-error-soft); color: var(--color-error); }
 .pill--insufficient_credits { background: var(--color-error-soft); color: var(--color-error); }
+.pill--ready { background: var(--color-warning-soft); color: var(--color-warning); }
 .pill--processing { background: var(--color-primary-soft); color: var(--color-primary); display: inline-flex; align-items: center; gap: 5px; }
 
 .pill__dot {
@@ -673,6 +694,7 @@ onBeforeUnmount(() => {
     margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 0.82rem; line-height: 1.5;
     background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border);
 }
+.creditsBanner--ready { background: var(--color-warning-soft); border-color: var(--color-warning-soft-border); }
 .creditsBanner a { color: var(--color-primary); font-weight: 600; }
 
 /* ── What callers wanted ─────────────────────────────── */

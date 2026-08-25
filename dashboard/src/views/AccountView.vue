@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { auth } from "../composables/useAuth";
 import { logout as apiLogout } from "../api/auth";
 import { userApi } from "../api/user";
+import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 const router = useRouter();
 const user = auth.state;
@@ -92,6 +93,8 @@ async function handleLogout() {
 
 <template>
     <div class="acPage">
+        <Breadcrumb :items="[{ label: 'Account' }]" />
+
         <div class="acPageHead">
             <h1 class="acPageHead__title">Account</h1>
             <p class="acPageHead__sub">Manage your profile, security, and sign-in.</p>
@@ -163,11 +166,11 @@ async function handleLogout() {
                 </section>
 
                 <!-- Session -->
-                <section class="acCard">
+                <section class="acCard acCard--danger">
                     <h2 class="acCard__title">Session</h2>
                     <p class="acCard__sub">You're signed in on this device. Signing out will end your current session.</p>
                     <div class="acForm__actions">
-                        <button class="acBtn acBtn--outline" type="button" :disabled="signingOut" @click="handleLogout">
+                        <button class="acBtn acBtn--danger" type="button" :disabled="signingOut" @click="handleLogout">
                             <span v-if="signingOut" class="acSpinner acSpinner--dark"></span>
                             {{ signingOut ? "Signing out…" : "Sign out" }}
                         </button>
@@ -191,6 +194,8 @@ async function handleLogout() {
 /* ── Card ────────────────────────────────────────────────────────────────── */
 .acCard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; padding: 22px; }
 .acCard--profile { display: flex; flex-direction: column; gap: 18px; }
+.acCard--danger { background: var(--color-error-soft); border-color: var(--color-error-soft-border); }
+.acCard--danger .acCard__title { color: var(--color-error); }
 .acCard__title { margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--color-text); }
 .acCard__sub { margin: 4px 0 16px; font-size: 0.83rem; color: var(--color-muted); line-height: 1.5; }
 
@@ -256,6 +261,9 @@ async function handleLogout() {
 .acBtn--outline { background: transparent; border: 1px solid var(--color-border-strong); color: var(--color-text); }
 .acBtn--outline:hover:not(:disabled) { background: var(--color-surface-2); }
 .acBtn--outline:disabled { opacity: 0.6; cursor: not-allowed; }
+.acBtn--danger { background: transparent; border: 1px solid var(--color-error-soft-border); color: var(--color-error); }
+.acBtn--danger:hover:not(:disabled) { background: var(--color-error); border-color: var(--color-error); color: #fff; }
+.acBtn--danger:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .acSpinner {
     width: 14px; height: 14px; border-radius: 50%;

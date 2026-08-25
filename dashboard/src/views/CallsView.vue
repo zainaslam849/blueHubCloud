@@ -2,6 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { userApi } from "../api/user";
+import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 type CallRow = {
     id: number;
@@ -362,6 +363,8 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="cPage">
+        <Breadcrumb :items="[{ label: 'Overview' }, { label: 'Calls' }]" />
+
         <!-- Header -->
         <div class="cPageHead">
             <div>

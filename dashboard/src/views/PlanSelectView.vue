@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from "vue";
 import { auth } from "../composables/useAuth";
 import { userApi } from "../api/user";
+import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 type Plan = {
     id: number;
@@ -263,12 +264,7 @@ onMounted(() => {
 
 <template>
     <div class="bcPage">
-        <!-- Breadcrumb -->
-        <nav class="bcCrumb" aria-label="Breadcrumb">
-            <span>Billing</span>
-            <svg viewBox="0 0 24 24" fill="none" class="bcCrumb__sep"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            <span class="bcCrumb__current">Buy Credits</span>
-        </nav>
+        <Breadcrumb :items="[{ label: 'Billing' }, { label: 'Buy Credits' }]" />
 
         <!-- Header -->
         <div class="bcHead">
@@ -507,11 +503,6 @@ onMounted(() => {
 .bcPage { display: flex; flex-direction: column; gap: 20px; }
 
 /* ── Breadcrumb ──────────────────────────────────────────────────────────── */
-.bcCrumb { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--color-muted); }
-.bcCrumb a { color: var(--color-muted); text-decoration: none; }
-.bcCrumb a:hover { color: var(--color-text); text-decoration: underline; }
-.bcCrumb__sep { width: 13px; height: 13px; flex-shrink: 0; }
-.bcCrumb__current { color: var(--color-text); font-weight: 600; }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .bcHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; flex-wrap: wrap; }

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { userApi } from "../api/user";
+import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 type Row = {
     id: number;
@@ -200,6 +201,8 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="tPage">
+        <Breadcrumb :items="[{ label: 'Overview' }, { label: 'Transcriptions' }]" />
+
         <!-- Header -->
         <div class="tPageHead">
             <div>

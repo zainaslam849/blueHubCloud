@@ -130,7 +130,7 @@ const navGroups = computed(() => {
 
     return [
         {
-            label: "MENU",
+            label: "OVERVIEW",
             items: [
                 { name: "Dashboard", icon: "dashboard", to: { name: "dashboard" } },
                 { name: "Calls", icon: "calls", to: { name: "calls" } },

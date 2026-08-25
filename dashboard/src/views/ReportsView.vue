@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { userApi } from "../api/user";
+import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
 type ReportRow = {
     id: number;
@@ -135,6 +136,8 @@ onMounted(fetchReports);
 
 <template>
     <div class="rPage">
+        <Breadcrumb :items="[{ label: 'Overview' }, { label: 'Weekly Call Reports' }]" />
+
         <!-- Header -->
         <div class="rPageHead">
             <div>
