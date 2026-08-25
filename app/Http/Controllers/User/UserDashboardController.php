@@ -21,7 +21,6 @@ class UserDashboardController extends Controller
         if (! $companyId) {
             return response()->json([
                 'company' => null,
-                'call_limit' => null,
                 'weekly_history' => [],
                 'recent_reports' => [],
                 'credit_balance' => 0,
@@ -128,13 +127,6 @@ class UserDashboardController extends Controller
                 'name' => $company->name,
                 'timezone' => $company->timezone,
                 'status' => $company->status,
-            ] : null,
-            'call_limit' => $company ? [
-                'monthly_call_limit'   => $company->monthly_call_limit,
-                'call_limit_used'      => (int) $company->call_limit_used,
-                'remaining'            => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
-                'expires_at'           => $company->call_limit_expires_at?->toDateString(),
-                'period_completed'     => $company->isCallLimitPeriodCompleted(),
             ] : null,
             'weekly_history' => $weeklyHistory,
             'recent_reports' => $recentReports,

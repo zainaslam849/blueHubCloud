@@ -109,8 +109,6 @@ Route::prefix('admin/api')->group(function () {
         Route::delete('/companies/{id}/force-delete', [AdminCompaniesController::class, 'forceDelete']);
         Route::post('/companies/sync-tenants', [AdminCompaniesController::class, 'syncTenants']);
         Route::get('/companies/available-tenants', [AdminCompaniesController::class, 'availableTenants']);
-        Route::get('/companies/{id}/renew-suggestion', [AdminCompaniesController::class, 'renewSuggestion'])->whereNumber('id');
-        Route::post('/companies/{id}/renew-limit', [AdminCompaniesController::class, 'renewLimit'])->whereNumber('id');
         
         // Tenant sync settings
         Route::get('/tenant-sync-settings', [AdminTenantSyncController::class, 'index']);

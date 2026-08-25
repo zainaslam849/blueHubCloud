@@ -56,7 +56,7 @@ class AdminUsersController extends Controller
     public function show(int $id): JsonResponse
     {
         $user = User::where('role', User::ROLE_USER)
-            ->with(['company:id,name,status,monthly_call_limit,call_limit_used,call_limit_expires_at,timezone'])
+            ->with(['company:id,name,status,timezone'])
             ->findOrFail($id);
 
         $company = $user->company;
@@ -74,14 +74,6 @@ class AdminUsersController extends Controller
                 'company' => $company ? [
                     'id'   => $company->id,
                     'name' => $company->name,
-                ] : null,
-                // Call limit is company-level; surfaced here read-only for context.
-                'call_limit' => $company ? [
-                    'monthly_call_limit'   => $company->monthly_call_limit,
-                    'call_limit_used'      => (int) $company->call_limit_used,
-                    'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
-                    'call_limit_expires_at'=> $company->call_limit_expires_at?->toDateString(),
-                    'period_completed'     => $company->isCallLimitPeriodCompleted(),
                 ] : null,
             ],
         ]);
@@ -178,7 +170,6 @@ class AdminUsersController extends Controller
             'email'              => $user->email,
             'company_id'         => $user->company_id,
             'account_status'     => $user->account_status ?? User::STATUS_ACTIVE,
-            'monthly_call_limit' => $user->monthly_call_limit,
             'company'            => $user->company
                 ? ['id' => $user->company->id, 'name' => $user->company->name]
                 : null,

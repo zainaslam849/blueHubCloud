@@ -18,7 +18,6 @@ use App\Models\WeeklyCallReport;
 use App\Services\Pbx\CountryTimezoneResolver;
 use App\Services\PbxwareClient;
 use App\Support\ApiResponse;
-use Carbon\CarbonImmutable;
 use App\Exceptions\PbxwareClientException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -52,8 +51,8 @@ class AdminCompaniesController extends Controller
 
         $query = Company::query()
             ->when($includeDeleted, fn ($q) => $q->withTrashed())
-            ->with(['companyPbxAccounts.pbxProvider:id,name', 'users:id,company_id,name'])
-            ->select('id', 'name', 'status', 'timezone', 'monthly_call_limit', 'call_limit_used', 'call_limit_expires_at', 'created_at', 'deleted_at');
+            ->with(['companyPbxAccounts.pbxProvider:id,name', 'users:id,company_id,name,email'])
+            ->select('id', 'name', 'status', 'timezone', 'created_at', 'deleted_at');
 
         // Apply search
         if (!empty($search)) {
@@ -109,11 +108,7 @@ class AdminCompaniesController extends Controller
                 'pbx_provider_name' => $account?->pbxProvider?->name,
                 'assigned_user_id' => $assignedUser?->id,
                 'assigned_user_name' => $assignedUser?->name,
-                'monthly_call_limit' => $company->monthly_call_limit,
-                'call_limit_used' => (int) $company->call_limit_used,
-                'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
-                'call_limit_expires_at' => $company->call_limit_expires_at?->toDateString(),
-                'call_limit_period_completed' => $company->isCallLimitPeriodCompleted(),
+                'assigned_user_email' => $assignedUser?->email,
                 'created_at' => $company->created_at?->toISOString(),
                 'deleted_at' => $company->deleted_at?->toISOString(),
             ];
@@ -173,8 +168,6 @@ class AdminCompaniesController extends Controller
             'name' => $validated['name'],
             'timezone' => $validated['timezone'] ?? config('app.default_company_timezone', 'Australia/Sydney'),
             'status' => $validated['status'] ?? 'active',
-            'monthly_call_limit' => $validated['monthly_call_limit'] ?? null,
-            'call_limit_expires_at' => $validated['call_limit_expires_at'] ?? null,
         ]);
 
         // If server_id provided, link the PBX account
@@ -477,12 +470,6 @@ class AdminCompaniesController extends Controller
             'name' => $validated['name'] ?? $company->name,
             'timezone' => $validated['timezone'] ?? $company->timezone,
             'status' => $validated['status'] ?? $company->status,
-            'monthly_call_limit' => array_key_exists('monthly_call_limit', $validated)
-                ? $validated['monthly_call_limit']
-                : $company->monthly_call_limit,
-            'call_limit_expires_at' => array_key_exists('call_limit_expires_at', $validated)
-                ? $validated['call_limit_expires_at']
-                : $company->call_limit_expires_at,
         ]);
 
         if (array_key_exists('server_id', $validated)) {
@@ -631,61 +618,6 @@ class AdminCompaniesController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'company_id' => $user->company_id,
-            ],
-        ]);
-    }
-
-    /**
-     * Renew a company's call-limit period: reset usage to 0 and set the next expiry.
-     * POST /admin/api/companies/{id}/renew-limit
-     */
-    public function renewLimit(Request $request, int $id): JsonResponse
-    {
-        $company = Company::findOrFail($id);
-        $this->authorize('update', $company);
-
-        $validated = $request->validate([
-            'expires_at' => ['required', 'date'],
-            // Optionally adjust the allowance at renewal time.
-            'monthly_call_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
-        ]);
-
-        $company->call_limit_used = 0;
-        $company->call_limit_expires_at = $validated['expires_at'];
-        if (array_key_exists('monthly_call_limit', $validated)) {
-            $company->monthly_call_limit = $validated['monthly_call_limit'];
-        }
-        $company->save();
-
-        return response()->json([
-            'message' => 'Call limit renewed.',
-            'data' => [
-                'monthly_call_limit' => $company->monthly_call_limit,
-                'call_limit_used' => (int) $company->call_limit_used,
-                'call_limit_remaining' => $company->monthly_call_limit === null ? null : $company->call_limit_remaining,
-                'call_limit_expires_at' => $company->call_limit_expires_at?->toDateString(),
-                'call_limit_period_completed' => $company->isCallLimitPeriodCompleted(),
-            ],
-        ]);
-    }
-
-    /**
-     * Suggested next expiry date for the renew dialog (today + 30 days, company TZ).
-     * GET /admin/api/companies/{id}/renew-suggestion
-     */
-    public function renewSuggestion(int $id): JsonResponse
-    {
-        $company = Company::findOrFail($id);
-        $this->authorize('view', $company);
-
-        $tz = $company->timezone ?: 'UTC';
-        $suggested = CarbonImmutable::now($tz)->addDays(30)->toDateString();
-
-        return response()->json([
-            'data' => [
-                'suggested_expires_at' => $suggested,
-                'current_expires_at' => $company->call_limit_expires_at?->toDateString(),
-                'monthly_call_limit' => $company->monthly_call_limit,
             ],
         ]);
     }

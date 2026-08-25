@@ -36,15 +36,9 @@
                     </div>
                 </div>
 
-                <!-- Quick stat: call limit -->
-                <div class="ud-stats">
+                <!-- Quick stat: company -->
+                <div class="ud-stats" v-if="data.company">
                     <div class="ud-stat">
-                        <div class="ud-stat__val">
-                            {{ data.call_limit && data.call_limit.monthly_call_limit != null ? Number(data.call_limit.monthly_call_limit).toLocaleString() : '∞' }}
-                        </div>
-                        <div class="ud-stat__label">Calls / Month</div>
-                    </div>
-                    <div class="ud-stat" v-if="data.company">
                         <div class="ud-stat__val ud-stat__val--sm">{{ data.company.name }}</div>
                         <div class="ud-stat__label">Company</div>
                     </div>
@@ -104,66 +98,6 @@
                     </section>
 
                 </div>
-
-                <!-- ── Right column — call limit (read-only) ──── -->
-                <div class="ud-col ud-col--wide">
-
-                    <!-- Call Limit card -->
-                    <section class="ud-card">
-                        <div class="ud-card__head">
-                            <svg viewBox="0 0 20 20" fill="none"><path d="M3 10h14M10 3v14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/></svg>
-                            Call Analysis Limit
-                            <span class="ud-card__hint">Set on the Companies page</span>
-                        </div>
-                        <div class="ud-card__body ud-card__body--pad">
-
-                            <div v-if="!data.company" class="ud-empty-mini">
-                                Assign a company to this user to manage call limits.
-                            </div>
-
-                            <template v-else>
-                                <div class="ud-limitInfo">
-                                    <div class="ud-limitIcon">
-                                        <svg viewBox="0 0 24 24" fill="none">
-                                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.41 2 2 0 0 1 3.6 1.22h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.78a16 16 0 0 0 6 6l.85-.85a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21.22 16a1.59 1.59 0 0 1 .78.92Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <div class="ud-limitVal">
-                                            {{ data.call_limit && data.call_limit.monthly_call_limit != null ? Number(data.call_limit.monthly_call_limit).toLocaleString() : 'Unlimited' }}
-                                        </div>
-                                        <div class="ud-limitSub">analysed calls per period</div>
-                                    </div>
-                                </div>
-
-                                <template v-if="data.call_limit && data.call_limit.monthly_call_limit != null">
-                                    <div class="ud-kv">
-                                        <span class="ud-kv__k">Used this period</span>
-                                        <span class="ud-kv__v">{{ Number(data.call_limit.call_limit_used).toLocaleString() }}</span>
-                                    </div>
-                                    <div class="ud-kv">
-                                        <span class="ud-kv__k">Remaining</span>
-                                        <span class="ud-kv__v ud-green">{{ Number(data.call_limit.call_limit_remaining).toLocaleString() }}</span>
-                                    </div>
-                                    <div class="ud-bar-wrap">
-                                        <div class="ud-bar">
-                                            <div class="ud-bar__fill" :style="{ width: usagePct + '%' }" :class="usagePct >= 100 ? 'ud-bar__fill--low' : ''"></div>
-                                        </div>
-                                        <span class="ud-bar__pct">{{ usagePct }}% used</span>
-                                    </div>
-                                    <div class="ud-kv">
-                                        <span class="ud-kv__k">Expires</span>
-                                        <span class="ud-kv__v">
-                                            {{ data.call_limit.call_limit_expires_at ? fmtDate(data.call_limit.call_limit_expires_at) : '—' }}
-                                            <span v-if="data.call_limit.period_completed" class="ud-badge ud-badge--sm ud-badge--warn" style="margin-left:6px">Period ended</span>
-                                        </span>
-                                    </div>
-                                </template>
-                            </template>
-                        </div>
-                    </section>
-
-                </div>
             </div>
         </template>
 
@@ -175,19 +109,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRoute, RouterLink } from "vue-router";
 import adminApi from "../../router/admin/api";
 
 const route   = useRoute();
 const loading = ref(true);
 const data    = ref(null);
-
-const usagePct = computed(() => {
-    const cl = data.value?.call_limit;
-    if (!cl || cl.monthly_call_limit == null || cl.monthly_call_limit === 0) return 0;
-    return Math.min(100, Math.round((cl.call_limit_used / cl.monthly_call_limit) * 100));
-});
 
 const COLORS = ["#6366f1","#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316"];
 function avatarColor(name) {
@@ -275,9 +203,8 @@ onMounted(load);
 .ud-stat__label { font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
 
 /* ── Grid ────────────────────────────────────────────── */
-.ud-grid { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+.ud-grid { display: grid; grid-template-columns: minmax(0, 480px); gap: 20px; align-items: start; }
 .ud-col { display: flex; flex-direction: column; gap: 20px; }
-.ud-col--wide { min-width: 0; }
 
 /* ── Card ────────────────────────────────────────────── */
 .ud-card { background: var(--bg-surface, #fff); border: 1px solid var(--border-soft, #e5e7eb); border-radius: 14px; overflow: hidden; }
@@ -288,7 +215,6 @@ onMounted(load);
 }
 .ud-card__head svg { width: 16px; height: 16px; color: var(--text-secondary); flex-shrink: 0; }
 .ud-card__body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
-.ud-card__body--pad { gap: 20px; }
 
 /* ── Key-value ───────────────────────────────────────── */
 .ud-kv { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -296,39 +222,6 @@ onMounted(load);
 .ud-kv__v { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); text-align: right; }
 .ud-mono { font-family: monospace; font-size: 0.8rem; }
 .ud-empty-mini { font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0; }
-
-/* ── Call limit card ─────────────────────────────────── */
-.ud-limitInfo {
-    display: flex; align-items: center; gap: 16px;
-    padding: 16px;
-    background: color-mix(in srgb, var(--accent, #3b82f6) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 18%, transparent);
-    border-radius: 12px;
-}
-.ud-limitIcon {
-    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-    background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
-    display: grid; place-items: center;
-    color: var(--accent, #3b82f6);
-}
-.ud-limitIcon svg { width: 22px; height: 22px; }
-.ud-limitVal { font-size: 1.6rem; font-weight: 800; color: var(--text-primary); line-height: 1.1; }
-.ud-limitSub { font-size: 0.78rem; color: var(--text-secondary); margin-top: 3px; }
-
-.ud-card__hint {
-    margin-left: auto; font-size: 0.7rem; font-weight: 600;
-    color: var(--text-secondary); text-transform: none; letter-spacing: 0;
-    background: var(--bg-surface-2, #f3f4f6); border: 1px solid var(--border-soft, #e5e7eb);
-    padding: 2px 8px; border-radius: 999px;
-}
-.ud-green { color: #059669; }
-
-/* Usage bar */
-.ud-bar-wrap { margin-top: 2px; }
-.ud-bar { height: 6px; border-radius: 999px; background: var(--bg-surface-2, #f3f4f6); overflow: hidden; }
-.ud-bar__fill { height: 100%; border-radius: 999px; background: #3b82f6; transition: width .3s; }
-.ud-bar__fill--low { background: #ef4444; }
-.ud-bar__pct { font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; display: block; }
 
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 860px) {

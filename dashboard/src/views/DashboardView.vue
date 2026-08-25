@@ -5,14 +5,6 @@ import { auth } from "../composables/useAuth";
 import { useCreditBalance } from "../composables/useCreditBalance";
 import Breadcrumb from "../components/ui/Breadcrumb.vue";
 
-type CallLimit = {
-    monthly_call_limit: number | null;
-    call_limit_used: number;
-    remaining: number | null;
-    expires_at: string | null;
-    period_completed: boolean;
-};
-
 type WeeklyHistory = {
     id: number;
     week_start_date: string;
@@ -42,7 +34,6 @@ type TopCategory = { name: string; count: number; percent: number };
 
 type DashboardData = {
     company: { id: number; name: string; timezone: string; status: string } | null;
-    call_limit: CallLimit | null;
     weekly_history: WeeklyHistory[];
     recent_reports: RecentReport[];
     credit_balance: number;
@@ -432,15 +423,6 @@ onBeforeUnmount(() => {
                 </div>
             </div>
 
-            <!-- Legacy call-limit banner (only for companies still on the old monthly limit) -->
-            <div
-                v-if="data.call_limit && data.call_limit.monthly_call_limit != null && (data.call_limit.period_completed || (data.call_limit.remaining ?? 0) <= 0)"
-                class="warnBanner"
-            >
-                <strong>{{ data.call_limit.period_completed ? 'Your limit period has ended.' : 'You have reached your monthly call limit.' }}</strong>
-                Contact your administrator to {{ data.call_limit.period_completed ? 'renew your plan' : 'increase your limit' }} so blocked weeks can be processed.
-            </div>
-
             <!-- Two-column body -->
             <div class="dashGrid">
                 <!-- Weekly activity -->
@@ -722,12 +704,11 @@ onBeforeUnmount(() => {
 
 .empty { opacity: 0.65; font-size: 0.9rem; }
 
-.errorBanner, .infoBanner, .warnBanner {
+.errorBanner, .infoBanner {
     border-radius: 10px; padding: var(--space-4);
 }
 .errorBanner { background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border); color: var(--color-error); }
 .infoBanner { background: color-mix(in srgb, var(--color-primary) 10%, transparent); border: 1px solid var(--border); }
-.warnBanner { background: var(--color-warning-soft); border: 1px solid var(--color-warning-soft-border); font-size: 0.9rem; line-height: 1.5; }
 
 /* ── Skeletons ───────────────────────────────────────────
    Shown only while `loading` is true — no artificial minimum
