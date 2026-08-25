@@ -211,7 +211,9 @@ async function save() {
         secretKey.value    = "";
         webhookSecret.value = "";
     } catch (e) {
-        error.value = e?.response?.data?.message || "Failed to save Stripe settings.";
+        const fieldErrors = e?.response?.data?.errors;
+        const firstFieldError = fieldErrors ? Object.values(fieldErrors)[0]?.[0] : null;
+        error.value = firstFieldError || e?.response?.data?.message || "Failed to save Stripe settings.";
     } finally {
         saving.value = false;
     }

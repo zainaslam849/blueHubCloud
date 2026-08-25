@@ -95,10 +95,18 @@ class AdminSettingsController extends Controller
     public function updateStripe(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'stripe_public_key'     => ['nullable', 'string', 'max:255'],
-            'stripe_secret_key'     => ['nullable', 'string', 'max:500'],
-            'stripe_webhook_secret' => ['nullable', 'string', 'max:500'],
+            // Regexes catch the "pasted without the sk_/pk_/whsec_ prefix"
+            // mistake at save time instead of failing silently until the next
+            // live Stripe API call (Stripe rejects a bare key with a generic
+            // "Invalid API Key provided" error that gives no hint why).
+            'stripe_public_key'     => ['nullable', 'string', 'max:255', 'regex:/^pk_(test|live)_[A-Za-z0-9]+$/'],
+            'stripe_secret_key'     => ['nullable', 'string', 'max:500', 'regex:/^sk_(test|live)_[A-Za-z0-9]+$/'],
+            'stripe_webhook_secret' => ['nullable', 'string', 'max:500', 'regex:/^whsec_[A-Za-z0-9]+$/'],
             'stripe_test_mode'      => ['sometimes', 'boolean'],
+        ], [
+            'stripe_public_key.regex' => 'That doesn\'t look like a Stripe publishable key — it should start with pk_test_ or pk_live_.',
+            'stripe_secret_key.regex' => 'That doesn\'t look like a Stripe secret key — it should start with sk_test_ or sk_live_. Make sure you copied the whole key.',
+            'stripe_webhook_secret.regex' => 'That doesn\'t look like a Stripe webhook signing secret — it should start with whsec_.',
         ]);
 
         $settings = AppSetting::query()->first() ?? new AppSetting();
