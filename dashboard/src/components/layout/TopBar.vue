@@ -77,29 +77,25 @@ onBeforeUnmount(() => {
     <header class="topbar">
         <div class="left">
             <button
-                class="btn btn--ghost"
+                class="navToggle"
                 type="button"
+                aria-label="Toggle navigation"
                 @click="$emit('toggle-nav')"
             >
-                Menu
+                <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             </button>
-            <div class="crumbs">
-                <span class="company">{{ companyName }}</span>
-                <span class="sep">/</span>
-                <span class="title">{{ title }}</span>
-            </div>
-        </div>
 
-        <form class="searchWrap" @submit.prevent="submitSearch">
-            <svg class="searchIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7.2" stroke="currentColor" stroke-width="1.8"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            <input
-                v-model="searchQuery"
-                type="search"
-                class="searchInput"
-                placeholder="Search calls…"
-                aria-label="Search calls"
-            />
-        </form>
+            <form class="searchWrap" @submit.prevent="submitSearch">
+                <svg class="searchIcon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7.2" stroke="currentColor" stroke-width="1.8"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <input
+                    v-model="searchQuery"
+                    type="search"
+                    class="searchInput"
+                    placeholder="Search calls…"
+                    aria-label="Search calls"
+                />
+            </form>
+        </div>
 
         <div class="right">
             <router-link
@@ -175,9 +171,26 @@ onBeforeUnmount(() => {
 .left {
     display: flex;
     align-items: center;
-    gap: var(--space-4);
+    gap: var(--space-3);
     min-width: 0;
+    flex: 1 1 auto;
 }
+
+.navToggle {
+    display: none;
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.navToggle svg { width: 18px; height: 18px; }
 
 .searchWrap {
     position: relative;
@@ -242,34 +255,13 @@ onBeforeUnmount(() => {
     font-weight: 400;
 }
 
+@media (max-width: 960px) {
+    .navToggle { display: flex; }
+}
+
 @media (max-width: 720px) {
     .searchWrap { display: none; }
     .creditsPill__label { display: none; }
-}
-
-.crumbs {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-}
-
-.company {
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-tight);
-    white-space: nowrap;
-}
-
-.sep {
-    opacity: 0.5;
-}
-
-.title {
-    font-weight: var(--weight-semibold);
-    letter-spacing: var(--tracking-tight);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .right {
@@ -346,9 +338,4 @@ onBeforeUnmount(() => {
     background: var(--border);
 }
 
-@media (max-width: 960px) {
-    .company {
-        display: none;
-    }
-}
 </style>

@@ -299,10 +299,10 @@ onMounted(() => {
                             <span></span>
                         </div>
                         <div v-for="w in data.weekly_history" :key="w.id" class="histRow">
-                            <span>{{ fmtDate(w.week_start_date) }} → {{ fmtDate(w.week_end_date) }}</span>
-                            <span class="mono">{{ w.calls_fetched.toLocaleString() }}</span>
-                            <span class="mono" :class="w.calls_blocked > 0 ? 'warn' : 'muted'">{{ w.calls_blocked.toLocaleString() }}</span>
-                            <span><span class="pill" :class="`pill--${w.status}`">{{ statusLabel(w.status) }}</span></span>
+                            <span data-label="Week">{{ fmtDate(w.week_start_date) }} → {{ fmtDate(w.week_end_date) }}</span>
+                            <span class="mono" data-label="Fetched">{{ w.calls_fetched.toLocaleString() }}</span>
+                            <span class="mono" :class="w.calls_blocked > 0 ? 'warn' : 'muted'" data-label="Blocked">{{ w.calls_blocked.toLocaleString() }}</span>
+                            <span data-label="Status"><span class="pill" :class="`pill--${w.status}`">{{ statusLabel(w.status) }}</span></span>
                             <span class="histRow__action">
                                 <template v-if="weekAction(w).kind === 'done'">
                                     <RouterLink :to="{ name: 'reports' }" class="histLink">View report →</RouterLink>
@@ -548,10 +548,36 @@ onMounted(() => {
 }
 
 @media (max-width: 640px) {
-    .statGrid, .skeleton-row { grid-template-columns: 1fr; }
-    .histRow { grid-template-columns: 1fr 1fr; row-gap: 6px; }
-    .histRow--head { display: none; }
-    .histRow__action { grid-column: 1 / -1; justify-content: flex-start; }
+    .statGrid, .skeleton-row { grid-template-columns: repeat(2, 1fr); }
     .dashHead { flex-direction: column; align-items: flex-start; }
+    .dashHead__cta { align-self: stretch; justify-content: center; }
+    .setupStrip { flex-direction: column; align-items: stretch; }
+    .setupStep { flex: 1 1 auto; }
+
+    /* Weekly activity becomes a stack of cards instead of a table row. */
+    .histRow--head { display: none; }
+    .histRow {
+        grid-template-columns: 1fr 1fr;
+        row-gap: 8px;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        padding: 12px 13px;
+        margin-bottom: 10px;
+    }
+    .histRow:last-child { margin-bottom: 0; }
+    .histRow > [data-label]::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 0.66rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: var(--color-muted);
+        margin-bottom: 2px;
+    }
+    .histRow > [data-label="Week"] { grid-column: 1 / -1; }
+    .histRow__action { grid-column: 1 / -1; justify-content: flex-start; margin-top: 2px; }
+    .histActions { width: 100%; }
+    .histActions .histBtn { flex: 1; }
 }
 </style>

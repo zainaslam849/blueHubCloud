@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import SidebarNav from "../components/layout/SidebarNav.vue";
 import TopBar from "../components/layout/TopBar.vue";
+import MobileTabBar from "../components/layout/MobileTabBar.vue";
 import ToastViewport from "../components/toast/ToastViewport.vue";
 import { provideToasts } from "../composables/useToasts";
 import { logout as apiLogout } from "../api/auth";
@@ -122,6 +123,8 @@ async function handleSignOut() {
             </main>
         </div>
 
+        <MobileTabBar />
+
         <ToastViewport />
     </div>
 </template>
@@ -174,6 +177,13 @@ async function handleSignOut() {
 
     .appShell.collapsed {
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 720px) {
+    .appContent {
+        padding: var(--space-4);
+        padding-bottom: calc(62px + env(safe-area-inset-bottom, 0) + var(--space-4));
     }
 }
 </style>
