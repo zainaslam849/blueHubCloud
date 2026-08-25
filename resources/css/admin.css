@@ -6213,3 +6213,17 @@ html[data-theme="dark"] .admin-callDetailStat__icon {
     transition: background .15s;
 }
 .cmpLimit__renew:hover { background: rgba(59,130,246,.18); }
+
+/* iOS Safari auto-zooms the whole page in when a focused form field's
+   font-size is under 16px — that's what actually causes "auto zoom on tap",
+   not something the viewport meta tag alone prevents. Covers every input
+   across the admin panel in one place, scoped to phone widths only so
+   desktop keeps its normal sizing. !important beats the many smaller
+   per-component font-sizes set throughout this file. */
+@media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}

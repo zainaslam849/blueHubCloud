@@ -169,16 +169,21 @@ function isActive(name: string | undefined) {
         <!-- Brand/Logo -->
         <div class="sidebarHeader">
             <div class="brand" :class="{ 'brand--centered': effectiveCollapsed }">
-                <!-- Logo image fills the header area when available -->
-                <div v-if="props.logoUrl" class="logoWrap">
+                <!-- Collapsed rail: always the compact mark — the full wordmark
+                     logo has no room to breathe squeezed into an icon-sized box. -->
+                <div v-if="effectiveCollapsed" class="brandMark" aria-hidden="true">
+                    <span class="brandInitial">{{ (props.appName ?? 'B').charAt(0).toUpperCase() }}</span>
+                </div>
+                <!-- Expanded: the real logo image when one is configured -->
+                <div v-else-if="props.logoUrl" class="logoWrap">
                     <img :src="props.logoUrl" :alt="props.appName ?? 'Logo'" class="logoImg" />
                 </div>
-                <!-- Fallback: gradient mark + name -->
+                <!-- Expanded fallback: gradient mark + name, when no logo is configured -->
                 <template v-else>
                     <div class="brandMark" aria-hidden="true">
                         <span class="brandInitial">{{ (props.appName ?? 'B').charAt(0).toUpperCase() }}</span>
                     </div>
-                    <span v-if="!effectiveCollapsed" class="brandName">{{ props.appName ?? 'BlueHub' }}</span>
+                    <span class="brandName">{{ props.appName ?? 'BlueHub' }}</span>
                 </template>
             </div>
 
@@ -345,18 +350,8 @@ function isActive(name: string | undefined) {
     display: block;
 }
 
-.sidebar.collapsed .logoWrap {
-    flex: none;
-    width: 44px;
-    height: 44px;
-    padding: 6px;
-}
-
-.sidebar.collapsed .logoImg {
-    object-position: center center;
-}
-
-/* Fallback gradient mark */
+/* Compact brand mark — shown on the collapsed rail, and as the expanded
+   fallback when no logo image is configured. */
 .brandMark {
     width: 36px;
     height: 36px;

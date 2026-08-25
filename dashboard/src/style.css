@@ -256,6 +256,22 @@ svg.lucide {
     );
 }
 
+/* iOS Safari auto-zooms the whole page in when a focused form field's
+   font-size is under 16px — that's the actual cause of the "auto zoom on
+   tap" behavior, not something the viewport meta tag alone can prevent.
+   Every input/select/textarea across the app (search bars, filters,
+   passwords, credit amounts, etc.) is covered here in one place rather
+   than needing a per-component fix, scoped to phone widths only so
+   desktop keeps its normal, more compact sizing. !important is needed to
+   reliably beat the many scoped component styles that set a smaller size. */
+@media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+        font-size: 16px !important;
+    }
+}
+
 /* Table row hover helper (opt-in) */
 .rowHover {
     transition:
