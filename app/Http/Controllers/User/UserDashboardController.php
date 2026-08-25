@@ -5,12 +5,13 @@ namespace App\Http\Controllers\User;
 use App\Http\Controllers\Controller;
 use App\Models\CompanyWeeklyFetch;
 use App\Models\WeeklyCallReport;
+use App\Services\Billing\CreditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
 class UserDashboardController extends Controller
 {
-    public function show(): JsonResponse
+    public function show(CreditService $creditService): JsonResponse
     {
         $user = Auth::guard('web')->user();
 
@@ -22,6 +23,8 @@ class UserDashboardController extends Controller
                 'call_limit' => null,
                 'weekly_history' => [],
                 'recent_reports' => [],
+                'credit_balance' => 0,
+                'top_categories' => [],
                 'message' => 'Your account is pending company assignment. Contact your administrator.',
             ]);
         }
@@ -31,7 +34,7 @@ class UserDashboardController extends Controller
         $recentReports = WeeklyCallReport::where('company_id', $companyId)
             ->orderByDesc('week_start_date')
             ->limit(5)
-            ->get(['id', 'week_start_date', 'week_end_date', 'status', 'total_calls', 'answered_calls', 'minutes_consumed', 'generated_at'])
+            ->get(['id', 'week_start_date', 'week_end_date', 'status', 'total_calls', 'answered_calls', 'minutes_consumed', 'generated_at', 'metrics'])
             ->map(fn ($r) => [
                 'id' => $r->id,
                 'week_start_date' => $r->week_start_date?->toDateString(),
@@ -41,7 +44,38 @@ class UserDashboardController extends Controller
                 'answered_calls' => $r->answered_calls,
                 'minutes_consumed' => $r->minutes_consumed,
                 'generated_at' => $r->generated_at?->toIso8601String(),
+                'category_count' => count($r->metrics['category_counts'] ?? []),
             ]);
+
+        // "What callers wanted" — top categories from the most recent
+        // completed report. Breakdown keys are "{id}|{name}" (see
+        // GenerateWeeklyPbxReportsJob) to keep same-named categories
+        // distinct; strip the id here so the API never leaks it.
+        $latestCompleted = WeeklyCallReport::where('company_id', $companyId)
+            ->where('status', 'completed')
+            ->orderByDesc('week_start_date')
+            ->first(['metrics']);
+
+        $topCategories = [];
+        $categoryCounts = $latestCompleted?->metrics['category_counts'] ?? [];
+        if ($categoryCounts !== []) {
+            arsort($categoryCounts);
+            $total = array_sum($categoryCounts);
+            $topCategories = collect($categoryCounts)
+                ->take(4)
+                ->map(function (int $count, string $key) use ($total) {
+                    $sep = strpos($key, '|');
+                    $name = $sep === false ? $key : substr($key, $sep + 1);
+
+                    return [
+                        'name' => $name,
+                        'count' => $count,
+                        'percent' => $total > 0 ? round($count / $total * 100, 1) : 0,
+                    ];
+                })
+                ->values()
+                ->all();
+        }
 
         // Per-week usage history (drives the "process remaining" smart buttons).
         // Map each week to whether a completed report already exists for it.
@@ -86,6 +120,8 @@ class UserDashboardController extends Controller
             ] : null,
             'weekly_history' => $weeklyHistory,
             'recent_reports' => $recentReports,
+            'credit_balance' => $company ? $creditService->availableCredits($company) : 0,
+            'top_categories' => $topCategories,
         ]);
     }
 }

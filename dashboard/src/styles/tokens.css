@@ -138,6 +138,17 @@
     --surface: var(--color-surface);
     --surface-2: var(--color-surface-2);
     --border: var(--color-border);
+
+    /* Sidebar — always the dark brand indigo, in both light and dark theme
+       (the same navy the logo's "cloud" mark uses). This is intentionally
+       NOT theme-dependent: it's what gives the shell its branded look. */
+    --sidebar-bg: #1d1945;
+    --sidebar-bg-2: #262052;
+    --sidebar-border: #332c63;
+    --sidebar-text: #ffffff;
+    --sidebar-text-muted: #a9a4c9;
+    --sidebar-text-faint: #8b86a8;
+    --sidebar-active-bg: var(--color-primary);
 }
 
 /* Global thin scrollbars — every scrollable area (page, sidebar, modals)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { userApi } from "../api/user";
 
 type CallRow = {
@@ -33,6 +33,7 @@ type Meta = { currentPage: number; lastPage: number; perPage: number; total: num
 type Category = { id: number; name: string };
 
 const router = useRouter();
+const route = useRoute();
 
 const loading = ref(true);
 const error = ref("");
@@ -293,6 +294,10 @@ watch(() => search.value, () => {
 watch(() => pageSize.value, () => { page.value = 1; fetchCalls(); });
 
 onMounted(() => {
+    const q = route.query.q;
+    if (typeof q === "string" && q.trim() !== "") {
+        search.value = q;
+    }
     updateViewport();
     window.addEventListener("resize", updateViewport);
     document.addEventListener("click", onDocumentClick);

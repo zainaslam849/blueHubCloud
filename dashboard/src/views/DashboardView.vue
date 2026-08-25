@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import Card from "../components/ui/Card.vue";
-import PageHeader from "../components/ui/PageHeader.vue";
 import { userApi } from "../api/user";
+import { auth } from "../composables/useAuth";
+import { useCreditBalance } from "../composables/useCreditBalance";
 
 type CallLimit = {
     monthly_call_limit: number | null;
@@ -19,7 +19,7 @@ type WeeklyHistory = {
     calls_available: number;
     calls_fetched: number;
     calls_blocked: number;
-    status: string; // complete | partial | paused
+    status: string; // complete | partial | paused | insufficient_credits
     report_available: boolean;
 };
 
@@ -30,16 +30,24 @@ type RecentReport = {
     status: string;
     total_calls: number;
     answered_calls: number;
+    minutes_consumed: number | null;
     generated_at: string | null;
+    category_count: number;
 };
+
+type TopCategory = { name: string; count: number; percent: number };
 
 type DashboardData = {
     company: { id: number; name: string; timezone: string; status: string } | null;
     call_limit: CallLimit | null;
     weekly_history: WeeklyHistory[];
     recent_reports: RecentReport[];
+    credit_balance: number;
+    top_categories: TopCategory[];
     message?: string;
 };
+
+const { state: creditState, refresh: refreshCredits } = useCreditBalance();
 
 const loading = ref(true);
 const data = ref<DashboardData | null>(null);
@@ -48,11 +56,45 @@ const processingId = ref<number | null>(null);
 const toast = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
-const usagePct = computed(() => {
-    const cl = data.value?.call_limit;
-    if (!cl || cl.monthly_call_limit == null || cl.monthly_call_limit === 0) return 0;
-    return Math.min(100, Math.round((cl.call_limit_used / cl.monthly_call_limit) * 100));
+const firstName = computed(() => (auth.state.user?.name ?? "").split(/\s+/)[0] || "there");
+
+const greeting = computed(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 18) return "Good afternoon";
+    return "Good evening";
 });
+
+const callsAnalysedThisWeek = computed(() => {
+    const latest = data.value?.weekly_history?.[0];
+    return latest?.calls_fetched ?? 0;
+});
+
+const callsAnalysedTrend = computed(() => {
+    const hist = data.value?.weekly_history ?? [];
+    if (hist.length < 2) return null;
+    const latest = hist[0];
+    const prev = hist[1];
+    if (!latest || !prev || !prev.calls_fetched) return null;
+    const change = ((latest.calls_fetched - prev.calls_fetched) / prev.calls_fetched) * 100;
+    return Math.round(change * 10) / 10;
+});
+
+const minutesTranscribed = computed(() => data.value?.recent_reports?.[0]?.minutes_consumed ?? null);
+
+const reportsReadyCount = computed(
+    () => data.value?.recent_reports?.filter((r) => r.status === "completed").length ?? 0,
+);
+
+const setupSteps = computed(() => {
+    const company = data.value?.company;
+    return [
+        { key: "connected", label: "Phone system connected", done: company?.status === "active" },
+        { key: "report", label: "First report generated", done: (data.value?.recent_reports?.length ?? 0) > 0 },
+        { key: "topup", label: "Turn on auto top-up", done: creditState.autoTopupEnabled, to: { name: "billing" } },
+    ];
+});
+const setupDoneCount = computed(() => setupSteps.value.filter((s) => s.done).length);
 
 function showToast(msg: string) {
     toast.value = msg;
@@ -122,17 +164,16 @@ function statusLabel(status: string): string {
     return map[status] ?? status;
 }
 
-onMounted(load);
+onMounted(() => {
+    load();
+    refreshCredits();
+});
 </script>
 
 <template>
     <div class="page">
-        <PageHeader
-            title="Dashboard"
-            :description="data?.company ? `Welcome back — ${data.company.name}` : 'Your reporting overview'"
-        />
-
         <div v-if="loading" class="skeleton-row">
+            <div class="sk-card"></div>
             <div class="sk-card"></div>
             <div class="sk-card"></div>
             <div class="sk-card"></div>
@@ -143,132 +184,208 @@ onMounted(load);
         <div v-else-if="data?.message && !data.company" class="infoBanner">{{ data.message }}</div>
 
         <template v-else-if="data">
-            <!-- Call limit summary -->
-            <section class="grid3" style="margin-bottom: var(--space-4)">
-                <Card title="Calls remaining">
-                    <div class="bigStat">
-                        {{ data.call_limit && data.call_limit.monthly_call_limit != null
-                            ? (data.call_limit.remaining ?? 0).toLocaleString()
-                            : '∞' }}
-                    </div>
-                    <div class="statSub" v-if="data.call_limit && data.call_limit.monthly_call_limit != null">
-                        {{ data.call_limit.call_limit_used.toLocaleString() }} of
-                        {{ data.call_limit.monthly_call_limit.toLocaleString() }} used
-                    </div>
-                    <div class="statSub" v-else>Unlimited plan.</div>
-                    <div v-if="data.call_limit && data.call_limit.monthly_call_limit != null" class="bar">
-                        <div class="bar__fill" :style="{ width: usagePct + '%' }" :class="{ 'bar__fill--full': usagePct >= 100 }"></div>
-                    </div>
-                </Card>
+            <!-- Header -->
+            <div class="dashHead">
+                <div>
+                    <h1 class="dashHead__title">{{ greeting }}, {{ firstName }}</h1>
+                    <p class="dashHead__sub">Here's what happened across your phone lines last week.</p>
+                </div>
+                <RouterLink :to="{ name: 'select-plan' }" class="dashHead__cta">
+                    <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14m7-7H5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                    Buy credits
+                </RouterLink>
+            </div>
 
-                <Card title="Limit period">
-                    <div class="bigStat bigStat--sm">
-                        {{ data.call_limit?.expires_at ? fmtDate(data.call_limit.expires_at) : '—' }}
+            <!-- Stat cards -->
+            <section class="statGrid">
+                <div class="statCard">
+                    <div class="statCard__label">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" stroke="currentColor" stroke-width="1.9"/><path d="M12 8.3v7.4M8.3 12h7.4" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                        Credit balance
                     </div>
-                    <div class="statSub">
-                        <span v-if="data.call_limit?.period_completed" class="warn">Period ended — contact admin to renew</span>
-                        <span v-else>Resets on expiry date</span>
+                    <div class="statCard__value">{{ data.credit_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
+                    <div class="statCard__hint" :class="creditState.autoTopupEnabled ? 'statCard__hint--ok' : 'statCard__hint--warn'">
+                        Auto top-up is {{ creditState.autoTopupEnabled ? 'on' : 'off' }}
                     </div>
-                </Card>
+                </div>
 
-                <Card title="Company">
-                    <div class="bigStat bigStat--sm">{{ data.company?.name ?? '—' }}</div>
-                    <div class="statSub">
-                        <span :class="data.company?.status === 'active' ? 'ok' : 'warn'">
-                            {{ data.company?.status ?? 'unassigned' }}
-                        </span>
+                <div class="statCard">
+                    <div class="statCard__label">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M5 4h4l2 5-2.5 1.5a12 12 0 0 0 5 5L15 13l5 2v4a1.6 1.6 0 0 1-1.8 1.6A16.5 16.5 0 0 1 3.4 5.8 1.6 1.6 0 0 1 5 4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+                        Calls analysed
                     </div>
-                </Card>
+                    <div class="statCard__value">{{ callsAnalysedThisWeek.toLocaleString() }}</div>
+                    <div v-if="callsAnalysedTrend !== null" class="statCard__hint" :class="callsAnalysedTrend >= 0 ? 'statCard__hint--ok' : 'statCard__hint--warn'">
+                        {{ callsAnalysedTrend >= 0 ? '▲' : '▼' }} {{ Math.abs(callsAnalysedTrend) }}% vs last week
+                    </div>
+                    <div v-else class="statCard__hint">This week so far</div>
+                </div>
+
+                <div class="statCard">
+                    <div class="statCard__label">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.4V12l3 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                        Minutes transcribed
+                    </div>
+                    <div class="statCard__value">{{ minutesTranscribed != null ? minutesTranscribed.toLocaleString() : '—' }}</div>
+                    <div class="statCard__hint">Latest completed report</div>
+                </div>
+
+                <div class="statCard">
+                    <div class="statCard__label">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M5 20V10m4.7 10V4m4.6 16v-7m4.7 7V8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                        Reports ready
+                    </div>
+                    <div class="statCard__value">{{ reportsReadyCount }}</div>
+                    <RouterLink v-if="reportsReadyCount > 0" :to="{ name: 'reports' }" class="statCard__hint statCard__hint--link">View latest report →</RouterLink>
+                    <div v-else class="statCard__hint">None yet</div>
+                </div>
             </section>
 
-            <!-- Limit reached / period ended banner -->
+            <!-- Setup checklist -->
+            <div v-if="setupDoneCount < setupSteps.length" class="setupStrip">
+                <div class="setupStrip__label">
+                    <div class="setupStrip__title">Finish setting up</div>
+                    <div class="setupStrip__sub">{{ setupDoneCount }} of {{ setupSteps.length }} done</div>
+                </div>
+                <div class="setupStrip__steps">
+                    <template v-for="step in setupSteps" :key="step.key">
+                        <RouterLink
+                            v-if="!step.done && step.to"
+                            :to="step.to"
+                            class="setupStep setupStep--todo"
+                        >
+                            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.6 2.6"/></svg>
+                            <span>{{ step.label }}</span>
+                        </RouterLink>
+                        <div v-else class="setupStep" :class="step.done ? 'setupStep--done' : 'setupStep--todo'">
+                            <svg v-if="step.done" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="m8 12.2 2.7 2.6L16 9.5" stroke="var(--color-surface)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            <svg v-else viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.6 2.6"/></svg>
+                            <span>{{ step.label }}</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Legacy call-limit banner (only for companies still on the old monthly limit) -->
             <div
-                v-if="data.call_limit && (data.call_limit.period_completed || (data.call_limit.monthly_call_limit != null && (data.call_limit.remaining ?? 0) <= 0))"
+                v-if="data.call_limit && data.call_limit.monthly_call_limit != null && (data.call_limit.period_completed || (data.call_limit.remaining ?? 0) <= 0)"
                 class="warnBanner"
             >
                 <strong>{{ data.call_limit.period_completed ? 'Your limit period has ended.' : 'You have reached your monthly call limit.' }}</strong>
                 Contact your administrator to {{ data.call_limit.period_completed ? 'renew your plan' : 'increase your limit' }} so blocked weeks can be processed.
             </div>
 
-            <!-- Weekly usage history -->
-            <Card title="Weekly usage history" subtitle="Calls fetched per week and pending work">
-                <div v-if="data.weekly_history.length === 0" class="empty">
-                    No weekly activity yet. The weekly pipeline runs automatically; processed weeks will appear here.
-                </div>
-                <div v-else class="histList">
-                    <div class="histRow histRow--head">
-                        <span>Week</span>
-                        <span>Fetched</span>
-                        <span>Blocked</span>
-                        <span>Status</span>
-                        <span>Action</span>
+            <!-- Two-column body -->
+            <div class="dashGrid">
+                <!-- Weekly activity -->
+                <div class="panel">
+                    <div class="panel__head">
+                        <div>
+                            <div class="panel__title">Weekly activity</div>
+                            <div class="panel__sub">Calls pulled from your PBX, week by week</div>
+                        </div>
+                        <RouterLink :to="{ name: 'reports' }" class="panel__link">See all</RouterLink>
                     </div>
-                    <div v-for="w in data.weekly_history" :key="w.id" class="histRow">
-                        <span>{{ fmtDate(w.week_start_date) }} → {{ fmtDate(w.week_end_date) }}</span>
-                        <span>{{ w.calls_fetched.toLocaleString() }}<span class="muted" v-if="w.calls_available"> / {{ w.calls_available.toLocaleString() }}</span></span>
-                        <span :class="w.calls_blocked > 0 ? 'warn' : ''">{{ w.calls_blocked.toLocaleString() }}</span>
-                        <span><span class="pill" :class="`pill--${w.status}`">{{ statusLabel(w.status) }}</span></span>
-                        <span>
-                            <template v-if="weekAction(w).kind === 'done'">
-                                <RouterLink :to="{ name: 'reports' }" class="histLink">View reports</RouterLink>
-                            </template>
-                            <template v-else-if="weekAction(w).kind === 'credits'">
-                                <span class="histActions">
-                                    <RouterLink :to="{ name: 'select-plan' }" class="histBtn histBtn--credits">
-                                        Add Credits
-                                    </RouterLink>
+
+                    <div v-if="data.weekly_history.length === 0" class="empty">
+                        No weekly activity yet. The weekly pipeline runs automatically; processed weeks will appear here.
+                    </div>
+                    <div v-else class="histList">
+                        <div class="histRow histRow--head">
+                            <span>Week</span>
+                            <span>Fetched</span>
+                            <span>Blocked</span>
+                            <span>Status</span>
+                            <span></span>
+                        </div>
+                        <div v-for="w in data.weekly_history" :key="w.id" class="histRow">
+                            <span>{{ fmtDate(w.week_start_date) }} → {{ fmtDate(w.week_end_date) }}</span>
+                            <span class="mono">{{ w.calls_fetched.toLocaleString() }}</span>
+                            <span class="mono" :class="w.calls_blocked > 0 ? 'warn' : 'muted'">{{ w.calls_blocked.toLocaleString() }}</span>
+                            <span><span class="pill" :class="`pill--${w.status}`">{{ statusLabel(w.status) }}</span></span>
+                            <span class="histRow__action">
+                                <template v-if="weekAction(w).kind === 'done'">
+                                    <RouterLink :to="{ name: 'reports' }" class="histLink">View report →</RouterLink>
+                                </template>
+                                <template v-else-if="weekAction(w).kind === 'credits'">
+                                    <span class="histActions">
+                                        <RouterLink :to="{ name: 'select-plan' }" class="histBtn histBtn--credits">
+                                            Add Credits
+                                        </RouterLink>
+                                        <button
+                                            class="histBtn histBtn--muted"
+                                            :disabled="processingId === w.id"
+                                            @click="processWeek(w)"
+                                        >
+                                            {{ processingId === w.id ? 'Checking…' : 'Run Again' }}
+                                        </button>
+                                    </span>
+                                </template>
+                                <template v-else>
                                     <button
                                         class="histBtn"
-                                        :disabled="processingId === w.id"
+                                        :class="{ 'histBtn--muted': weekAction(w).disabled }"
+                                        :disabled="weekAction(w).disabled || processingId === w.id"
                                         @click="processWeek(w)"
                                     >
-                                        {{ processingId === w.id ? 'Checking…' : 'Run Again' }}
+                                        {{ processingId === w.id ? 'Starting…' : weekAction(w).label }}
                                     </button>
-                                </span>
-                            </template>
-                            <template v-else>
-                                <button
-                                    class="histBtn"
-                                    :class="{ 'histBtn--muted': weekAction(w).disabled }"
-                                    :disabled="weekAction(w).disabled || processingId === w.id"
-                                    @click="processWeek(w)"
-                                >
-                                    {{ processingId === w.id ? 'Starting…' : weekAction(w).label }}
-                                </button>
-                            </template>
-                        </span>
-                    </div>
-                    <div v-if="data.weekly_history.some((w) => w.status === 'insufficient_credits')" class="creditsBanner">
-                        Some weeks weren't processed because your company ran out of credits.
-                        <RouterLink :to="{ name: 'select-plan' }">Add credits</RouterLink>
-                        then click "Run Again" below (or wait for the pipeline to run automatically) to catch up.
+                                </template>
+                            </span>
+                        </div>
+                        <div v-if="data.weekly_history.some((w) => w.status === 'insufficient_credits')" class="creditsBanner">
+                            Some weeks weren't processed because your company ran out of credits.
+                            <RouterLink :to="{ name: 'select-plan' }">Add credits</RouterLink>
+                            then click "Run Again" (or wait for the pipeline to run automatically) to catch up.
+                        </div>
                     </div>
                 </div>
-            </Card>
 
-            <!-- Recent reports -->
-            <Card title="Recent reports" subtitle="Last 5 weekly call reports" style="margin-top: var(--space-4)">
-                <div v-if="data.recent_reports.length === 0" class="empty">
-                    No reports yet. Reports are generated weekly after calls are processed.
-                </div>
-                <div v-else class="reportList">
-                    <div class="reportRow reportRow--head">
-                        <span>Week</span>
-                        <span>Calls</span>
-                        <span>Status</span>
+                <!-- Right column -->
+                <div class="dashSide">
+                    <div class="panel">
+                        <div class="panel__title">What callers wanted</div>
+                        <div class="panel__sub">Top categories, most recent report</div>
+
+                        <div v-if="data.top_categories.length === 0" class="empty" style="margin-top: 10px">
+                            No categorised calls yet.
+                        </div>
+                        <div v-else class="catList">
+                            <div v-for="cat in data.top_categories" :key="cat.name" class="catRow">
+                                <div class="catRow__head">
+                                    <span>{{ cat.name }}</span>
+                                    <span class="mono muted">{{ cat.count }}</span>
+                                </div>
+                                <div class="catRow__bar"><div class="catRow__fill" :style="{ width: cat.percent + '%' }"></div></div>
+                            </div>
+                        </div>
                     </div>
-                    <RouterLink
-                        v-for="r in data.recent_reports"
-                        :key="r.id"
-                        :to="{ name: 'report-detail', params: { id: r.id } }"
-                        class="reportRow reportRow--link"
-                    >
-                        <span>{{ r.week_start_date }} → {{ r.week_end_date }}</span>
-                        <span>{{ r.answered_calls }} / {{ r.total_calls }}</span>
-                        <span :class="r.status === 'completed' ? 'ok' : ''">{{ statusLabel(r.status) }}</span>
-                    </RouterLink>
+
+                    <div class="panel">
+                        <div class="panel__title">Recent reports</div>
+                        <div v-if="data.recent_reports.length === 0" class="empty" style="margin-top: 10px">
+                            No reports yet. Reports are generated weekly after calls are processed.
+                        </div>
+                        <div v-else class="reportList">
+                            <RouterLink
+                                v-for="r in data.recent_reports"
+                                :key="r.id"
+                                :to="{ name: 'report-detail', params: { id: r.id } }"
+                                class="reportRow"
+                            >
+                                <div class="reportRow__icon">
+                                    <svg viewBox="0 0 24 24" fill="none"><path d="M5 20V10m4.7 10V4m4.6 16v-7m4.7 7V8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                                </div>
+                                <div class="reportRow__body">
+                                    <div class="reportRow__title">{{ fmtDate(r.week_start_date) }} – {{ fmtDate(r.week_end_date) }}</div>
+                                    <div class="reportRow__sub">{{ r.total_calls }} calls · {{ r.category_count }} categories</div>
+                                </div>
+                                <svg class="reportRow__chevron" viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                            </RouterLink>
+                        </div>
+                    </div>
                 </div>
-            </Card>
+            </div>
         </template>
 
         <Transition name="toast">
@@ -278,79 +395,163 @@ onMounted(load);
 </template>
 
 <style scoped>
-.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
-.bigStat { font-size: 1.6rem; font-weight: 800; line-height: 1.2; }
-.bigStat--sm { font-size: 1.15rem; }
-.statSub { margin-top: 6px; opacity: 0.7; font-size: 0.88rem; }
-.ok { color: #1f9d55; }
-.warn { color: #b7791f; }
+.page { display: flex; flex-direction: column; gap: 18px; }
 
-.bar { margin-top: 10px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
-.bar__fill { height: 100%; border-radius: 999px; background: var(--color-primary, #3b82f6); transition: width 0.3s; }
-.bar__fill--full { background: #ef4444; }
-
-.errorBanner, .infoBanner, .warnBanner {
-    border-radius: 10px; padding: var(--space-4); margin-bottom: var(--space-4);
+/* ── Header ──────────────────────────────────────────── */
+.dashHead { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.dashHead__title { margin: 0; font-size: 1.9rem; font-weight: 700; letter-spacing: -0.015em; line-height: 1.15; }
+.dashHead__sub { margin: 6px 0 0 0; color: var(--color-muted); font-size: 0.92rem; }
+.dashHead__cta {
+    display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 10px;
+    background: var(--color-primary); color: #fff; font-size: 0.88rem; font-weight: 600; text-decoration: none;
+    box-shadow: 0 1px 2px rgba(29, 25, 69, 0.1);
 }
-.errorBanner { background: color-mix(in srgb, #e53e3e 12%, transparent); border: 1px solid #e53e3e; color: #e53e3e; }
-.infoBanner { background: color-mix(in srgb, var(--color-primary) 10%, transparent); border: 1px solid var(--border); }
-.warnBanner { background: color-mix(in srgb, #f59e0b 12%, transparent); border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent); font-size: 0.9rem; line-height: 1.5; }
+.dashHead__cta:hover { text-decoration: none; filter: brightness(1.05); }
+.dashHead__cta svg { width: 15px; height: 15px; }
 
-.skeleton-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); margin-bottom: var(--space-4); }
-.sk-card { height: 100px; border-radius: 12px; background: color-mix(in srgb, var(--color-text) 8%, transparent); }
+/* ── Stat cards ──────────────────────────────────────── */
+.statGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.statCard {
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 18px;
+    box-shadow: var(--shadow-xs);
+}
+.statCard__label {
+    display: flex; align-items: center; gap: 7px; color: var(--color-muted); font-size: 0.76rem; font-weight: 500;
+}
+.statCard__label svg { width: 14px; height: 14px; flex-shrink: 0; }
+.statCard__value { font-size: 1.9rem; font-weight: 700; line-height: 1.15; margin-top: 10px; letter-spacing: -0.01em; }
+.statCard__hint { display: block; margin-top: 8px; font-size: 0.76rem; color: var(--color-muted); text-decoration: none; }
+.statCard__hint--ok { color: var(--color-success); }
+.statCard__hint--warn { color: var(--color-warning); }
+.statCard__hint--link { color: var(--color-primary); font-weight: 500; }
+.statCard__hint--link:hover { text-decoration: underline; }
 
-.histList, .reportList { display: grid; gap: 8px; }
+/* ── Setup checklist ─────────────────────────────────── */
+.setupStrip {
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px;
+    padding: 15px 18px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.setupStrip__label { min-width: 170px; }
+.setupStrip__title { font-weight: 600; font-size: 0.92rem; }
+.setupStrip__sub { font-size: 0.8rem; color: var(--color-muted); margin-top: 2px; }
+.setupStrip__steps { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; }
+.setupStep {
+    flex: 1 1 180px; display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 10px;
+    text-decoration: none; font-size: 0.84rem;
+}
+.setupStep svg { width: 17px; height: 17px; flex-shrink: 0; }
+.setupStep--done { background: var(--color-success-soft); border: 1px solid var(--color-success-soft-border); color: var(--color-success); }
+.setupStep--todo { background: var(--color-primary-soft); border: 1px solid var(--color-primary-soft-border); color: var(--color-primary); font-weight: 500; }
+.setupStep--todo:hover { text-decoration: none; filter: brightness(0.97); }
+
+/* ── Two-column body ─────────────────────────────────── */
+.dashGrid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.dashSide { display: flex; flex-direction: column; gap: 14px; }
+
+.panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 16px 18px; }
+.panel__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.panel__title { font-weight: 600; font-size: 0.95rem; }
+.panel__sub { font-size: 0.8rem; color: var(--color-muted); margin-top: 2px; }
+.panel__link { font-size: 0.8rem; color: var(--color-primary); font-weight: 500; text-decoration: none; white-space: nowrap; }
+.panel__link:hover { text-decoration: underline; }
+
+/* ── Weekly activity table ───────────────────────────── */
+.histList { display: flex; flex-direction: column; gap: 0; margin-top: 8px; }
 .histRow {
-    display: grid; grid-template-columns: 2fr 1fr 1fr 1.1fr 1.6fr; gap: var(--space-3);
-    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; align-items: center;
+    display: grid; grid-template-columns: 1.6fr 0.85fr 0.85fr 1.1fr 1.5fr; gap: 12px;
+    padding: 12px 4px; align-items: center; font-size: 0.87rem; border-bottom: 1px solid var(--color-border);
 }
-.histRow--head { font-weight: 700; background: var(--surface-2); }
-.muted { opacity: 0.5; }
+.histRow--head { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; color: var(--color-muted); text-transform: uppercase; padding: 0 4px 8px; border-bottom: 1px solid var(--color-border); }
+.histRow:last-child { border-bottom: none; }
+.histRow__action { display: flex; justify-content: flex-end; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--color-muted); }
+.warn { color: var(--color-warning); }
+.ok { color: var(--color-success); }
 
-.pill { padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
-.pill--complete { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
-.pill--partial { background: color-mix(in srgb, #f59e0b 16%, transparent); color: #b45309; }
-.pill--paused { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
-.pill--insufficient_credits { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+.pill { padding: 3px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+.pill--complete { background: var(--color-success-soft); color: var(--color-success); }
+.pill--completed { background: var(--color-success-soft); color: var(--color-success); }
+.pill--partial { background: var(--color-warning-soft); color: var(--color-warning); }
+.pill--paused { background: var(--color-error-soft); color: var(--color-error); }
+.pill--insufficient_credits { background: var(--color-error-soft); color: var(--color-error); }
 
 .histBtn {
-    height: 30px; padding: 0 12px; border-radius: 7px; cursor: pointer; font-size: 0.8rem; font-weight: 600;
-    background: var(--color-primary, #3b82f6); color: #fff; border: none; white-space: nowrap;
+    height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 600;
+    background: var(--color-primary); color: #fff; border: none; white-space: nowrap;
     display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
 }
 .histBtn:hover:not(:disabled) { filter: brightness(1.05); }
 .histBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-.histBtn--muted { background: var(--surface-2); color: var(--color-text); }
-.histBtn--credits { background: #dc2626; }
-.histLink { font-size: 0.82rem; font-weight: 600; color: var(--color-primary, #3b82f6); text-decoration: none; }
+.histBtn--muted { background: transparent; color: var(--color-text); border: 1px solid var(--color-border-strong); }
+.histBtn--credits { background: var(--color-error); }
+.histLink { font-size: 0.82rem; font-weight: 500; color: var(--color-primary); text-decoration: none; }
 .histLink:hover { text-decoration: underline; }
 
-.histActions { display: flex; gap: 6px; flex-wrap: wrap; }
+.histActions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 .creditsBanner {
-    margin-top: 4px; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem;
-    background: color-mix(in srgb, #ef4444 10%, transparent); border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+    margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 0.82rem; line-height: 1.5;
+    background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border);
 }
-.creditsBanner a { color: var(--color-primary, #3b82f6); font-weight: 600; }
+.creditsBanner a { color: var(--color-primary); font-weight: 600; }
 
-.reportRow { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: var(--space-3); padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; }
-.reportRow--head { font-weight: 700; background: var(--surface-2); }
-.reportRow--link { text-decoration: none; color: inherit; transition: background 0.12s; }
-.reportRow--link:hover { background: var(--surface-2); }
+/* ── What callers wanted ─────────────────────────────── */
+.catList { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.catRow__head { display: flex; justify-content: space-between; font-size: 0.84rem; margin-bottom: 6px; }
+.catRow__bar { height: 6px; border-radius: 999px; background: var(--color-surface-2); overflow: hidden; }
+.catRow__fill { height: 100%; border-radius: 999px; background: var(--color-primary); }
+
+/* ── Recent reports list ─────────────────────────────── */
+.reportList { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
+.reportRow {
+    display: flex; align-items: center; gap: 11px; padding: 9px 8px; margin: 0 -8px; border-radius: 9px;
+    text-decoration: none; color: inherit; transition: background 0.12s;
+}
+.reportRow:hover { background: var(--color-surface-2); text-decoration: none; }
+.reportRow__icon {
+    width: 34px; height: 34px; border-radius: 9px; background: var(--color-primary-soft); color: var(--color-primary);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.reportRow__icon svg { width: 16px; height: 16px; }
+.reportRow__body { flex: 1; min-width: 0; }
+.reportRow__title { font-size: 0.85rem; font-weight: 500; }
+.reportRow__sub { font-size: 0.76rem; color: var(--color-muted); margin-top: 1px; }
+.reportRow__chevron { width: 16px; height: 16px; color: var(--color-muted); flex-shrink: 0; }
 
 .empty { opacity: 0.65; font-size: 0.9rem; }
 
+.errorBanner, .infoBanner, .warnBanner {
+    border-radius: 10px; padding: var(--space-4);
+}
+.errorBanner { background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border); color: var(--color-error); }
+.infoBanner { background: color-mix(in srgb, var(--color-primary) 10%, transparent); border: 1px solid var(--border); }
+.warnBanner { background: var(--color-warning-soft); border: 1px solid var(--color-warning-soft-border); font-size: 0.9rem; line-height: 1.5; }
+
+.skeleton-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.sk-card { height: 100px; border-radius: 14px; background: color-mix(in srgb, var(--color-text) 8%, transparent); }
+
 .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: var(--color-text); color: #fff; padding: 11px 18px; border-radius: 10px;
+    background: var(--color-text); color: var(--color-surface); padding: 11px 18px; border-radius: 10px;
     font-size: 0.85rem; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 9999; max-width: 90vw;
 }
 .toast-enter-active, .toast-leave-active { transition: opacity .2s, transform .2s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(10px); }
 
-@media (max-width: 960px) {
-    .grid3 { grid-template-columns: 1fr; }
-    .histRow, .reportRow { grid-template-columns: 1fr 1fr; }
-    .histRow--head, .reportRow--head { display: none; }
+@media (max-width: 1180px) {
+    .dashGrid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) {
+    .statGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 640px) {
+    .statGrid, .skeleton-row { grid-template-columns: 1fr; }
+    .histRow { grid-template-columns: 1fr 1fr; row-gap: 6px; }
+    .histRow--head { display: none; }
+    .histRow__action { grid-column: 1 / -1; justify-content: flex-start; }
+    .dashHead { flex-direction: column; align-items: flex-start; }
 }
 </style>

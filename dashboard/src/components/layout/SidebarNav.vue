@@ -9,8 +9,15 @@ type Props = {
     collapsed: boolean;
     logoUrl?: string;
     appName?: string;
+    credits?: number | null;
+    creditsLoaded?: boolean;
 };
 const props = defineProps<Props>();
+
+const creditsLabel = computed(() =>
+    props.credits == null ? "—" : props.credits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+);
+const creditsLow = computed(() => props.credits != null && props.credits < 50);
 const emit = defineEmits<{
     (e: "navigate"): void;
     (e: "toggle-collapsed"): void;
@@ -191,6 +198,26 @@ function isActive(name: string | undefined) {
             </template>
         </div>
 
+        <!-- Credits meter -->
+        <div v-if="!props.collapsed" class="creditsCard" :class="{ 'creditsCard--low': creditsLow }">
+            <div class="creditsCard__row">
+                <span class="creditsCard__label">Credits left</span>
+                <span class="creditsCard__value">{{ creditsLabel }}</span>
+            </div>
+            <router-link v-if="creditsLow" :to="{ name: 'select-plan' }" class="creditsCard__cta" @click="onNavigate">
+                Running low — add credits
+            </router-link>
+        </div>
+        <router-link
+            v-else
+            :to="{ name: 'select-plan' }"
+            class="creditsCollapsedBtn"
+            title="Buy credits"
+            @click="onNavigate"
+        >
+            <AppIcon name="credits" />
+        </router-link>
+
         <!-- Footer -->
         <div class="sidebarFooter">
             <div v-if="!props.collapsed" class="footerUser">
@@ -228,8 +255,8 @@ function isActive(name: string | undefined) {
     height: 100vh;
     width: 260px;
     flex-shrink: 0;
-    background: var(--color-surface);
-    border-right: 1px solid var(--color-border);
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--sidebar-border);
     display: flex;
     flex-direction: column;
     transition: width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -246,7 +273,7 @@ function isActive(name: string | undefined) {
     justify-content: space-between;
     padding: 0 14px;
     height: 80px;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--sidebar-border);
     flex-shrink: 0;
     gap: 8px;
 }
@@ -261,13 +288,17 @@ function isActive(name: string | undefined) {
 
 .brand--centered { justify-content: center; }
 
-/* Logo image — fills the header area */
+/* Logo image — on a light patch so it stays legible regardless of which
+   logo variant is configured, since the sidebar itself is always dark. */
 .logoWrap {
     flex: 1;
     min-width: 0;
-    height: 60px;
+    height: 52px;
     display: flex;
     align-items: center;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 8px 12px;
 }
 
 .logoImg {
@@ -280,8 +311,9 @@ function isActive(name: string | undefined) {
 
 .sidebar.collapsed .logoWrap {
     flex: none;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+    padding: 6px;
 }
 
 .sidebar.collapsed .logoImg {
@@ -315,7 +347,7 @@ function isActive(name: string | undefined) {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: var(--color-text);
+    color: var(--sidebar-text);
 }
 
 /* Collapse button */
@@ -326,14 +358,14 @@ function isActive(name: string | undefined) {
     padding: 7px;
     border-radius: 8px;
     cursor: pointer;
-    color: var(--color-muted);
+    color: var(--sidebar-text-muted);
     transition: background 0.15s, color 0.15s;
     display: flex;
 }
 
 .collapseBtn:hover {
-    background: var(--color-surface-2);
-    color: var(--color-primary);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
 }
 
 .collapseIcon {
@@ -357,7 +389,7 @@ function isActive(name: string | undefined) {
 .navSectionHeader {
     font-size: 0.7rem;
     font-weight: 700;
-    color: var(--color-muted);
+    color: var(--sidebar-text-faint);
     letter-spacing: 0.07em;
     margin: 16px 0 4px 18px;
     text-transform: uppercase;
@@ -377,7 +409,7 @@ function isActive(name: string | undefined) {
     gap: 12px;
     padding: 10px 12px;
     border-radius: 10px;
-    color: var(--color-muted);
+    color: var(--sidebar-text-muted);
     text-decoration: none;
     font-size: 0.9rem;
     font-weight: 500;
@@ -402,28 +434,85 @@ function isActive(name: string | undefined) {
 .navLabel { flex: 1; }
 
 .navItem:hover {
-    background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface-2));
-    color: var(--color-primary);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--sidebar-text);
 }
 
-.navItem:hover .navIcon { color: var(--color-primary); }
+.navItem:hover .navIcon { color: var(--sidebar-text); }
 
 .navItem.active {
-    background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface-2));
-    color: var(--color-primary);
+    background: var(--sidebar-active-bg);
+    color: #ffffff;
     font-weight: 600;
 }
 
-.navItem.active .navIcon { color: var(--color-primary); }
+.navItem.active .navIcon { color: #ffffff; }
 
-.activeBar {
-    position: absolute;
-    left: 0;
-    top: 8px;
-    bottom: 8px;
-    width: 3px;
-    border-radius: 3px;
-    background: var(--color-primary);
+.activeBar { display: none; }
+
+/* ── Credits meter ───────────────────────────────────── */
+.creditsCard {
+    flex-shrink: 0;
+    margin: 4px 12px 10px;
+    padding: 12px 13px;
+    border-radius: 12px;
+    background: var(--sidebar-bg-2);
+    border: 1px solid var(--sidebar-border);
+}
+
+.creditsCard--low {
+    border-color: color-mix(in srgb, var(--color-error) 45%, var(--sidebar-border));
+}
+
+.creditsCard__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.creditsCard__label {
+    font-size: 0.68rem;
+    color: var(--sidebar-text-faint);
+    letter-spacing: 0.02em;
+}
+
+.creditsCard__value {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+}
+
+.creditsCard__cta {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--color-error);
+    text-decoration: none;
+}
+
+.creditsCard__cta:hover { text-decoration: underline; }
+
+.creditsCollapsedBtn {
+    flex-shrink: 0;
+    margin: 4px auto 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--sidebar-bg-2);
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.creditsCollapsedBtn:hover {
+    color: var(--sidebar-text);
+    border-color: var(--color-primary);
 }
 
 /* ── Footer ──────────────────────────────────────────── */
@@ -434,7 +523,7 @@ function isActive(name: string | undefined) {
     justify-content: space-between;
     gap: 8px;
     padding: 14px 12px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--sidebar-border);
 }
 
 .footerUser {
@@ -445,7 +534,7 @@ function isActive(name: string | undefined) {
 .footerName {
     font-size: 0.85rem;
     font-weight: 700;
-    color: var(--color-text);
+    color: var(--sidebar-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -453,7 +542,7 @@ function isActive(name: string | undefined) {
 
 .footerRole {
     font-size: 0.72rem;
-    color: var(--color-muted);
+    color: var(--sidebar-text-faint);
     text-transform: capitalize;
     margin-top: 1px;
 }
@@ -468,7 +557,7 @@ function isActive(name: string | undefined) {
 .iconBtn {
     background: none;
     border: none;
-    color: var(--color-muted);
+    color: var(--sidebar-text-muted);
     border-radius: 8px;
     padding: 7px;
     cursor: pointer;
@@ -481,8 +570,8 @@ function isActive(name: string | undefined) {
 .iconBtn svg { width: 18px; height: 18px; }
 
 .iconBtn:hover {
-    background: var(--color-surface-2);
-    color: var(--color-primary);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
 }
 
 /* ── Mobile backdrop ─────────────────────────────────── */

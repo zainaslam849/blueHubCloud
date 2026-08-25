@@ -7,7 +7,10 @@ import ToastViewport from "../components/toast/ToastViewport.vue";
 import { provideToasts } from "../composables/useToasts";
 import { logout as apiLogout } from "../api/auth";
 import { auth } from "../composables/useAuth";
+import { useCreditBalance } from "../composables/useCreditBalance";
 import { http } from "../api/http";
+
+const { state: creditState, refresh: refreshCredits } = useCreditBalance();
 
 const route = useRoute();
 const router = useRouter();
@@ -53,6 +56,8 @@ onMounted(async () => {
         activeLogoUrl.value = resolvedLogoUrl();
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+    refreshCredits();
 });
 
 const pageTitle = computed(() => {
@@ -91,6 +96,8 @@ async function handleSignOut() {
             :collapsed="navCollapsed"
             :logo-url="activeLogoUrl"
             :app-name="appName"
+            :credits="creditState.credits"
+            :credits-loaded="creditState.loaded"
             @navigate="closeNav"
             @toggle-collapsed="toggleCollapsed"
             @sign-out="handleSignOut"
@@ -100,6 +107,8 @@ async function handleSignOut() {
             <TopBar
                 :title="pageTitle"
                 :company-name="companyName"
+                :credits="creditState.credits"
+                :credits-loaded="creditState.loaded"
                 @toggle-nav="toggleNav"
                 @sign-out="handleSignOut"
             />
