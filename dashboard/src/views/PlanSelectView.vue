@@ -518,10 +518,10 @@ onMounted(() => {
 .bcHead__copy { flex: 1 1 380px; min-width: 0; }
 .bcTitle {
     margin: 0;
-    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+    font-family: var(--font-sans);
     font-size: 2.6rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-weight: 700;
+    letter-spacing: var(--tracking-tight);
     color: var(--color-text);
     line-height: 1.1;
 }
