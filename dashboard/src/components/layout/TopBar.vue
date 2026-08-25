@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { auth } from "../../composables/useAuth";
 
 type Props = {
     title: string;
@@ -8,9 +9,22 @@ type Props = {
 
 defineProps<Props>();
 
-defineEmits<{
+const emit = defineEmits<{
     (e: "toggle-nav"): void;
+    (e: "sign-out"): void;
 }>();
+
+const userName = computed(() => auth.state.user?.name ?? "Account");
+const userInitials = computed(() => {
+    const name = auth.state.user?.name?.trim();
+    if (!name) return "?";
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    const first = parts[0] ?? "";
+    const last = parts.length > 1 ? (parts[parts.length - 1] ?? "") : "";
+    const initials = last ? first.charAt(0) + last.charAt(0) : first.slice(0, 2);
+    return initials.toUpperCase();
+});
 
 const menuOpen = ref(false);
 
@@ -69,8 +83,8 @@ onBeforeUnmount(() => {
                     :aria-expanded="menuOpen"
                     @click="toggleMenu"
                 >
-                    <span class="avatar" aria-hidden="true"></span>
-                    <span class="userLabel">User</span>
+                    <span class="avatar" aria-hidden="true">{{ userInitials }}</span>
+                    <span class="userLabel">{{ userName }}</span>
                 </button>
 
                 <div v-if="menuOpen" class="menu" role="menu">
@@ -84,20 +98,20 @@ onBeforeUnmount(() => {
                     </router-link>
                     <router-link
                         class="menuItem"
-                        :to="{ name: 'usage' }"
+                        :to="{ name: 'billing' }"
                         role="menuitem"
                         @click="closeMenu"
                     >
-                        Usage
+                        Billing History
                     </router-link>
                     <div class="menuSep"></div>
                     <button
                         class="menuItem"
                         type="button"
                         role="menuitem"
-                        @click="closeMenu"
+                        @click="closeMenu(); emit('sign-out')"
                     >
-                        Sign out (UI)
+                        Sign out
                     </button>
                 </div>
             </div>
@@ -166,8 +180,15 @@ onBeforeUnmount(() => {
     width: 34px;
     height: 34px;
     border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    flex-shrink: 0;
     box-shadow: var(--shadow-xs);
 }
 

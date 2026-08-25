@@ -738,7 +738,7 @@ onBeforeUnmount(() => {
 }
 .badge--active  { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
 .badge--failed  { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
-.badge--processing { background: color-mix(in srgb, #3b82f6 14%, transparent); color: #2563eb; }
+.badge--processing { background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-primary-hover, var(--color-primary)); }
 
 /* Category */
 .cCategory__sub { font-size: 0.78rem; opacity: 0.6; margin-top: 2px; }

@@ -542,7 +542,7 @@ onMounted(loadPlans);
     transition: background 150ms, box-shadow 150ms, transform 150ms, opacity 150ms;
 }
 .spBtn--primary {
-    background: linear-gradient(135deg, var(--color-primary), #1d4ed8);
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
     color: #fff;
     box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary) 35%, transparent);
 }

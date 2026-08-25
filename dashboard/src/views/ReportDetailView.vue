@@ -973,7 +973,7 @@ onMounted(() => { fetchReport(); });
 .rBadge { padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; display: inline-block; white-space: nowrap; }
 .rBadge.active, .badge--active { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
 .rBadge.failed, .badge--failed { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
-.rBadge.processing, .badge--processing { background: color-mix(in srgb, #3b82f6 14%, transparent); color: #2563eb; }
+.rBadge.processing, .badge--processing { background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-primary-hover, var(--color-primary)); }
 
 /* ── Prose ──────────────────────────────────────────────────────────────── */
 .rProse { font-size: 0.9rem; line-height: 1.7; margin: 0; word-break: break-word; overflow-wrap: break-word; }
@@ -1077,7 +1077,7 @@ onMounted(() => { fetchReport(); });
 .rRecList { display: flex; flex-direction: column; gap: 10px; }
 .rRecCard { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: row; gap: 12px; align-items: flex-start; }
 .rRecCard--warning { background: color-mix(in srgb, #f59e0b 6%, transparent); border-color: color-mix(in srgb, #f59e0b 30%, var(--border, #e5e7eb)); }
-.rRecCard--info    { background: color-mix(in srgb, #3b82f6 6%, transparent); border-color: color-mix(in srgb, #3b82f6 30%, var(--border, #e5e7eb)); }
+.rRecCard--info    { background: color-mix(in srgb, var(--color-primary) 6%, transparent); border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border)); }
 .rRecCard__icon    { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--color-primary, #3b82f6) 10%, transparent); color: var(--color-primary, #3b82f6); }
 .rRecCard--warning .rRecCard__icon { background: color-mix(in srgb, #f59e0b 12%, transparent); color: #b45309; }
 .rRecCard__icon svg { width: 16px; height: 16px; }

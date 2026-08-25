@@ -113,6 +113,13 @@ const navGroups = computed(() => {
             ],
         },
         {
+            label: "BILLING",
+            items: [
+                { name: "Buy Credits", icon: "credits", to: { name: "select-plan" } },
+                { name: "Billing History", icon: "billing", to: { name: "billing" } },
+            ],
+        },
+        {
             label: "ACCOUNT",
             items: [
                 { name: "Account", icon: "account", to: { name: "account" } },
@@ -290,8 +297,8 @@ function isActive(name: string | undefined) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #22d3ee 0%, #6366f1 100%);
-    box-shadow: 0 4px 12px rgba(34, 211, 238, 0.2);
+    background: linear-gradient(135deg, #52b3df 0%, #27699b 100%);
+    box-shadow: 0 4px 12px rgba(43, 110, 159, 0.25);
 }
 
 .brandInitial {

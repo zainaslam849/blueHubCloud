@@ -54,28 +54,29 @@
                     <div class="field">
                         <label class="label">Publishable key</label>
                         <div class="input-wrap">
-                            <span class="key-prefix">{{ testMode ? 'pk_test_' : 'pk_live_' }}</span>
                             <input
                                 v-model="publicKey"
-                                class="input input--pl"
+                                class="input"
                                 type="text"
-                                :placeholder="testMode ? 'xxxxxxxxxxxxxxxxxxxx' : 'xxxxxxxxxxxxxxxxxxxx'"
+                                :placeholder="testMode ? 'pk_test_...' : 'pk_live_...'"
                                 autocomplete="off"
                                 spellcheck="false"
                             />
                         </div>
-                        <p class="field__hint">Safe to expose in the browser. Used by Stripe.js on the frontend.</p>
+                        <p class="field__hint">
+                            Paste the whole key, including the <code>{{ testMode ? 'pk_test_' : 'pk_live_' }}</code> prefix.
+                            Safe to expose in the browser — used by Stripe.js on the frontend.
+                        </p>
                     </div>
 
                     <div class="field">
                         <label class="label">Secret key</label>
                         <div class="input-wrap">
-                            <span class="key-prefix">{{ testMode ? 'sk_test_' : 'sk_live_' }}</span>
                             <input
                                 v-model="secretKey"
-                                class="input input--pl input--pr"
+                                class="input input--pr"
                                 :type="showSecret ? 'text' : 'password'"
-                                placeholder="Leave blank to keep existing"
+                                :placeholder="`Leave blank to keep existing (${testMode ? 'sk_test_' : 'sk_live_'}...)`"
                                 autocomplete="new-password"
                                 spellcheck="false"
                             />
@@ -84,7 +85,10 @@
                                 <svg v-else viewBox="0 0 24 24" fill="none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                             </button>
                         </div>
-                        <p class="field__hint">Keep this private — never expose in the browser or commit to version control.</p>
+                        <p class="field__hint">
+                            Paste the whole key, including the <code>{{ testMode ? 'sk_test_' : 'sk_live_' }}</code> prefix.
+                            Keep this private — never expose in the browser or commit to version control.
+                        </p>
                     </div>
                 </div>
             </section>
@@ -114,12 +118,11 @@
                     <div class="field">
                         <label class="label">Webhook signing secret</label>
                         <div class="input-wrap">
-                            <span class="key-prefix">whsec_</span>
                             <input
                                 v-model="webhookSecret"
-                                class="input input--pl input--pr"
+                                class="input input--pr"
                                 :type="showWebhook ? 'text' : 'password'"
-                                placeholder="Leave blank to keep existing"
+                                placeholder="Leave blank to keep existing (whsec_...)"
                                 autocomplete="new-password"
                                 spellcheck="false"
                             />
@@ -128,7 +131,10 @@
                                 <svg v-else viewBox="0 0 24 24" fill="none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><line x1="1" y1="1" x2="23" y2="23" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                             </button>
                         </div>
-                        <p class="field__hint">Provided by Stripe when you create a webhook endpoint. Starts with <code>whsec_</code>.</p>
+                        <p class="field__hint">
+                            Provided by Stripe when you create a webhook endpoint.
+                            Paste the whole secret, including the <code>whsec_</code> prefix.
+                        </p>
                     </div>
                 </div>
             </section>
@@ -392,18 +398,7 @@ onMounted(loadSettings);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #3b82f6) 15%, transparent);
     background: var(--bg-surface, #fff);
 }
-.input--pl { padding-left: 80px; }
 .input--pr { padding-right: 40px; }
-
-.key-prefix {
-    position: absolute;
-    left: 12px;
-    font-size: 0.78rem;
-    font-family: monospace;
-    color: var(--text-muted, #9ca3af);
-    pointer-events: none;
-    white-space: nowrap;
-}
 
 .eye-btn {
     position: absolute;

@@ -60,6 +60,8 @@ const pageTitle = computed(() => {
     return typeof metaTitle === "string" ? metaTitle : "Dashboard";
 });
 
+const companyName = computed(() => auth.state.user?.company_name ?? appName.value);
+
 function toggleNav() {
     navOpen.value = !navOpen.value;
 }
@@ -97,8 +99,9 @@ async function handleSignOut() {
         <div class="appMain">
             <TopBar
                 :title="pageTitle"
-                company-name="BlueHub"
+                :company-name="companyName"
                 @toggle-nav="toggleNav"
+                @sign-out="handleSignOut"
             />
 
             <main class="appContent">

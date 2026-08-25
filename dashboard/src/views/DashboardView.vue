@@ -342,7 +342,7 @@ onMounted(load);
 
 .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: #1a1f2e; color: #fff; padding: 11px 18px; border-radius: 10px;
+    background: var(--color-text); color: #fff; padding: 11px 18px; border-radius: 10px;
     font-size: 0.85rem; font-weight: 500; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 9999; max-width: 90vw;
 }
 .toast-enter-active, .toast-leave-active { transition: opacity .2s, transform .2s; }

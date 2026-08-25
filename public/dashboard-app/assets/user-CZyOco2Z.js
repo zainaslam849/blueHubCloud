@@ -1,0 +1,1 @@
+import{s as e}from"./main-D6HktZHa.js";const t={get(t,n){return e.get(`/api/v1${t}`,{params:n})},post(t,n){return e.post(`/api/v1${t}`,n)}};export{t};

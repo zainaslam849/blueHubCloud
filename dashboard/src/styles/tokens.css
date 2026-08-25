@@ -1,12 +1,41 @@
+@font-face {
+    font-family: "Fellix";
+    src: url("/fonts/Fellix-Regular.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Fellix";
+    src: url("/fonts/Fellix-Medium.ttf") format("truetype");
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Fellix";
+    src: url("/fonts/Fellix-SemiBold.ttf") format("truetype");
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Fellix";
+    src: url("/fonts/Fellix-Bold.ttf") format("truetype");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
     /* Theme mode */
     color-scheme: light;
 
-    /* Typography - Apple-inspired system stack */
+    /* Typography — matches the marketing site (bluehubcloud.com.au) */
     --font-sans:
-        -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-        system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif,
-        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+        "Fellix", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        system-ui, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji",
+        "Segoe UI Emoji", "Segoe UI Symbol";
     --font-mono:
         ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas,
         "Liberation Mono", "Courier New", monospace;
@@ -61,32 +90,44 @@
     --radius-pill: 999px;
 
     /* Shadows (premium depth) */
-    --shadow-xs: 0 1px 1px rgba(15, 23, 42, 0.04);
-    --shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.08);
-    --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.12);
-    --shadow-lg: 0 18px 50px rgba(15, 23, 42, 0.18);
-    --shadow-xl: 0 30px 80px rgba(15, 23, 42, 0.25);
+    --shadow-xs: 0 1px 1px rgba(29, 25, 69, 0.04);
+    --shadow-sm: 0 2px 6px rgba(29, 25, 69, 0.07);
+    --shadow-md: 0 10px 30px rgba(29, 25, 69, 0.1);
+    --shadow-lg: 0 18px 50px rgba(29, 25, 69, 0.16);
+    --shadow-xl: 0 30px 80px rgba(29, 25, 69, 0.22);
 
-    /* Core palette (light) */
-    --color-bg: #f5f7fb;
+    /* Core palette (light) — sampled from the BlueHub logo:
+       #1D1945 deep indigo (the "cloud" mark) is the true near-black;
+       #52B3DF -> #27699B is the sky-to-steel accent gradient. */
+    --color-bg: #f6f8fa;
     --color-surface: #ffffff;
-    --color-surface-2: #f2f4f8;
-    --color-surface-3: #eef1f6;
+    --color-surface-2: #f1f4f7;
+    --color-surface-3: #edf1f5;
 
-    --color-text: #0b1220;
-    --color-muted: rgba(15, 23, 42, 0.68);
-    --color-border: rgba(15, 23, 42, 0.12);
-    --color-border-strong: rgba(15, 23, 42, 0.2);
+    --color-text: #1d1945;
+    --color-muted: #667487;
+    --color-border: #e3e8ee;
+    --color-border-strong: #cbd4de;
 
     /* Brand / semantic colors */
-    --color-primary: #2f6bff;
-    --color-secondary: #00a3ff;
-    --color-success: #14b86a;
-    --color-warning: #f59e0b;
-    --color-error: #ef4444;
+    --color-primary: #2b6e9f;
+    --color-primary-hover: #1f5478;
+    --color-secondary: #3b89b8;
+    --color-success: #067647;
+    --color-warning: #b54708;
+    --color-error: #b42318;
+
+    --color-primary-soft: #eaf4fa;
+    --color-primary-soft-border: #c6e2f1;
+    --color-success-soft: #f0fdf4;
+    --color-success-soft-border: #c7ebd4;
+    --color-warning-soft: #fffaeb;
+    --color-warning-soft-border: #f5d9a8;
+    --color-error-soft: #fef3f2;
+    --color-error-soft-border: #f5c9c4;
 
     /* Interactive */
-    --ring: rgba(47, 107, 255, 0.32);
+    --ring: rgba(43, 110, 159, 0.32);
     --ring-offset: #ffffff;
 
     /* Motion */
@@ -104,7 +145,7 @@
    native one. */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+    scrollbar-color: rgba(29, 25, 69, 0.18) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -117,12 +158,12 @@
 }
 
 *::-webkit-scrollbar-thumb {
-    background: rgba(15, 23, 42, 0.18);
+    background: rgba(29, 25, 69, 0.18);
     border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-    background: rgba(15, 23, 42, 0.28);
+    background: rgba(29, 25, 69, 0.28);
 }
 
 *::-webkit-scrollbar-corner {
@@ -141,21 +182,39 @@
     background: rgba(255, 255, 255, 0.28);
 }
 
-/* Dark-ready later: opt-in by setting <html data-theme="dark"> */
+/* Dark mode — brand indigo (Direction B): the logo's own #1D1945 as the
+   surface color, with the sky-blue accent ramp carrying the brand contrast. */
 :root[data-theme="dark"] {
     color-scheme: dark;
 
-    --color-bg: #0a0f1f;
-    --color-surface: rgba(16, 23, 42, 0.9);
-    --color-surface-2: rgba(255, 255, 255, 0.06);
-    --color-surface-3: rgba(255, 255, 255, 0.08);
+    --color-bg: #14112e;
+    --color-surface: #1d1945;
+    --color-surface-2: #262052;
+    --color-surface-3: #332c63;
 
-    --color-text: rgba(255, 255, 255, 0.92);
-    --color-muted: rgba(255, 255, 255, 0.68);
-    --color-border: rgba(255, 255, 255, 0.14);
-    --color-border-strong: rgba(255, 255, 255, 0.22);
+    --color-text: #f3f1fc;
+    --color-muted: #a9a4c9;
+    --color-border: #332c63;
+    --color-border-strong: #453d7a;
 
-    --ring-offset: #0b1020;
+    --color-primary: #52b3df;
+    --color-primary-hover: #7fc0e3;
+    --color-secondary: #4499c6;
+    --color-success: #4ade80;
+    --color-warning: #d19c4e;
+    --color-error: #f87171;
+
+    --color-primary-soft: rgba(82, 179, 223, 0.12);
+    --color-primary-soft-border: rgba(82, 179, 223, 0.3);
+    --color-success-soft: rgba(74, 222, 128, 0.13);
+    --color-success-soft-border: rgba(74, 222, 128, 0.28);
+    --color-warning-soft: rgba(209, 156, 78, 0.14);
+    --color-warning-soft-border: rgba(209, 156, 78, 0.3);
+    --color-error-soft: rgba(248, 113, 113, 0.14);
+    --color-error-soft-border: rgba(248, 113, 113, 0.3);
+
+    --ring: rgba(82, 179, 223, 0.35);
+    --ring-offset: #1a1640;
 
     --surface: var(--color-surface);
     --surface-2: var(--color-surface-2);

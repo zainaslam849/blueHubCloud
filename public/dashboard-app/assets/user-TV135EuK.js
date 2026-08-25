@@ -1,1 +1,0 @@
-import{s as e}from"./main-3s3FrVh4.js";const t={get(t,n){return e.get(`/api/v1${t}`,{params:n})},post(t,n){return e.post(`/api/v1${t}`,n)}};export{t};

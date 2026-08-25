@@ -78,7 +78,8 @@ class StripeController extends Controller
 
         if (empty($secretKey)) {
             Log::error('Stripe createCheckout: no secret key configured', ['user_id' => $user->id, 'plan_id' => $plan->id]);
-            return response()->json(['message' => 'Stripe is not configured. Please contact the administrator.'], 500);
+            // 422 rather than 500 so the message survives Cloudflare (see below).
+            return response()->json(['message' => 'Stripe is not configured. Please contact the administrator.'], 422);
         }
 
         Stripe::setApiKey($secretKey);
@@ -140,9 +141,13 @@ class StripeController extends Controller
                 'http_status' => $e->getHttpStatus(),
             ]);
 
+            // 422, not 5xx: Cloudflare intercepts origin 5xx responses and
+            // replaces the body with its own error page, so the real Stripe
+            // message never reaches the browser. This is a configuration
+            // problem the admin must fix anyway, not a server fault.
             return response()->json([
                 'message' => 'Stripe could not create the checkout session: ' . ($e->getError()?->message ?? $e->getMessage()),
-            ], 502);
+            ], 422);
         }
 
         // Create a pending purchase record

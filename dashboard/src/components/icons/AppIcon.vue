@@ -17,6 +17,8 @@ import {
     Settings,
     LogOut,
     Building2,
+    CreditCard,
+    Receipt,
 } from "lucide-vue-next";
 
 type IconName =
@@ -37,7 +39,9 @@ type IconName =
     | "slack"
     | "figma"
     | "settings"
-    | "logout";
+    | "logout"
+    | "credits"
+    | "billing";
 
 const icons: Record<IconName, any> = {
     dashboard: LayoutDashboard,
@@ -58,6 +62,8 @@ const icons: Record<IconName, any> = {
     figma: Figma,
     settings: Settings,
     logout: LogOut,
+    credits: CreditCard,
+    billing: Receipt,
 };
 
 const props = defineProps<{ name: IconName }>();
