@@ -30,6 +30,8 @@ class UserTranscriptionsController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
             'search' => ['nullable', 'string', 'max:120'],
+            'call_direction' => ['nullable', 'in:inbound,outbound,internal'],
+            'call_status' => ['nullable', 'in:answered,missed,unknown'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
         ]);
@@ -50,6 +52,13 @@ class UserTranscriptionsController extends Controller
                     ->orWhere('to', 'like', $term)
                     ->orWhere('transcript_text', 'like', $term);
             });
+        }
+
+        if (! empty($validated['call_direction'])) {
+            $query->where('direction', $validated['call_direction']);
+        }
+        if (! empty($validated['call_status'])) {
+            $query->where('status', $validated['call_status']);
         }
 
         if (! empty($validated['start_date'])) {
