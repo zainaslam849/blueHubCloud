@@ -6,9 +6,11 @@
                     <img v-if="activeLogo" :src="activeLogo" :alt="siteName" class="admin-auth__logo" />
                     <span v-else class="admin-auth__kicker">{{ siteName }}</span>
                 </div>
+                <span class="admin-auth__kindBadge">Admin Login</span>
                 <h1 class="admin-auth__title">Admin sign in</h1>
                 <p class="admin-auth__hint">
-                    Use an admin account to continue.
+                    Use an admin account to continue. This is the staff admin panel —
+                    not the customer dashboard.
                 </p>
             </header>
 

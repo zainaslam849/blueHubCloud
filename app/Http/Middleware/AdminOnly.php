@@ -21,7 +21,12 @@ class AdminOnly
                 ], 401);
             }
 
-            $redirect = $request->fullUrl();
+            // Path + query only — never the scheme/host (see UserOnly for why).
+            $redirect = $request->getPathInfo();
+            if ($queryString = $request->getQueryString()) {
+                $redirect .= '?'.$queryString;
+            }
+
             return redirect()->to('/admin/login?redirect='.urlencode($redirect));
         }
 

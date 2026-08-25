@@ -1534,6 +1534,19 @@ body.admin-body {
     color: var(--text-faint);
 }
 
+.admin-auth__kindBadge {
+    display: inline-block;
+    margin-bottom: 8px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.14);
+    color: #60a5fa;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 .admin-auth__title {
     margin: 0;
     font-size: 18px;
@@ -1885,6 +1898,22 @@ html[data-theme="dark"] .admin-field__error {
     line-height: 1.2;
     transition: all 160ms ease;
     border: 1.5px solid;
+}
+
+.admin-tzWarning {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    background: rgba(245, 158, 11, 0.14);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    cursor: help;
+    white-space: nowrap;
 }
 
 .admin-status-badge--active {

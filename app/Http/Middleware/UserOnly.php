@@ -21,7 +21,16 @@ class UserOnly
                 ], 401);
             }
 
-            $redirect = $request->fullUrl();
+            // Path + query only — never the scheme/host. The frontend feeds
+            // this straight into router.replace() after login, which treats
+            // a full "https://..." string as a literal path segment rather
+            // than an absolute URL, producing a broken doubled-domain URL
+            // (e.g. "site.com/https://site.com/calls").
+            $redirect = $request->getPathInfo();
+            if ($queryString = $request->getQueryString()) {
+                $redirect .= '?'.$queryString;
+            }
+
             return redirect()->to('/login?redirect='.urlencode($redirect));
         }
 

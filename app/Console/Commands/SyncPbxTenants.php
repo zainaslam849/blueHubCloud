@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\PbxProvider;
 use App\Models\TenantSyncSetting;
+use App\Services\Pbx\CountryTimezoneResolver;
 use App\Services\Pbx\PbxClientResolver;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -274,9 +275,14 @@ class SyncPbxTenants extends Command
 
                     // 3) No company on this server matches: create a fresh one.
                     if (!$company) {
+                        $timezone = (new CountryTimezoneResolver())->resolve(
+                            $tenantData['country_code'] ?? null,
+                            config('app.default_company_timezone', 'UTC'),
+                        );
+
                         $company = \App\Models\Company::create([
                             'name' => $tenantName,
-                            'timezone' => config('app.default_company_timezone', 'UTC'),
+                            'timezone' => $timezone,
                             'status' => 'inactive',
                         ]);
                         $createdCompanies++;

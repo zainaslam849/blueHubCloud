@@ -16,6 +16,18 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const isSuspended = ref(false);
 
+// A redirect value must be a relative in-app path — never an absolute URL.
+// Vue Router's web-history mode treats a bare "https://..." string as a
+// literal path segment (not a navigation target), which produces a broken
+// doubled-domain URL like "site.com/https://site.com/calls". Guards against
+// that regardless of where the value came from (query string, bookmark, etc).
+function safeRedirect(value: unknown): string {
+    if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.includes("://")) {
+        return "/dashboard";
+    }
+    return value;
+}
+
 async function onSubmit() {
     error.value = null;
     isSuspended.value = false;
@@ -24,11 +36,7 @@ async function onSubmit() {
     try {
         const user = await apiLogin(email.value, password.value);
         auth.setUser(user);
-        const redirect =
-            typeof route.query.redirect === "string"
-                ? route.query.redirect
-                : "/dashboard";
-        await router.replace(redirect);
+        await router.replace(safeRedirect(route.query.redirect));
     } catch (e: unknown) {
         const resp = (e as { response?: { status?: number; data?: { message?: string; code?: string; email?: string } } })?.response;
         const status = resp?.status;
@@ -71,6 +79,7 @@ async function onSubmit() {
                     </div>
                 </div>
 
+                <span class="loginKindBadge">User Login</span>
                 <h1 class="h1">Sign in</h1>
                 <p class="muted">Enter your account credentials.</p>
             </header>
@@ -190,6 +199,19 @@ async function onSubmit() {
 .brandSub {
     opacity: 0.7;
     font-size: 0.95rem;
+}
+
+.loginKindBadge {
+    display: inline-block;
+    margin-bottom: 8px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .h1 {

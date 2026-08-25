@@ -81,7 +81,7 @@ return [
     |
     */
 
-    'default_company_timezone' => env('DEFAULT_COMPANY_TIMEZONE', 'UTC'),
+    'default_company_timezone' => env('DEFAULT_COMPANY_TIMEZONE', 'Australia/Sydney'),
 
     /*
     |--------------------------------------------------------------------------

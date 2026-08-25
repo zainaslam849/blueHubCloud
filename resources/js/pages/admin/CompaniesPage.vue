@@ -142,6 +142,11 @@
                                 <span class="font-medium">{{
                                     company.name
                                 }}</span>
+                                <span
+                                    v-if="!company.timezone || company.timezone === 'UTC'"
+                                    class="admin-tzWarning"
+                                    title="Timezone is still UTC — likely wrong for this company. This skews the weekly report's hourly distribution/peak-hours analysis. Set it under Edit."
+                                >⚠ UTC</span>
                             </td>
                             <td class="admin-table__td" data-label="Server">
                                 <span
@@ -943,7 +948,7 @@ const currentAvailableTenants = ref([]);
 const formData = reactive({
     id: null,
     name: "",
-    timezone: "UTC",
+    timezone: "Australia/Sydney",
     status: "active",
     pbx_provider_id: "",
     server_id: "",
@@ -956,7 +961,7 @@ const formData = reactive({
 const defaultFormData = {
     id: null,
     name: "",
-    timezone: "UTC",
+    timezone: "Australia/Sydney",
     status: "active",
     pbx_provider_id: "",
     server_id: "",
@@ -1153,7 +1158,7 @@ function openEditForm(company) {
     isEditing.value = true;
     formData.id = company.id;
     formData.name = company.name;
-    formData.timezone = company.timezone || "UTC";
+    formData.timezone = company.timezone || "Australia/Sydney";
     formData.status = company.status;
     formData.pbx_provider_id = company.pbx_provider_id || "";
     formData.server_id = company.server_id || "";

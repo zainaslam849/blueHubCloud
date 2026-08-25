@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 
 Route::get('/', function () {
-    return redirect('/admin/login');
+    return redirect('/login');
 });
 
 Route::get('/cron/pbx-sync', function (Request $request) {

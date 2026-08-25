@@ -15,6 +15,7 @@ use App\Models\PbxProvider;
 use App\Models\PbxwareTenant;
 use App\Models\User;
 use App\Models\WeeklyCallReport;
+use App\Services\Pbx\CountryTimezoneResolver;
 use App\Services\PbxwareClient;
 use App\Support\ApiResponse;
 use Carbon\CarbonImmutable;
@@ -167,7 +168,7 @@ class AdminCompaniesController extends Controller
 
         $company = Company::create([
             'name' => $validated['name'],
-            'timezone' => $validated['timezone'] ?? 'UTC',
+            'timezone' => $validated['timezone'] ?? config('app.default_company_timezone', 'Australia/Sydney'),
             'status' => $validated['status'] ?? 'active',
             'monthly_call_limit' => $validated['monthly_call_limit'] ?? null,
             'call_limit_expires_at' => $validated['call_limit_expires_at'] ?? null,
@@ -338,9 +339,14 @@ class AdminCompaniesController extends Controller
 
                     // No company on this server matches: create a fresh one
                     if (! $company) {
+                        $timezone = (new CountryTimezoneResolver())->resolve(
+                            $tenantData['country_code'] ?? null,
+                            config('app.default_company_timezone', 'UTC'),
+                        );
+
                         $company = Company::create([
                             'name' => $tenantName,
-                            'timezone' => config('app.default_company_timezone', 'UTC'),
+                            'timezone' => $timezone,
                             'status' => 'inactive',
                         ]);
                         $createdCompanies++;
