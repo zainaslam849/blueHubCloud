@@ -1046,6 +1046,10 @@ onBeforeUnmount(() => {
 .cPageBtn--active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; font-weight: 600; }
 .cPageBtn svg { width: 15px; height: 15px; }
 
+@media (max-width: 1280px) {
+    .cPageHead__title { font-size: 1.5rem; }
+}
+
 @media (max-width: 640px) {
     .cFilterGrid { grid-template-columns: 1fr; }
 }

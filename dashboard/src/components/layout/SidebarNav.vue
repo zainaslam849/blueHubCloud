@@ -665,6 +665,14 @@ function isActive(name: string | undefined) {
        the sidebar on mobile, so no icon-rail overrides are needed here. */
     .collapseBtn { display: none; }
     .mobileCloseBtn { display: flex; }
+
+    /* The sidebar overlay is full viewport height, but MobileTabBar sits
+       fixed on top of it at a higher z-index — without this, the footer
+       (user info, theme toggle, sign out) renders right where the tab bar
+       covers it and is invisible/unclickable. */
+    .sidebarFooter {
+        padding-bottom: calc(14px + 62px + env(safe-area-inset-bottom, 0px));
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {

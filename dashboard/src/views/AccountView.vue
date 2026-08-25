@@ -274,6 +274,9 @@ async function handleLogout() {
 @keyframes acSpin { to { transform: rotate(360deg); } }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 1280px) {
+    .acPageHead__title { font-size: 1.5rem; }
+}
 @media (max-width: 860px) {
     .acGrid { grid-template-columns: 1fr; }
 }

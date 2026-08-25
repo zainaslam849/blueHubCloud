@@ -775,6 +775,10 @@ onBeforeUnmount(() => {
 .toast-enter-active, .toast-leave-active { transition: opacity .2s, transform .2s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateX(-50%) translateY(10px); }
 
+@media (max-width: 1280px) {
+    .dashHead__title { font-size: 1.5rem; }
+}
+
 @media (max-width: 1180px) {
     .dashGrid { grid-template-columns: 1fr; }
 }

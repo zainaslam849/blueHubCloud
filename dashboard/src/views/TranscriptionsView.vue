@@ -472,6 +472,10 @@ onBeforeUnmount(() => {
 .tFilterGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .tFilterActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
+@media (max-width: 1280px) {
+    .tPageHead__title { font-size: 1.5rem; }
+}
+
 @media (max-width: 640px) {
     .tFilterGrid { grid-template-columns: 1fr; }
 }

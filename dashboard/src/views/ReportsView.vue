@@ -400,6 +400,10 @@ onMounted(fetchReports);
 .rCardSkeleton:first-child { margin-top: 16px; }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 1280px) {
+    .rPageHead__title { font-size: 1.5rem; }
+}
+
 @media (max-width: 720px) {
     .rPageHead { flex-direction: column; align-items: flex-start; }
     .rTableWrap { display: none; }

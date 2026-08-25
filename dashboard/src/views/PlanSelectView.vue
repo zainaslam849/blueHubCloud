@@ -778,6 +778,10 @@ onMounted(() => {
 .bcHistCard__dot { width: 3px; height: 3px; border-radius: 999px; background: var(--color-muted); flex-shrink: 0; }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 1280px) {
+    .bcTitle { font-size: 2.1rem; }
+}
+
 @media (max-width: 1180px) {
     .bcGrid { grid-template-columns: repeat(3, 1fr); gap: 14px; }
     .bcCard { padding: 20px; }

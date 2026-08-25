@@ -17,7 +17,10 @@ const route = useRoute();
 const router = useRouter();
 
 const navOpen      = ref(false);
-const navCollapsed = ref(false);
+// Default to the compact icon rail on medium laptop widths so the full
+// 260px sidebar doesn't crowd the content — still just a starting point,
+// the user can expand it manually and it stays that way for the session.
+const navCollapsed = ref(typeof window !== "undefined" && window.innerWidth <= 1360);
 const logoUrl      = ref("");      // default / fallback
 const logoLightUrl = ref("");      // light logo (for dark backgrounds)
 const logoDarkUrl  = ref("");      // dark logo (for light backgrounds)
