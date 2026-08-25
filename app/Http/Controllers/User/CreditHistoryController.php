@@ -116,15 +116,21 @@ class CreditHistoryController extends Controller
     private function labelFor(CreditTransaction $t): string
     {
         $meta = $t->meta ?? [];
+        $note = $meta['note'] ?? null;
+
+        // Manual admin adjustments (AdminCreditsController::adjust) are the
+        // only source of type=adjustment, and of type=deduction with no Call
+        // reference — say so explicitly rather than the generic "Adjustment",
+        // so the customer can tell a manual change from a purchase or usage.
+        $isAdminAdjustment = ($meta['source'] ?? null) === 'admin_adjustment';
 
         return match ($t->type) {
             CreditTransaction::TYPE_PURCHASE => ($meta['plan_name'] ?? null) ? $meta['plan_name'] . ' pack' : 'Credit purchase',
             CreditTransaction::TYPE_AUTO_TOPUP => 'Auto top-up',
-            CreditTransaction::TYPE_ADJUSTMENT => $t->credits >= 0
-                ? ('Credit added' . (($meta['note'] ?? null) ? ' — ' . $meta['note'] : ''))
-                : ('Credit removed' . (($meta['note'] ?? null) ? ' — ' . $meta['note'] : '')),
+            CreditTransaction::TYPE_ADJUSTMENT, CreditTransaction::TYPE_DEDUCTION => $isAdminAdjustment
+                ? (($t->credits >= 0 ? 'Added by admin' : 'Removed by admin') . ($note ? ' — ' . $note : ''))
+                : (($t->credits >= 0 ? 'Credit added' : 'Credit removed') . ($note ? ' — ' . $note : '')),
             CreditTransaction::TYPE_REFUND => 'Refund',
-            CreditTransaction::TYPE_DEDUCTION => 'Credit removed' . (($meta['note'] ?? null) ? ' — ' . $meta['note'] : ''),
             default => ucfirst($t->type),
         };
     }

@@ -38,6 +38,24 @@ class UserOnly
             return redirect()->to('/login');
         }
 
+        // Re-checked on every request (not just at login) so a suspension
+        // takes effect immediately against an already-open session instead
+        // of waiting for the user to log out and back in.
+        if ($user->isSuspended()) {
+            $guard->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            if ($request->expectsJson() || $request->is('api/v1/*')) {
+                return response()->json([
+                    'message' => 'Your account has been suspended. Please contact support.',
+                    'code' => 'account_suspended',
+                ], 403);
+            }
+
+            return redirect()->to('/login');
+        }
+
         Auth::shouldUse('web');
 
         return $next($request);

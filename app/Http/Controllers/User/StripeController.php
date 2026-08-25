@@ -214,9 +214,11 @@ class StripeController extends Controller
      */
     public function verify(string $sessionId): JsonResponse
     {
+        $user = Auth::guard('web')->user();
+
         $purchase = PlanPurchase::where('stripe_session_id', $sessionId)->first();
 
-        if (! $purchase) {
+        if (! $purchase || (int) $purchase->company_id !== (int) $user->company_id) {
             return response()->json(['status' => 'not_found'], 404);
         }
 
