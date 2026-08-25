@@ -142,7 +142,6 @@ const navGroups = computed(() => {
             label: "BILLING",
             items: [
                 { name: "Buy Credits", icon: "credits", to: { name: "select-plan" } },
-                { name: "Billing History", icon: "billing", to: { name: "billing" } },
             ],
         },
         {

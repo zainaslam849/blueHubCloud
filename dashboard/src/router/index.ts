@@ -114,8 +114,7 @@ const routes: RouteRecordRaw[] = [
             {
                 path: "billing",
                 name: "billing",
-                component: () => import("../views/BillingView.vue"),
-                meta: { title: "Billing History" },
+                redirect: { name: "select-plan" },
             },
             {
                 path: "purchase/success",

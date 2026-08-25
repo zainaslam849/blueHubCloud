@@ -323,6 +323,7 @@ onMounted(fetchReports);
 .rWeek { font-weight: 500; font-size: 0.87rem; white-space: nowrap; }
 .rMono { font-family: var(--font-mono); font-size: 0.82rem; }
 .rCol--right { text-align: right; }
+.rTable th.rCol--right { text-align: right; }
 .rCol--actions { width: 40px; }
 
 /* ── Badge ───────────────────────────────────────────────────────────────── */

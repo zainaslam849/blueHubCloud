@@ -23,7 +23,9 @@ class AdminPlansController extends Controller
             'minute_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'price'        => ['required', 'numeric', 'min:0'],
             'sale_price'   => ['nullable', 'numeric', 'min:0'],
+            'description'  => ['sometimes', 'nullable', 'string', 'max:500'],
             'is_active'    => ['sometimes', 'boolean'],
+            'is_featured'  => ['sometimes', 'boolean'],
         ]);
 
         $validated['minute_limit'] = $validated['minute_limit'] ?? 0;
@@ -53,7 +55,9 @@ class AdminPlansController extends Controller
             'minute_limit' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'price'        => ['sometimes', 'numeric', 'min:0'],
             'sale_price'   => ['nullable', 'numeric', 'min:0'],
+            'description'  => ['sometimes', 'nullable', 'string', 'max:500'],
             'is_active'    => ['sometimes', 'boolean'],
+            'is_featured'  => ['sometimes', 'boolean'],
         ]);
 
         if (array_key_exists('sale_price', $validated) && $validated['sale_price'] === '') {
@@ -82,10 +86,12 @@ class AdminPlansController extends Controller
             'minute_limit'     => $plan->minute_limit,
             'price'            => $plan->price,
             'sale_price'       => $plan->sale_price,
+            'description'      => $plan->description,
             'has_sale'         => $plan->has_sale,
             'discount_percent' => $plan->discount_percent,
             'effective_price'  => $plan->effective_price,
             'is_active'        => $plan->is_active,
+            'is_featured'      => $plan->is_featured,
             'created_at'       => $plan->created_at?->toIso8601String(),
         ];
     }

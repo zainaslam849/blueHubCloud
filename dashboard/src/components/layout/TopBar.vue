@@ -132,11 +132,11 @@ onBeforeUnmount(() => {
                     </router-link>
                     <router-link
                         class="menuItem"
-                        :to="{ name: 'billing' }"
+                        :to="{ name: 'select-plan' }"
                         role="menuitem"
                         @click="closeMenu"
                     >
-                        Billing History
+                        Buy Credits
                     </router-link>
                     <div class="menuSep"></div>
                     <button

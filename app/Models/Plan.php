@@ -13,7 +13,9 @@ class Plan extends Model
         'credits',
         'price',
         'sale_price',
+        'description',
         'is_active',
+        'is_featured',
     ];
 
     protected $casts = [
@@ -22,6 +24,7 @@ class Plan extends Model
         'price' => 'decimal:2',
         'sale_price' => 'decimal:2',
         'is_active' => 'boolean',
+        'is_featured' => 'boolean',
     ];
 
     public function getEffectivePriceAttribute(): string

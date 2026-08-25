@@ -32,10 +32,12 @@ class UserAvailablePlansController extends Controller
                 'minute_limit'     => $p->minute_limit,
                 'price'            => $p->price,
                 'sale_price'       => $p->sale_price,
+                'description'      => $p->description,
                 'has_sale'         => $p->has_sale,
                 'discount_percent' => $p->discount_percent,
                 'effective_price'  => $p->effective_price,
                 'is_active'        => $p->is_active,
+                'is_featured'      => $p->is_featured,
                 'is_current'       => $p->id === $currentPlanId,
             ]);
 

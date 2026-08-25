@@ -979,6 +979,7 @@ onBeforeUnmount(() => {
 
 /* Column helpers */
 .cCol--right { text-align: right; }
+.cTable th.cCol--right { text-align: right; }
 .cCol--pipeline { min-width: 200px; }
 .cCol--actions { width: 40px; }
 

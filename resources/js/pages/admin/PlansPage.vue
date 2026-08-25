@@ -63,6 +63,7 @@
                         <h3 class="planCard__name">{{ plan.name }}</h3>
                         <StatusBadge :active="plan.is_active" />
                     </div>
+                    <span v-if="plan.is_featured" class="planCard__featured">★ Most Popular</span>
                 </div>
 
                 <!-- Pricing -->
@@ -249,6 +250,23 @@
                                 </div>
                             </div>
 
+                            <!-- Description -->
+                            <div class="pField">
+                                <label class="pField__label" for="plan-description">
+                                    Description
+                                    <span class="pField__optional">optional</span>
+                                </label>
+                                <textarea
+                                    id="plan-description"
+                                    v-model="form.description"
+                                    class="pField__input pField__textarea"
+                                    rows="2"
+                                    maxlength="500"
+                                    placeholder="e.g. About 2 months of analysis. Most teams your size pick this."
+                                ></textarea>
+                                <p class="pField__hint">Shown under the credit count on the customer's Buy Credits page.</p>
+                            </div>
+
                             <!-- Status toggle -->
                             <div class="pToggleField">
                                 <label class="pToggle" :class="{ 'pToggle--on': form.is_active }">
@@ -259,6 +277,20 @@
                                     <span class="pToggle__label">
                                         <strong>{{ form.is_active ? 'Active' : 'Inactive' }}</strong>
                                         <span>— {{ form.is_active ? 'Available for assignment to companies' : 'Hidden from assignment' }}</span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <!-- Featured toggle -->
+                            <div class="pToggleField">
+                                <label class="pToggle" :class="{ 'pToggle--on': form.is_featured }">
+                                    <input v-model="form.is_featured" type="checkbox" class="pToggle__input" />
+                                    <span class="pToggle__track">
+                                        <span class="pToggle__thumb"></span>
+                                    </span>
+                                    <span class="pToggle__label">
+                                        <strong>{{ form.is_featured ? 'Most Popular' : 'Not Featured' }}</strong>
+                                        <span>— {{ form.is_featured ? 'Highlighted as the recommended plan' : 'Shown as a regular plan' }}</span>
                                     </span>
                                 </label>
                             </div>
@@ -334,7 +366,9 @@ const form = reactive({
     credits: 100,
     price: "",
     sale_price: "",
+    description: "",
     is_active: true,
+    is_featured: false,
 });
 
 const showDeactivateConfirm = ref(false);
@@ -393,7 +427,9 @@ function resetForm() {
     form.credits = 100;
     form.price = "";
     form.sale_price = "";
+    form.description = "";
     form.is_active = true;
+    form.is_featured = false;
     formErrors.value = {};
 }
 
@@ -410,7 +446,9 @@ function openEdit(plan) {
     form.credits = Number(plan.credits ?? 0);
     form.price = plan.price ?? "";
     form.sale_price = plan.sale_price ?? "";
+    form.description = plan.description ?? "";
     form.is_active = plan.is_active;
+    form.is_featured = !!plan.is_featured;
     formErrors.value = {};
     showForm.value = true;
 }
@@ -492,7 +530,9 @@ async function submitForm() {
             credits: Number(form.credits),
             price: form.price,
             sale_price: saleTrimmed !== "" ? saleTrimmed : null,
+            description: String(form.description ?? "").trim() || null,
             is_active: form.is_active,
+            is_featured: form.is_featured,
         };
 
         if (isEditing.value && form.id) {
@@ -643,6 +683,7 @@ onMounted(fetchPlans);
 .planCard__head { display: flex; flex-direction: column; gap: 6px; }
 .planCard__nameWrap { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .planCard__name { font-size: 18px; font-weight: 700; margin: 0; color: var(--admin-text, #e2e8f0); }
+.planCard__featured { font-size: 11.5px; font-weight: 700; color: #f59e0b; letter-spacing: 0.02em; }
 
 /* Status badge */
 .sBadge {
@@ -875,6 +916,7 @@ onMounted(fetchPlans);
 }
 .pField__input[type="number"] { -moz-appearance: textfield; }
 .pField__input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.pField__textarea { resize: vertical; font-family: inherit; line-height: 1.5; min-height: 60px; }
 .pField__input--prefixed { padding-left: 26px; }
 .pField__input--sale:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.12); }
 .pField__input--err { border-color: #ef4444 !important; }
