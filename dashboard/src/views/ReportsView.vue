@@ -60,9 +60,9 @@ function answerRate(row: ReportRow): number {
 
 function rateBadge(row: ReportRow): string {
     const r = answerRate(row);
-    if (r >= 80) return "dBadge--active";
-    if (r >= 60) return "dBadge--processing";
-    return "dBadge--failed";
+    if (r >= 80) return "badge--active";
+    if (r >= 60) return "badge--processing";
+    return "badge--failed";
 }
 
 function glyph(key: string): string {
@@ -136,36 +136,26 @@ onMounted(fetchReports);
 <template>
     <div class="rPage">
         <!-- Header -->
-        <header class="rHeader">
-            <div class="rHeader__left">
-                <div class="rHeader__icon">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                        <rect x="9" y="3" width="6" height="4" rx="1" stroke="currentColor" stroke-width="1.8"/>
-                        <path d="M9 12h6M9 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                    </svg>
-                </div>
-                <div>
-                    <h1 class="rHeader__title">Weekly Call Reports</h1>
-                    <p class="rHeader__sub">Track and analyse weekly call performance metrics.</p>
-                </div>
+        <div class="rPageHead">
+            <div>
+                <h1 class="rPageHead__title">Weekly Call Reports</h1>
+                <p class="rPageHead__sub">Track and analyse weekly call performance metrics.</p>
             </div>
-            <div class="rHeader__stat">
-                <div class="rHeader__statValue">{{ filtered.length }}</div>
-                <div class="rHeader__statLabel">Total Reports</div>
-            </div>
-        </header>
+        </div>
 
         <!-- Toolbar -->
         <div class="rToolbar">
-            <input
-                v-model="search"
-                class="rSearch"
-                type="search"
-                placeholder="Search week range…"
-                autocomplete="off"
-            />
-            <button type="button" class="rBtn rBtn--ghost" :disabled="loading" @click="fetchReports">
+            <div class="rSearchWrap">
+                <svg class="rSearchIcon" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7.2" stroke="currentColor" stroke-width="1.8"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                <input
+                    v-model="search"
+                    class="rInput rInput--search"
+                    type="search"
+                    placeholder="Search week range…"
+                    autocomplete="off"
+                />
+            </div>
+            <button type="button" class="rBtn rBtn--secondary" :disabled="loading" @click="fetchReports">
                 <svg viewBox="0 0 24 24" fill="none" class="rBtn__icon">
                     <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
                     <path d="M20 4v6h-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -174,205 +164,219 @@ onMounted(fetchReports);
             </button>
         </div>
 
+        <!-- Count row -->
+        <div v-if="!loading" class="rCountRow">{{ fmtNum(filtered.length) }} reports</div>
+
         <div v-if="error" class="rAlert">{{ error }}</div>
 
         <!-- Table card -->
         <div class="rCard">
-            <!-- Table header -->
-            <div class="rTable">
-                <div class="rTr rTr--head">
-                    <div class="rTd">
-                        <button type="button" class="rSortBtn" @click="toggleSort('weekStart')">
-                            Week{{ glyph('weekStart') }}
-                        </button>
-                    </div>
-                    <div class="rTd rTd--num">
-                        <button type="button" class="rSortBtn" @click="toggleSort('totalCalls')">
-                            Total Calls{{ glyph('totalCalls') }}
-                        </button>
-                    </div>
-                    <div class="rTd rTd--num">
-                        <button type="button" class="rSortBtn" @click="toggleSort('answeredCalls')">
-                            Answered{{ glyph('answeredCalls') }}
-                        </button>
-                    </div>
-                    <div class="rTd rTd--num">Answer Rate</div>
-                    <div class="rTd rTd--actions">Actions</div>
+            <div class="rTableWrap">
+                <table class="rTable">
+                    <thead>
+                        <tr>
+                            <th>
+                                <button type="button" class="rSortBtn" @click="toggleSort('weekStart')">
+                                    Week{{ glyph('weekStart') }}
+                                </button>
+                            </th>
+                            <th class="rCol--right">
+                                <button type="button" class="rSortBtn" @click="toggleSort('totalCalls')">
+                                    Total Calls{{ glyph('totalCalls') }}
+                                </button>
+                            </th>
+                            <th class="rCol--right">
+                                <button type="button" class="rSortBtn" @click="toggleSort('answeredCalls')">
+                                    Answered{{ glyph('answeredCalls') }}
+                                </button>
+                            </th>
+                            <th class="rCol--right">Answer Rate</th>
+                            <th class="rCol--actions"></th>
+                        </tr>
+                    </thead>
+
+                    <tbody v-if="loading">
+                        <tr v-for="n in 8" :key="n">
+                            <td colspan="5"><div class="rSkeleton"></div></td>
+                        </tr>
+                    </tbody>
+
+                    <tbody v-else-if="filtered.length === 0">
+                        <tr>
+                            <td colspan="5" class="rEmpty">
+                                <div class="rEmpty__title">No reports found</div>
+                                <div class="rEmpty__desc">No weekly call reports match the current search.</div>
+                            </td>
+                        </tr>
+                    </tbody>
+
+                    <tbody v-else>
+                        <tr v-for="row in filtered" :key="row.id" class="rRow" @click="view(row)">
+                            <td class="rWeek">{{ fmtWeek(row) }}</td>
+                            <td class="rMono rCol--right">{{ fmtNum(row.totalCalls) }}</td>
+                            <td class="rMono rCol--right">{{ fmtNum(row.answeredCalls) }}</td>
+                            <td class="rCol--right">
+                                <span class="rBadge" :class="rateBadge(row)">{{ answerRate(row) }}%</span>
+                            </td>
+                            <td class="rCol--actions" @click.stop>
+                                <button type="button" class="rChevronBtn" aria-label="View report" @click.stop="view(row)">
+                                    <svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Mobile card list -->
+            <div class="rCardList">
+                <div v-if="loading" class="rCardList__body">
+                    <div v-for="n in 6" :key="n" class="rCardSkeleton"></div>
                 </div>
-
-                <!-- Skeleton -->
-                <template v-if="loading">
-                    <div v-for="n in 8" :key="n" class="rTr">
-                        <div class="rTd"><span class="rSk rSk--lg"></span></div>
-                        <div class="rTd rTd--num"><span class="rSk rSk--sm"></span></div>
-                        <div class="rTd rTd--num"><span class="rSk rSk--sm"></span></div>
-                        <div class="rTd rTd--num"><span class="rSk rSk--badge"></span></div>
-                        <div class="rTd rTd--actions"><span class="rSk rSk--btn"></span></div>
-                    </div>
-                </template>
-
-                <!-- Empty -->
                 <div v-else-if="filtered.length === 0" class="rEmpty">
                     <div class="rEmpty__title">No reports found</div>
-                    <div class="rEmpty__sub">No weekly call reports match the current search.</div>
+                    <div class="rEmpty__desc">No weekly call reports match the current search.</div>
                 </div>
-
-                <!-- Rows -->
-                <template v-else>
-                    <div v-for="row in filtered" :key="row.id" class="rTr rTr--body" @click="view(row)">
-                        <div class="rTd">
+                <div v-else class="rCardList__body">
+                    <button v-for="row in filtered" :key="row.id" type="button" class="rReportCard" @click="view(row)">
+                        <div class="rReportCard__top">
                             <span class="rWeek">{{ fmtWeek(row) }}</span>
+                            <span class="rBadge" :class="rateBadge(row)">{{ answerRate(row) }}%</span>
                         </div>
-                        <div class="rTd rTd--num rMono">{{ fmtNum(row.totalCalls) }}</div>
-                        <div class="rTd rTd--num rMono">{{ fmtNum(row.answeredCalls) }}</div>
-                        <div class="rTd rTd--num">
-                            <span class="dBadge" :class="rateBadge(row)">{{ answerRate(row) }}%</span>
+                        <div class="rReportCard__meta">
+                            <span class="rMono">{{ fmtNum(row.totalCalls) }} calls</span>
+                            <span class="rReportCard__dot"></span>
+                            <span class="rMono">{{ fmtNum(row.answeredCalls) }} answered</span>
                         </div>
-                        <div class="rTd rTd--actions" @click.stop>
-                            <button type="button" class="rBtn rBtn--ghost rBtn--sm" @click="view(row)">View</button>
-                        </div>
-                    </div>
-                </template>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
 </template>
 
 <style scoped>
-/* ── Layout ─────────────────────────────────────────────────────── */
-.rPage { display: flex; flex-direction: column; gap: var(--space-4, 1rem); }
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.rPage { display: flex; flex-direction: column; gap: 16px; }
 
-/* ── Header ─────────────────────────────────────────────────────── */
-.rHeader {
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
-    padding: 1.25rem 1.5rem;
-    background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 14px;
-}
-.rHeader__left { display: flex; align-items: center; gap: 1rem; }
-.rHeader__icon {
-    width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
-    background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, transparent);
-    color: var(--color-primary, #3b82f6); display: grid; place-items: center;
-}
-.rHeader__icon svg { width: 20px; height: 20px; }
-.rHeader__title { font-size: 1.2rem; font-weight: 800; margin: 0 0 2px; }
-.rHeader__sub   { font-size: 0.82rem; opacity: 0.6; margin: 0; }
-.rHeader__stat  {
-    padding: 0.5rem 1rem; border-radius: 8px; text-align: center;
-    background: color-mix(in srgb, var(--color-primary, #3b82f6) 8%, transparent);
-}
-.rHeader__statValue { font-size: 1.15rem; font-weight: 700; }
-.rHeader__statLabel { font-size: 0.7rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; }
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.rPageHead { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.rPageHead__title { margin: 0; font-size: 1.9rem; font-weight: 700; letter-spacing: -0.015em; }
+.rPageHead__sub { margin: 6px 0 0 0; color: var(--color-muted); font-size: 0.88rem; }
 
-/* ── Toolbar ─────────────────────────────────────────────────────── */
-.rToolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.rSearch {
-    flex: 1; min-width: 200px; height: 36px; padding: 0 12px;
-    border: 1px solid var(--border, #e5e7eb); border-radius: 8px;
-    background: var(--surface, #fff); color: inherit; font-size: 0.875rem;
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.rToolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; padding: 12px 14px;
 }
-.rSearch:focus { outline: none; border-color: var(--color-primary, #3b82f6); }
+.rSearchWrap { position: relative; display: flex; align-items: center; flex: 1; min-width: 200px; }
+.rSearchIcon { position: absolute; left: 12px; width: 15px; height: 15px; color: var(--color-muted); pointer-events: none; }
+.rInput--search { padding-left: 36px; }
+.rInput {
+    height: 38px; padding: 0 11px; border: 1px solid var(--color-border);
+    border-radius: 9px; background: var(--color-surface-2); color: inherit;
+    font-size: 0.85rem; width: 100%; box-sizing: border-box;
+}
+.rInput:focus {
+    outline: none; border-color: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
+    background: var(--color-surface); box-shadow: 0 0 0 3px var(--ring);
+}
 
-/* ── Buttons ─────────────────────────────────────────────────────── */
+.rCountRow { font-size: 0.82rem; color: var(--color-muted); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
 .rBtn {
-    display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px;
-    border-radius: 8px; font-size: 0.82rem; font-weight: 600; border: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 15px;
+    border-radius: 9px; font-size: 0.85rem; font-weight: 600; border: none; cursor: pointer;
     white-space: nowrap; transition: filter 0.15s, opacity 0.15s;
 }
-.rBtn--sm { height: 30px; padding: 0 10px; font-size: 0.78rem; }
-.rBtn--ghost { background: transparent; color: inherit; border: 1px solid var(--border, #e5e7eb); }
-.rBtn--ghost:hover:not(:disabled) { background: var(--surface-2, #f3f4f6); }
+.rBtn--secondary { background: var(--color-surface); color: inherit; border: 1px solid var(--color-border-strong); }
+.rBtn--secondary:hover:not(:disabled) { background: var(--color-surface-2); }
 .rBtn:disabled { opacity: 0.45; cursor: not-allowed; }
-.rBtn__icon { width: 14px; height: 14px; flex-shrink: 0; }
+.rBtn__icon { width: 15px; height: 15px; flex-shrink: 0; }
 
-/* ── Alert ───────────────────────────────────────────────────────── */
-.rAlert {
-    padding: 10px 14px; border-radius: 8px; font-size: 0.875rem;
-    background: color-mix(in srgb, #ef4444 10%, transparent);
-    border: 1px solid #ef4444; color: #ef4444;
+/* ── Alert ───────────────────────────────────────────────────────────────── */
+.rAlert { padding: 10px 14px; border-radius: 10px; font-size: 0.9rem; background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border); color: var(--color-error); }
+
+/* ── Card / table ────────────────────────────────────────────────────────── */
+.rCard { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; overflow: hidden; }
+.rTableWrap { overflow-x: auto; }
+.rTable { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.rTable thead tr { background: var(--color-surface-2); }
+.rTable th {
+    text-align: left; padding: 11px 16px; font-size: 0.68rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--color-muted); font-weight: 600; white-space: nowrap;
+    border-bottom: 1px solid var(--color-border);
 }
-
-/* ── Card ────────────────────────────────────────────────────────── */
-.rCard {
-    background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb);
-    border-radius: 14px; overflow: hidden;
-}
-
-/* ── Table ───────────────────────────────────────────────────────── */
-.rTable { display: flex; flex-direction: column; }
-
-.rTr {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr 120px;
-    align-items: center; gap: 12px;
-    padding: 0 1.25rem;
-    border-bottom: 1px solid var(--border, #e5e7eb);
-}
-.rTr:last-child { border-bottom: none; }
-
-.rTr--head {
-    height: 40px;
-    background: var(--surface-2, #f9fafb);
-    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-    opacity: 0.7;
-}
-
-.rTr--body {
-    height: 52px;
-    cursor: pointer;
-    transition: background 0.1s;
-}
-.rTr--body:hover { background: var(--surface-2, #f9fafb); }
-
-.rTd { display: flex; align-items: center; min-width: 0; }
-.rTd--num { justify-content: flex-end; }
-.rTd--actions { justify-content: flex-end; }
+.rTable td { padding: 13px 16px; border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+.rTable tbody tr:last-child td { border-bottom: none; }
+.rRow { cursor: pointer; transition: background 0.1s; }
+.rRow:hover { background: var(--color-surface-2); }
 
 .rSortBtn {
     background: none; border: none; cursor: pointer; padding: 0; font: inherit;
-    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-    color: inherit; opacity: 0.7;
+    font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--color-muted);
 }
-.rSortBtn:hover { opacity: 1; }
+.rSortBtn:hover { color: var(--color-text); }
 
-.rWeek { font-weight: 600; font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rMono { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+.rWeek { font-weight: 500; font-size: 0.87rem; white-space: nowrap; }
+.rMono { font-family: var(--font-mono); font-size: 0.82rem; }
+.rCol--right { text-align: right; }
+.rCol--actions { width: 40px; }
 
-/* ── Badge ───────────────────────────────────────────────────────── */
-.dBadge {
-    padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+/* ── Badge ───────────────────────────────────────────────────────────────── */
+.rBadge {
+    padding: 3px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 700;
     display: inline-block; white-space: nowrap;
 }
-.dBadge--active     { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
-.dBadge--failed     { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
-.dBadge--processing { background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-primary-hover, var(--color-primary)); }
+.badge--active     { background: var(--color-success-soft); color: var(--color-success); }
+.badge--failed     { background: var(--color-error-soft); color: var(--color-error); }
+.badge--processing { background: var(--color-primary-soft); color: var(--color-primary); }
 
-/* ── Empty ───────────────────────────────────────────────────────── */
-.rEmpty { padding: 3rem 1.5rem; text-align: center; }
-.rEmpty__title { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
-.rEmpty__sub   { font-size: 0.82rem; opacity: 0.55; }
+.rChevronBtn {
+    display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+    border-radius: 7px; background: none; border: none; cursor: pointer; color: var(--color-muted);
+}
+.rChevronBtn:hover { background: var(--color-surface-2); color: var(--color-text); }
+.rChevronBtn svg { width: 16px; height: 16px; }
 
-/* ── Skeleton ────────────────────────────────────────────────────── */
-.rSk {
-    display: inline-block; border-radius: 6px;
-    background: color-mix(in srgb, var(--color-text, #111) 8%, transparent);
+/* ── Empty ───────────────────────────────────────────────────────────────── */
+.rEmpty { padding: 3rem; text-align: center; }
+.rEmpty__title { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+.rEmpty__desc { font-size: 0.875rem; color: var(--color-muted); }
+
+/* ── Skeleton ────────────────────────────────────────────────────────────── */
+.rSkeleton {
+    height: 20px; border-radius: 6px; background: color-mix(in srgb, var(--color-text) 8%, transparent);
     animation: rPulse 1.2s ease-in-out infinite;
 }
-.rSk--lg   { width: 180px; height: 14px; }
-.rSk--sm   { width: 60px; height: 14px; }
-.rSk--badge { width: 52px; height: 20px; border-radius: 999px; }
-.rSk--btn  { width: 60px; height: 28px; border-radius: 8px; }
-@keyframes rPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes rPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
 
-/* ── Responsive ──────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-    .rTr {
-        grid-template-columns: 1fr 1fr;
-        height: auto;
-        padding: 10px 1rem;
-        gap: 8px;
-    }
-    .rTr--head { display: none; }
-    .rTd--num, .rTd--actions { justify-content: flex-start; }
+/* ── Mobile card list ────────────────────────────────────────────────────── */
+.rCardList { display: none; }
+.rCardList__body { display: flex; flex-direction: column; }
+.rReportCard {
+    display: flex; flex-direction: column; gap: 8px; width: 100%;
+    padding: 14px 16px; border: none; border-bottom: 1px solid var(--color-border);
+    background: none; text-align: left; cursor: pointer; font-family: inherit; color: inherit;
+}
+.rReportCard:last-child { border-bottom: none; }
+.rReportCard:active { background: var(--color-surface-2); }
+.rReportCard__top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rReportCard__meta { display: flex; align-items: center; gap: 7px; font-size: 0.78rem; color: var(--color-muted); }
+.rReportCard__dot { width: 3px; height: 3px; border-radius: 999px; background: var(--color-muted); flex-shrink: 0; }
+.rCardSkeleton {
+    height: 58px; margin: 10px 16px; border-radius: 10px;
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    animation: rPulse 1.2s ease-in-out infinite;
+}
+.rCardSkeleton:first-child { margin-top: 16px; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+    .rPageHead { flex-direction: column; align-items: flex-start; }
+    .rTableWrap { display: none; }
+    .rCardList { display: block; }
 }
 </style>

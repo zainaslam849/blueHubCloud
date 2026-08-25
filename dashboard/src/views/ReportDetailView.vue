@@ -158,6 +158,11 @@ const categoriesWithSamples = computed(() => {
         .sort((a, b) => b.samples.length - a.samples.length);
 });
 
+const expandedSampleCategories = ref<Record<string, boolean>>({});
+function toggleSampleCategory(key: string) {
+    expandedSampleCategories.value = { ...expandedSampleCategories.value, [key]: !expandedSampleCategories.value[key] };
+}
+
 const hourlyData = computed(() => {
     const dist = bd.value?.hourly_distribution ?? {};
     const maxCount = Math.max(...Object.values(dist).map(Number), 1);
@@ -274,8 +279,8 @@ function getSortedBreakdown(breakdown: any, topN: number): Record<string, number
     return Object.fromEntries(Object.entries(breakdown).sort(([, a], [, b]) => Number(b) - Number(a)).slice(0, topN)) as Record<string, number>;
 }
 function priorityBadgeStyle(priority: string): string {
-    const styles: Record<string, string> = { high: "background:#fee2e2;color:#dc2626", medium: "background:#fef9c3;color:#b45309", low: "background:#dcfce7;color:#16a34a" };
-    const base = styles[priority?.toLowerCase?.()] ?? "background:#f3f4f6;color:#6b7280";
+    const styles: Record<string, string> = { high: "background:var(--color-error-soft);color:var(--color-error)", medium: "background:var(--color-warning-soft);color:var(--color-warning)", low: "background:var(--color-success-soft);color:var(--color-success)" };
+    const base = styles[priority?.toLowerCase?.()] ?? "background:var(--color-surface-2);color:var(--color-muted)";
     return `${base};border-radius:4px;padding:1px 6px;font-size:0.8em;font-weight:600`;
 }
 
@@ -572,8 +577,18 @@ onMounted(() => { fetchReport(); });
                     <div v-if="hasSampleCalls" class="rSection">
                         <h4 class="rSection__title">Sample Calls by Category</h4>
                         <div v-for="cat in categoriesWithSamples" :key="cat.key" class="rSampleSection">
-                            <h5 class="rSampleSection__title">{{ cat.name }}</h5>
-                            <div class="rSampleList">
+                            <button
+                                type="button"
+                                class="rSampleSection__title rSampleSection__toggle"
+                                @click="toggleSampleCategory(cat.key)"
+                            >
+                                <span class="rSampleSection__chevron" :class="{ 'rSampleSection__chevron--open': expandedSampleCategories[cat.key] }">
+                                    <svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+                                </span>
+                                {{ cat.name }}
+                                <span class="rMuted">({{ cat.samples.length }})</span>
+                            </button>
+                            <div v-show="expandedSampleCategories[cat.key]" class="rSampleList">
                                 <div v-for="(sample, idx) in cat.samples" :key="idx" class="rSampleCall">
                                     <div class="rSampleCall__meta">
                                         <span class="rMono">{{ fmtDate(sample.date) }}</span>
@@ -762,10 +777,10 @@ onMounted(() => { fetchReport(); });
                                     <tr v-for="row in ringGroups" :key="row.ring_group">
                                         <td>
                                             <div style="font-weight:500">{{ row.ring_group_name || row.ring_group }}</div>
-                                            <div v-if="(row.top_categories||[]).length" style="font-size:0.82em;color:var(--color-muted,#6b7280);margin-top:2px">{{ row.top_categories.slice(0,2).map((c:any)=>labelFromKey(c.name)).join(", ") }}</div>
+                                            <div v-if="(row.top_categories||[]).length" style="font-size:0.82em;color:var(--color-muted);margin-top:2px">{{ row.top_categories.slice(0,2).map((c:any)=>labelFromKey(c.name)).join(", ") }}</div>
                                         </td>
                                         <td class="rTd--num rMono">{{ row.total_calls }}</td>
-                                        <td class="rTd--num rMono"><span :style="row.missed_calls>0?'color:#dc2626;font-weight:600':''">{{ row.missed_calls }}</span></td>
+                                        <td class="rTd--num rMono"><span :style="row.missed_calls>0?'color:var(--color-error);font-weight:600':''">{{ row.missed_calls }}</span></td>
                                         <td class="rTd--num rMono">{{ row.abandoned_calls }}</td>
                                         <td class="rTd--num rMono">{{ row.total_minutes }}</td>
                                         <td style="font-size:0.85em">
@@ -853,7 +868,7 @@ onMounted(() => { fetchReport(); });
                             <div v-for="row in drilldown" :key="row.category_id" class="rInsightCard" style="margin-bottom:16px">
                                 <div class="rInsightCard__header" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
                                     <strong>{{ row.category_name || `Category #${row.category_id}` }}</strong>
-                                    <span class="rMono" style="font-size:0.85em;color:var(--color-muted,#6b7280)">{{ row.total_calls }} calls · {{ row.total_minutes ?? 0 }}m</span>
+                                    <span class="rMono" style="font-size:0.85em;color:var(--color-muted)">{{ row.total_calls }} calls · {{ row.total_minutes ?? 0 }}m</span>
                                 </div>
                                 <div class="rInsightCard__body">
                                     <div class="rKvGrid" style="margin-top:8px">
@@ -884,7 +899,7 @@ onMounted(() => { fetchReport(); });
                                             <div class="rKv__v">
                                                 <ul v-if="(row.suggested_automations||[]).length" style="margin:0;padding-left:16px">
                                                     <li v-for="(item,i) in row.suggested_automations" :key="i">
-                                                        {{ typeof item==='object'?item.suggestion:item }}<span v-if="typeof item==='object'&&item.impact" style="color:var(--color-muted,#6b7280);font-size:0.85em"> — {{ item.impact }}</span>
+                                                        {{ typeof item==='object'?item.suggestion:item }}<span v-if="typeof item==='object'&&item.impact" style="color:var(--color-muted);font-size:0.85em"> — {{ item.impact }}</span>
                                                     </li>
                                                 </ul>
                                                 <span v-else class="rMuted">—</span>
@@ -910,25 +925,25 @@ onMounted(() => { fetchReport(); });
 .rHeader {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
     padding: 1.25rem 1.5rem;
-    background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb); border-radius: 14px;
+    background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px;
     min-width: 0; overflow: hidden;
 }
 .rHeader__left  { display: flex; align-items: flex-start; gap: 1rem; flex: 1 1 0; min-width: 0; }
 .rHeader__content { min-width: 0; flex: 1; }
 .rHeader__icon  {
     width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
-    background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, transparent);
-    color: var(--color-primary, #3b82f6); display: grid; place-items: center;
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    color: var(--color-primary); display: grid; place-items: center;
 }
 .rHeader__icon svg { width: 20px; height: 20px; }
 .rHeader__breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; opacity: 0.65; margin-bottom: 4px; flex-wrap: wrap; }
-.rBreadLink { background: none; border: none; cursor: pointer; font-size: 0.82rem; color: var(--color-primary, #3b82f6); padding: 0; }
+.rBreadLink { background: none; border: none; cursor: pointer; font-size: 0.82rem; color: var(--color-primary); padding: 0; }
 .rBreadLink:hover { text-decoration: underline; }
 .rBreadSep { opacity: 0.4; }
 .rHeader__title    { font-size: 1.25rem; font-weight: 800; margin: 0 0 2px; word-break: break-word; overflow-wrap: break-word; }
 .rHeader__subtitle { font-size: 0.85rem; opacity: 0.65; margin: 0; word-break: break-word; }
 .rHeader__stats { display: flex; gap: 1rem; align-items: flex-start; flex-shrink: 0; }
-.rHeader__stat  { padding: 0.5rem 1rem; border-radius: 8px; text-align: center; min-width: 90px; background: color-mix(in srgb, var(--color-primary, #3b82f6) 8%, transparent); }
+.rHeader__stat  { padding: 0.5rem 1rem; border-radius: 8px; text-align: center; min-width: 90px; background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
 .rHeader__statLabel { font-size: 0.7rem; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; }
 .rHeader__statValue { font-size: 1rem; font-weight: 700; margin-top: 2px; }
 .rHeader__actions   { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
@@ -939,21 +954,21 @@ onMounted(() => { fetchReport(); });
     border-radius: 8px; font-size: 0.82rem; font-weight: 600; border: none; cursor: pointer;
     white-space: nowrap; text-decoration: none;
 }
-.rBtn--ghost   { background: transparent; color: inherit; border: 1px solid var(--border, #e5e7eb); }
-.rBtn--ghost:hover:not(:disabled) { background: var(--surface-2, #f3f4f6); }
-.rBtn--primary { background: var(--color-primary, #3b82f6); color: #fff; }
+.rBtn--ghost   { background: transparent; color: inherit; border: 1px solid var(--color-border); }
+.rBtn--ghost:hover:not(:disabled) { background: var(--color-surface-2); }
+.rBtn--primary { background: var(--color-primary); color: #fff; }
 .rBtn--primary:hover { filter: brightness(1.08); }
 .rBtn:disabled { opacity: 0.45; cursor: not-allowed; }
 .rBtn__icon    { width: 14px; height: 14px; flex-shrink: 0; }
 
 /* ── Alerts ─────────────────────────────────────────────────────────────── */
 .rAlert { padding: 10px 14px; border-radius: 8px; font-size: 0.875rem; }
-.rAlert--error { background: color-mix(in srgb, #ef4444 10%, transparent); border: 1px solid #ef4444; color: #ef4444; }
-.rAlert--warn  { background: color-mix(in srgb, #f59e0b 10%, transparent); border: 1px solid #f59e0b; color: #b45309; }
+.rAlert--error { background: var(--color-error-soft); border: 1px solid var(--color-error-soft-border); color: var(--color-error); }
+.rAlert--warn  { background: var(--color-warning-soft); border: 1px solid var(--color-warning-soft-border); color: var(--color-warning); }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 .rCard {
-    background: var(--surface, #fff); border: 1px solid var(--border, #e5e7eb);
+    background: var(--color-surface); border: 1px solid var(--color-border);
     border-radius: 14px; padding: 1.25rem; display: flex; flex-direction: column; gap: 16px;
     min-width: 0; overflow: hidden;
 }
@@ -966,13 +981,13 @@ onMounted(() => { fetchReport(); });
 .rKv { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .rKv__k { font-size: 0.72rem; font-weight: 600; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.04em; }
 .rKv__v { font-size: 0.9rem; word-break: break-word; overflow-wrap: break-word; }
-.rMono  { font-family: ui-monospace, monospace; font-size: 0.82rem; }
+.rMono  { font-family: var(--font-mono); font-size: 0.82rem; }
 .rMuted { opacity: 0.6; font-size: 0.875rem; }
 
 /* ── Badge ──────────────────────────────────────────────────────────────── */
 .rBadge { padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; display: inline-block; white-space: nowrap; }
-.rBadge.active, .badge--active { background: color-mix(in srgb, #10b981 14%, transparent); color: #059669; }
-.rBadge.failed, .badge--failed { background: color-mix(in srgb, #ef4444 14%, transparent); color: #dc2626; }
+.rBadge.active, .badge--active { background: var(--color-success-soft); color: var(--color-success); }
+.rBadge.failed, .badge--failed { background: var(--color-error-soft); color: var(--color-error); }
 .rBadge.processing, .badge--processing { background: color-mix(in srgb, var(--color-primary) 14%, transparent); color: var(--color-primary-hover, var(--color-primary)); }
 
 /* ── Prose ──────────────────────────────────────────────────────────────── */
@@ -985,30 +1000,30 @@ onMounted(() => { fetchReport(); });
     gap: 12px;
 }
 .rMetricCard {
-    border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 14px;
-    background: var(--surface, #fff); min-width: 0;
+    border: 1px solid var(--color-border); border-radius: 10px; padding: 14px;
+    background: var(--color-surface); min-width: 0;
 }
-.rMetricCard--success { background: color-mix(in srgb, #10b981 6%, var(--surface, #fff)); border-color: color-mix(in srgb, #10b981 20%, var(--border, #e5e7eb)); }
-.rMetricCard--warning { background: color-mix(in srgb, #f59e0b 6%, var(--surface, #fff)); border-color: color-mix(in srgb, #f59e0b 20%, var(--border, #e5e7eb)); }
+.rMetricCard--success { background: color-mix(in srgb, var(--color-success) 6%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-success) 20%, var(--color-border)); }
+.rMetricCard--warning { background: color-mix(in srgb, var(--color-warning) 6%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-warning) 20%, var(--color-border)); }
 .rMetricCard__header  { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.rMetricCard__icon    { width: 28px; height: 28px; border-radius: 7px; background: color-mix(in srgb, var(--color-primary, #3b82f6) 10%, transparent); color: var(--color-primary, #3b82f6); display: grid; place-items: center; flex-shrink: 0; }
+.rMetricCard__icon    { width: 28px; height: 28px; border-radius: 7px; background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary); display: grid; place-items: center; flex-shrink: 0; }
 .rMetricCard__icon svg { width: 14px; height: 14px; }
-.rMetricCard--success .rMetricCard__icon { background: color-mix(in srgb, #10b981 12%, transparent); color: #059669; }
-.rMetricCard--warning .rMetricCard__icon { background: color-mix(in srgb, #f59e0b 12%, transparent); color: #b45309; }
+.rMetricCard--success .rMetricCard__icon { background: var(--color-success-soft); color: var(--color-success); }
+.rMetricCard--warning .rMetricCard__icon { background: var(--color-warning-soft); color: var(--color-warning); }
 .rMetricCard__label   { font-size: 0.78rem; font-weight: 600; opacity: 0.65; }
 .rMetricCard__value   { font-size: 1.6rem; font-weight: 800; line-height: 1; }
 .rMetricCard__sub     { font-size: 0.75rem; opacity: 0.6; margin-top: 4px; }
 
 /* ── Time Range ─────────────────────────────────────────────────────────── */
-.rTimeRange { display: flex; gap: 2rem; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--border, #e5e7eb); }
+.rTimeRange { display: flex; gap: 2rem; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--color-border); }
 
 /* ── Tables ─────────────────────────────────────────────────────────────── */
-.rTableWrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border, #e5e7eb); }
+.rTableWrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--color-border); }
 .rTable { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-.rTable th { background: var(--surface-2, #f9fafb); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border, #e5e7eb); }
-.rTable td { padding: 8px 12px; border-bottom: 1px solid var(--border, #e5e7eb); }
+.rTable th { background: var(--color-surface-2); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--color-border); }
+.rTable td { padding: 8px 12px; border-bottom: 1px solid var(--color-border); }
 .rTable tbody tr:last-child td { border-bottom: none; }
-.rTable tbody tr:hover td { background: var(--surface-2, #f9fafb); }
+.rTable tbody tr:hover td { background: var(--color-surface-2); }
 .rTable--mini { font-size: 0.82rem; }
 .rTable--mini td { padding: 5px 8px; }
 .rTh--num { text-align: right !important; }
@@ -1016,25 +1031,25 @@ onMounted(() => { fetchReport(); });
 
 /* ── Percent Bar ────────────────────────────────────────────────────────── */
 .rPctBar { display: inline-flex; align-items: center; gap: 8px; width: 140px; }
-.rPctBar__fill { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--color-primary, #3b82f6) 60%, transparent); flex-shrink: 0; }
+.rPctBar__fill { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--color-primary) 60%, transparent); flex-shrink: 0; }
 .rPctBar__label { font-size: 0.75rem; opacity: 0.7; white-space: nowrap; }
 
 /* ── Section headers ────────────────────────────────────────────────────── */
 .rSections { display: flex; flex-direction: column; gap: 20px; }
-.rSection   { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border, #e5e7eb); }
+.rSection   { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--color-border); }
 .rSection:first-child { border-top: none; padding-top: 0; }
 .rSection__title { font-size: 0.9rem; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
 .rSection__icon  { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0; }
-.rSection__icon--opp { background: color-mix(in srgb, #10b981 12%, transparent); color: #059669; }
-.rSection__icon--rec { background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, transparent); color: var(--color-primary, #3b82f6); }
+.rSection__icon--opp { background: var(--color-success-soft); color: var(--color-success); }
+.rSection__icon--rec { background: color-mix(in srgb, var(--color-primary) 12%, transparent); color: var(--color-primary); }
 .rSection__icon svg  { width: 12px; height: 12px; }
 .rSubsection       { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .rSubsection__title { font-size: 0.82rem; font-weight: 700; opacity: 0.75; margin: 0; }
 
 /* ── Sub-category cards ─────────────────────────────────────────────────── */
 .rSubCatGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.rSubCatCard { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; overflow: hidden; }
-.rSubCatCard__header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-2, #f9fafb); }
+.rSubCatCard { border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; }
+.rSubCatCard__header { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--color-surface-2); }
 .rSubCatCard__name  { font-weight: 600; font-size: 0.875rem; }
 .rSubCatCard__count { font-size: 0.78rem; opacity: 0.6; }
 
@@ -1043,27 +1058,35 @@ onMounted(() => { fetchReport(); });
 .rHourlyCell {
     display: flex; flex-direction: column; align-items: center; gap: 2px;
     min-width: 44px; padding: 6px 8px; border-radius: 8px;
-    background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #e5e7eb);
+    background: var(--color-surface-2); border: 1px solid var(--color-border);
     font-size: 0.72rem;
 }
-.rHourlyCell--peak { background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, transparent); border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 30%, transparent); color: var(--color-primary, #3b82f6); }
+.rHourlyCell--peak { background: color-mix(in srgb, var(--color-primary) 12%, transparent); border-color: color-mix(in srgb, var(--color-primary) 30%, transparent); color: var(--color-primary); }
 .rHourlyCell__hour  { opacity: 0.65; }
 .rHourlyCell__count { font-weight: 700; font-size: 0.82rem; }
 
 /* ── Sample calls ───────────────────────────────────────────────────────── */
 .rSampleSection       { display: flex; flex-direction: column; gap: 8px; }
 .rSampleSection__title { font-size: 0.82rem; font-weight: 600; opacity: 0.7; margin: 0; }
+.rSampleSection__toggle {
+    display: flex; align-items: center; gap: 7px;
+    background: none; border: none; padding: 4px 0; cursor: pointer;
+    color: inherit; text-align: left; width: 100%;
+}
+.rSampleSection__chevron           { display: flex; flex-shrink: 0; transition: transform 0.15s ease; }
+.rSampleSection__chevron svg       { width: 13px; height: 13px; }
+.rSampleSection__chevron--open     { transform: rotate(90deg); }
 .rSampleList { display: flex; flex-direction: column; gap: 8px; }
-.rSampleCall { border: 1px solid var(--border, #e5e7eb); border-radius: 8px; padding: 10px 12px; }
+.rSampleCall { border: 1px solid var(--color-border); border-radius: 8px; padding: 10px 12px; }
 .rSampleCall__meta { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
-.rSampleCall__tag { font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #e5e7eb); }
+.rSampleCall__tag { font-size: 0.72rem; padding: 1px 7px; border-radius: 999px; background: var(--color-surface-2); border: 1px solid var(--color-border); }
 .rSampleCall__transcript { font-size: 0.82rem; line-height: 1.5; opacity: 0.8; }
 
 /* ── Insight cards ──────────────────────────────────────────────────────── */
 .rInsightList { display: flex; flex-direction: column; gap: 12px; }
-.rInsightCard { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; overflow: hidden; }
-.rInsightCard--opp { border-color: color-mix(in srgb, #10b981 30%, var(--border, #e5e7eb)); }
-.rInsightCard__header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--surface-2, #f9fafb); border-bottom: 1px solid var(--border, #e5e7eb); flex-wrap: wrap; }
+.rInsightCard { border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; }
+.rInsightCard--opp { border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border)); }
+.rInsightCard__header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--color-surface-2); border-bottom: 1px solid var(--color-border); flex-wrap: wrap; }
 .rInsightCard__category { font-size: 0.82rem; font-weight: 600; opacity: 0.8; }
 .rInsightCard__body   { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .rInsightCard__reason { margin: 0; font-size: 0.875rem; line-height: 1.5; }
@@ -1075,17 +1098,17 @@ onMounted(() => { fetchReport(); });
 
 /* ── Recommendation cards ───────────────────────────────────────────────── */
 .rRecList { display: flex; flex-direction: column; gap: 10px; }
-.rRecCard { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: row; gap: 12px; align-items: flex-start; }
-.rRecCard--warning { background: color-mix(in srgb, #f59e0b 6%, transparent); border-color: color-mix(in srgb, #f59e0b 30%, var(--border, #e5e7eb)); }
-.rRecCard--info    { background: color-mix(in srgb, var(--color-primary) 6%, transparent); border-color: color-mix(in srgb, var(--color-primary) 30%, var(--border)); }
-.rRecCard__icon    { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--color-primary, #3b82f6) 10%, transparent); color: var(--color-primary, #3b82f6); }
-.rRecCard--warning .rRecCard__icon { background: color-mix(in srgb, #f59e0b 12%, transparent); color: #b45309; }
+.rRecCard { border: 1px solid var(--color-border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: row; gap: 12px; align-items: flex-start; }
+.rRecCard--warning { background: var(--color-warning-soft); border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border)); }
+.rRecCard--info    { background: color-mix(in srgb, var(--color-primary) 6%, transparent); border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border)); }
+.rRecCard__icon    { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: var(--color-primary); }
+.rRecCard--warning .rRecCard__icon { background: var(--color-warning-soft); color: var(--color-warning); }
 .rRecCard__icon svg { width: 16px; height: 16px; }
 .rRecCard__content { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .rRecCard__type    { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.65; }
 .rRecCard__message { margin: 0; font-size: 0.875rem; line-height: 1.5; }
 .rRecCard__tags    { display: flex; gap: 6px; flex-wrap: wrap; }
-.rRecTag { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: var(--surface-2, #f3f4f6); border: 1px solid var(--border, #e5e7eb); }
+.rRecTag { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: var(--color-surface-2); border: 1px solid var(--color-border); }
 
 /* ── Empty ──────────────────────────────────────────────────────────────── */
 .rEmpty { padding: 2rem; text-align: center; }
@@ -1096,7 +1119,7 @@ onMounted(() => { fetchReport(); });
 .rSkelLines { display: flex; flex-direction: column; gap: 10px; }
 .rSkelLines::before, .rSkelLines::after {
     content: ''; height: 16px; border-radius: 6px;
-    background: color-mix(in srgb, var(--color-text, #111) 8%, transparent);
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
     animation: rPulse 1.2s ease-in-out infinite;
 }
 @keyframes rPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
