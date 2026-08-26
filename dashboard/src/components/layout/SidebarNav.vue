@@ -706,7 +706,11 @@ function isActive(name: string | undefined) {
         transform: translateX(-105%);
         transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
         box-shadow: var(--shadow-lg);
-        z-index: 20;
+        /* Must stay above .backdrop (z-index 26) — the backdrop spans the
+           full viewport including the drawer's own area, so if the drawer
+           were below it every tap on a nav link would hit the backdrop
+           (which only closes the menu) instead of the link underneath. */
+        z-index: 27;
     }
 
     .sidebar.open {

@@ -97,12 +97,18 @@
                     </select>
                 </div>
                 <div>
-                    <label class="admin-label">Range (days)</label>
+                    <label class="admin-label">From date</label>
                     <input
-                        v-model.number="pipelineRangeDays"
-                        type="number"
-                        min="1"
-                        max="365"
+                        v-model="pipelineFrom"
+                        type="date"
+                        class="admin-input"
+                    />
+                </div>
+                <div>
+                    <label class="admin-label">To date</label>
+                    <input
+                        v-model="pipelineTo"
+                        type="date"
                         class="admin-input"
                     />
                 </div>
@@ -317,7 +323,23 @@ const pipelineError = ref("");
 const pipelineSuccess = ref("");
 const companies = ref([]);
 const pipelineCompanyId = ref("");
-const pipelineRangeDays = ref(30);
+// Default to the current week (Mon–Sun) so the common case — "run this
+// week's pipeline for a company" — needs no typing, while still letting the
+// admin pick any other week/date range explicitly.
+function currentWeekBounds() {
+    const now = new Date();
+    const day = now.getDay(); // 0 = Sunday
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + mondayOffset);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const toIso = (d) => d.toISOString().slice(0, 10);
+    return { from: toIso(monday), to: toIso(sunday) };
+}
+const { from: defaultFrom, to: defaultTo } = currentWeekBounds();
+const pipelineFrom = ref(defaultFrom);
+const pipelineTo = ref(defaultTo);
 const pipelineSummarizeLimit = ref(500);
 const pipelineCategorizeLimit = ref(500);
 const systemStatus = ref(null);
@@ -361,11 +383,22 @@ async function runPipeline() {
         pipelineRunning.value = false;
         return;
     }
+    if (!pipelineFrom.value || !pipelineTo.value) {
+        pipelineError.value = "Please pick a from and to date.";
+        pipelineRunning.value = false;
+        return;
+    }
+    if (pipelineTo.value < pipelineFrom.value) {
+        pipelineError.value = "The to date can't be before the from date.";
+        pipelineRunning.value = false;
+        return;
+    }
 
     try {
         const payload = {
             company_id: parseInt(pipelineCompanyId.value),
-            range_days: pipelineRangeDays.value,
+            from: pipelineFrom.value,
+            to: pipelineTo.value,
             summarize_limit: pipelineSummarizeLimit.value,
             categorize_limit: pipelineCategorizeLimit.value,
         };

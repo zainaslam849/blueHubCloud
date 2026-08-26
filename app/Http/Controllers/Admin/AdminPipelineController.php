@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\AdminTestPipelineJob;
+use App\Models\Company;
 use App\Models\CompanyPbxAccount;
+use App\Models\CompanyWeeklyFetch;
 use App\Models\PipelineRun;
+use App\Services\Billing\CreditService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,13 +19,17 @@ class AdminPipelineController extends Controller
 {
     private const TERMINAL_STATUSES = ['failed', 'completed', 'cancelled'];
 
-    public function run(Request $request): JsonResponse
+    public function run(Request $request, CreditService $creditService): JsonResponse
     {
         Log::info('AdminPipelineController::run - Request received', ['body' => $request->all()]);
 
         try {
             $validated = $request->validate([
                 'company_id' => ['required', 'integer', 'exists:companies,id'],
+                // Preferred: an explicit date range (e.g. a specific week) picked by the admin.
+                'from' => ['nullable', 'date'],
+                'to' => ['nullable', 'date', 'after_or_equal:from'],
+                // Fallback when from/to aren't given: the last N days from today.
                 'range_days' => ['nullable', 'integer', 'min:1', 'max:365'],
                 'summarize_limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
                 'categorize_limit' => ['nullable', 'integer', 'min:1', 'max:5000'],
@@ -35,13 +42,21 @@ class AdminPipelineController extends Controller
 
         // Admin users can run pipelines for any company
         $companyId = (int) $validated['company_id'];
+        $company = Company::query()->findOrFail($companyId);
 
-        $rangeDays = (int) ($validated['range_days'] ?? 30);
         $summarizeLimit = (int) ($validated['summarize_limit'] ?? 500);
         $categorizeLimit = (int) ($validated['categorize_limit'] ?? 500);
 
-        $to = CarbonImmutable::now('UTC')->toDateString();
-        $from = CarbonImmutable::now('UTC')->subDays($rangeDays)->toDateString();
+        $rangeDays = null;
+        if (! empty($validated['from']) && ! empty($validated['to'])) {
+            $from = CarbonImmutable::parse($validated['from'])->toDateString();
+            $to = CarbonImmutable::parse($validated['to'])->toDateString();
+        } else {
+            $rangeDays = (int) ($validated['range_days'] ?? 30);
+            $to = CarbonImmutable::now('UTC')->toDateString();
+            $from = CarbonImmutable::now('UTC')->subDays($rangeDays)->toDateString();
+        }
+
         $activeKey = $this->buildActiveKey($companyId, $from, $to);
         $trackingAvailable = Schema::hasTable('pipeline_runs') && Schema::hasTable('pipeline_run_stages');
 
@@ -61,6 +76,30 @@ class AdminPipelineController extends Controller
             Log::warning('AdminPipelineController::run - No active PBX account', ['company_id' => $companyId]);
             return response()->json([
                 'message' => 'Selected company has no active PBX account. Please configure and activate a PBX account first.',
+            ], 422);
+        }
+
+        // Credit-gate this exactly like the automated weekly run: no budget,
+        // no fetch. Record it the same way (CompanyWeeklyFetch marked
+        // insufficient_credits) so the customer dashboard's "Weekly activity"
+        // and "add credits" banner behave identically whether the run was
+        // triggered by the scheduler or by an admin.
+        $secondsBudget = $creditService->secondsBudget($company);
+        if ($secondsBudget <= 0) {
+            Log::warning('AdminPipelineController::run - Company has no credits', ['company_id' => $companyId]);
+
+            CompanyWeeklyFetch::query()->updateOrCreate(
+                ['company_id' => $companyId, 'week_start_date' => $from],
+                [
+                    'week_end_date' => $to,
+                    'status' => CompanyWeeklyFetch::STATUS_INSUFFICIENT_CREDITS,
+                    'last_attempted_at' => now(),
+                ],
+            );
+
+            return response()->json([
+                'message' => "{$company->name} has no credits available. Add credits for this company before running the pipeline.",
+                'status' => 'insufficient_credits',
             ], 422);
         }
 
@@ -111,14 +150,18 @@ class AdminPipelineController extends Controller
         ]);
 
         AdminTestPipelineJob::dispatch(
-            $companyId,
-            $from,
-            $to,
-            $summarizeLimit,
-            $categorizeLimit,
-            'default',
-            $pipelineRun?->id,
-            false
+            companyId: $companyId,
+            fromDate: $from,
+            toDate: $to,
+            summarizeLimit: $summarizeLimit,
+            categorizeLimit: $categorizeLimit,
+            pipelineQueue: 'default',
+            pipelineRunId: $pipelineRun?->id,
+            isResume: false,
+            maxCalls: null,
+            trackCompanyLimit: true,
+            maxSeconds: $secondsBudget,
+            deductCredits: true,
         )->onQueue('default');
 
         Log::info('AdminPipelineController::run - Job dispatched successfully', ['company_id' => $companyId]);
@@ -136,7 +179,7 @@ class AdminPipelineController extends Controller
         ], 202);
     }
 
-    public function resume(int $pipelineRunId): JsonResponse
+    public function resume(int $pipelineRunId, CreditService $creditService): JsonResponse
     {
         $pipelineRun = PipelineRun::query()->findOrFail($pipelineRunId);
 
@@ -147,6 +190,15 @@ class AdminPipelineController extends Controller
                     'pipeline_run_id' => $pipelineRun->id,
                     'status' => $pipelineRun->status,
                 ],
+            ], 422);
+        }
+
+        $company = Company::query()->findOrFail($pipelineRun->company_id);
+        $secondsBudget = $creditService->secondsBudget($company);
+        if ($secondsBudget <= 0) {
+            return response()->json([
+                'message' => "{$company->name} has no credits available. Add credits before resuming this pipeline.",
+                'status' => 'insufficient_credits',
             ], 422);
         }
 
@@ -179,14 +231,18 @@ class AdminPipelineController extends Controller
         $metrics = is_array($pipelineRun->metrics) ? $pipelineRun->metrics : [];
 
         AdminTestPipelineJob::dispatch(
-            (int) $pipelineRun->company_id,
-            $pipelineRun->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
-            $pipelineRun->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
-            (int) ($metrics['summarize_limit'] ?? 500),
-            (int) ($metrics['categorize_limit'] ?? 500),
-            'default',
-            $pipelineRun->id,
-            true
+            companyId: (int) $pipelineRun->company_id,
+            fromDate: $pipelineRun->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
+            toDate: $pipelineRun->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
+            summarizeLimit: (int) ($metrics['summarize_limit'] ?? 500),
+            categorizeLimit: (int) ($metrics['categorize_limit'] ?? 500),
+            pipelineQueue: 'default',
+            pipelineRunId: $pipelineRun->id,
+            isResume: true,
+            maxCalls: null,
+            trackCompanyLimit: true,
+            maxSeconds: $secondsBudget,
+            deductCredits: true,
         )->onQueue('default');
 
         return response()->json([

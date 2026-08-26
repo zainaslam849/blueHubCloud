@@ -215,9 +215,11 @@ class AdminJobsController extends Controller
 
     /**
      * POST /admin/api/jobs/pipeline/run-now
-     * Immediately triggers the weekly pipeline for all active companies (manual, unlimited).
+     * Immediately triggers the weekly pipeline for all active companies — credit-gated
+     * exactly like the scheduled weekly run: a company with no credits is skipped and
+     * recorded as insufficient_credits instead of running unmetered.
      */
-    public function runPipelineNow(): JsonResponse
+    public function runPipelineNow(CreditService $creditService): JsonResponse
     {
         if (! Schema::hasTable('pipeline_runs')) {
             return response()->json(['message' => 'Pipeline tables not ready. Run migrations first.'], 422);
@@ -245,6 +247,7 @@ class AdminJobsController extends Controller
             ->get(['id', 'name']);
 
         $dispatched = 0;
+        $blockedCredits = 0;
         foreach ($companies as $company) {
             $activeKey = $this->buildActiveKey((int) $company->id, $weekFrom, $weekTo);
 
@@ -257,6 +260,21 @@ class AdminJobsController extends Controller
                 continue;
             }
 
+            $secondsBudget = $creditService->secondsBudget($company);
+            if ($secondsBudget <= 0) {
+                CompanyWeeklyFetch::query()->updateOrCreate(
+                    ['company_id' => $company->id, 'week_start_date' => $weekFrom],
+                    [
+                        'week_end_date' => $weekTo,
+                        'status' => CompanyWeeklyFetch::STATUS_INSUFFICIENT_CREDITS,
+                        'last_attempted_at' => now(),
+                    ],
+                );
+                $blockedCredits++;
+
+                continue;
+            }
+
             $run = PipelineRun::create([
                 'company_id'    => $company->id,
                 'range_from'    => $weekFrom,
@@ -265,30 +283,37 @@ class AdminJobsController extends Controller
                 'trigger_type'  => 'manual',
                 'active_key'    => $activeKey,
                 'started_at'    => now(),
-                'metrics'       => ['source' => 'run-now', 'max_calls' => null],
+                'metrics'       => ['source' => 'run-now', 'max_calls' => null, 'max_seconds' => $secondsBudget],
             ]);
 
             AdminTestPipelineJob::dispatch(
-                (int) $company->id,
-                $weekFrom,
-                $weekTo,
-                500,
-                500,
-                'default',
-                $run->id,
-                true,
-                null,   // maxCalls — unlimited for manual runs
-                false,  // trackCompanyLimit — manual runs don't touch usage counter
+                companyId: (int) $company->id,
+                fromDate: $weekFrom,
+                toDate: $weekTo,
+                summarizeLimit: 500,
+                categorizeLimit: 500,
+                pipelineQueue: 'default',
+                pipelineRunId: $run->id,
+                isResume: true,
+                maxCalls: null,
+                trackCompanyLimit: true,
+                maxSeconds: $secondsBudget,
+                deductCredits: true,
             )->onQueue('default');
 
             $dispatched++;
         }
 
+        $message = $dispatched > 0
+            ? "Pipeline dispatched for {$dispatched} " . ($dispatched === 1 ? 'company' : 'companies') . '.'
+            : 'No active companies found to process.';
+        if ($blockedCredits > 0) {
+            $message .= " {$blockedCredits} " . ($blockedCredits === 1 ? 'company was' : 'companies were') . ' skipped for insufficient credits.';
+        }
+
         return response()->json([
-            'message' => $dispatched > 0
-                ? "Pipeline dispatched for {$dispatched} " . ($dispatched === 1 ? 'company' : 'companies') . '.'
-                : 'No active companies found to process.',
-            'data' => ['dispatched' => $dispatched],
+            'message' => $message,
+            'data' => ['dispatched' => $dispatched, 'blocked_credits' => $blockedCredits],
         ]);
     }
 
@@ -386,7 +411,14 @@ class AdminJobsController extends Controller
                     'updated_at' => now(),
                 ])->save();
 
-                $this->dispatchPipelineRun($run, $metrics);
+                if (! $this->dispatchPipelineRun($run, $metrics)) {
+                    $run->forceFill(['status' => 'failed', 'last_error' => 'Insufficient credits.'])->save();
+
+                    return response()->json([
+                        'message' => 'This company has no credits available. Add credits before resuming this pipeline.',
+                        'status' => 'insufficient_credits',
+                    ], 422);
+                }
 
                 return response()->json([
                     'message' => 'Pipeline was queued and has been re-dispatched to workers.',
@@ -451,7 +483,14 @@ class AdminJobsController extends Controller
             'metrics' => $metrics,
         ])->save();
 
-        $this->dispatchPipelineRun($run, $metrics);
+        if (! $this->dispatchPipelineRun($run, $metrics)) {
+            $run->forceFill(['status' => 'failed', 'last_error' => 'Insufficient credits.'])->save();
+
+            return response()->json([
+                'message' => 'This company has no credits available. Add credits before resuming this pipeline.',
+                'status' => 'insufficient_credits',
+            ], 422);
+        }
 
         return response()->json([
             'message' => 'Pipeline resume queued.',
@@ -908,18 +947,50 @@ class AdminJobsController extends Controller
         ]);
     }
 
-    private function dispatchPipelineRun(PipelineRun $run, array $metrics = []): void
+    /**
+     * Credit-gates the (re)dispatch exactly like every other admin pipeline
+     * trigger: a company with no credits doesn't run, it's recorded as
+     * insufficient_credits instead. Returns false when blocked so the caller
+     * can return a clear error instead of silently generating an unmetered run.
+     */
+    private function dispatchPipelineRun(PipelineRun $run, array $metrics = []): bool
     {
+        $company = Company::query()->find($run->company_id);
+        $creditService = app(CreditService::class);
+        $secondsBudget = $company ? $creditService->secondsBudget($company) : 0;
+
+        if ($secondsBudget <= 0) {
+            $weekFrom = $run->range_from?->toDateString();
+            if ($company && $weekFrom) {
+                CompanyWeeklyFetch::query()->updateOrCreate(
+                    ['company_id' => $company->id, 'week_start_date' => $weekFrom],
+                    [
+                        'week_end_date' => $run->range_to?->toDateString() ?? $weekFrom,
+                        'status' => CompanyWeeklyFetch::STATUS_INSUFFICIENT_CREDITS,
+                        'last_attempted_at' => now(),
+                    ],
+                );
+            }
+
+            return false;
+        }
+
         AdminTestPipelineJob::dispatch(
-            (int) $run->company_id,
-            $run->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
-            $run->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
-            (int) ($metrics['summarize_limit'] ?? 500),
-            (int) ($metrics['categorize_limit'] ?? 500),
-            'default',
-            $run->id,
-            true
+            companyId: (int) $run->company_id,
+            fromDate: $run->range_from?->toDateString() ?? CarbonImmutable::now('UTC')->subDay()->toDateString(),
+            toDate: $run->range_to?->toDateString() ?? CarbonImmutable::now('UTC')->toDateString(),
+            summarizeLimit: (int) ($metrics['summarize_limit'] ?? 500),
+            categorizeLimit: (int) ($metrics['categorize_limit'] ?? 500),
+            pipelineQueue: 'default',
+            pipelineRunId: $run->id,
+            isResume: true,
+            maxCalls: null,
+            trackCompanyLimit: true,
+            maxSeconds: $secondsBudget,
+            deductCredits: true,
         )->onQueue('default');
+
+        return true;
     }
 
 }
