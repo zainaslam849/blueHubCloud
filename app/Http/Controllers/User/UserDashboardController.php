@@ -77,45 +77,61 @@ class UserDashboardController extends Controller
                 ->all();
         }
 
-        // Per-week usage history (drives the "process remaining" smart buttons).
-        // Map each week to whether a completed report already exists for it.
-        $reportWeeks = WeeklyCallReport::where('company_id', $companyId)
-            ->pluck('status', 'week_start_date');
+        // Per-week usage history (drives the "process remaining" smart buttons
+        // and the "Weekly activity" dashboard card). Built from the union of
+        // company_weekly_fetches (tracked runs: scheduled / user-resume) and
+        // weekly_call_reports directly — admin manual/test runs deliberately
+        // don't write a company_weekly_fetches row (trackCompanyLimit=false),
+        // but the customer should still see that a report exists for that week.
+        $reports = WeeklyCallReport::where('company_id', $companyId)
+            ->orderByDesc('week_start_date')
+            ->limit(26)
+            ->get(['id', 'week_start_date', 'week_end_date', 'status', 'total_calls']);
+        $reportsByWeek = $reports->keyBy(fn (WeeklyCallReport $r) => $r->week_start_date?->toDateString());
 
         $weeklyFetches = CompanyWeeklyFetch::where('company_id', $companyId)
             ->orderByDesc('week_start_date')
             ->limit(26)
             ->get();
+        $fetchesByWeek = $weeklyFetches->keyBy(fn (CompanyWeeklyFetch $w) => $w->week_start_date?->toDateString());
+
+        $weekKeys = $fetchesByWeek->keys()->merge($reportsByWeek->keys())->filter()->unique()->sortDesc()->take(26)->values();
 
         // Latest pipeline run per week (drives the "processing" live status on
         // the smart button — a queued/running run means a job is genuinely
         // working in the background right now, not just a stale DB status).
-        $weekStarts = $weeklyFetches->pluck('week_start_date')->filter()->map(fn ($d) => $d->toDateString())->values();
         $latestRunByWeek = PipelineRun::where('company_id', $companyId)
-            ->whereIn('range_from', $weekStarts)
+            ->whereIn('range_from', $weekKeys)
             ->orderByDesc('id')
             ->get(['id', 'range_from', 'status', 'current_stage'])
             ->groupBy(fn (PipelineRun $r) => $r->range_from->toDateString())
             ->map(fn ($group) => $group->first());
 
-        $weeklyHistory = $weeklyFetches
-            ->map(function (CompanyWeeklyFetch $w) use ($reportWeeks, $latestRunByWeek) {
-                $weekKey = $w->week_start_date?->toDateString();
-                $reportStatus = $weekKey ? ($reportWeeks[$weekKey] ?? null) : null;
-                $run = $weekKey ? $latestRunByWeek->get($weekKey) : null;
+        $weeklyHistory = $weekKeys
+            ->map(function (string $weekKey) use ($fetchesByWeek, $reportsByWeek, $latestRunByWeek) {
+                $w = $fetchesByWeek->get($weekKey);
+                $report = $reportsByWeek->get($weekKey);
+                $run = $latestRunByWeek->get($weekKey);
                 $isActive = $run && in_array($run->status, ['queued', 'running'], true);
 
+                // Report-only weeks (admin manual/test run — no company_weekly_fetches
+                // row) have no real fetch record for the "process remaining" action to
+                // target, so they're always shown as a completed, non-actionable row
+                // regardless of the underlying report's own status — this card is a
+                // visibility view for the customer, not a control for admin-run weeks.
+                $isTracked = $w !== null;
+
                 return [
-                    'id' => $w->id,
+                    'id' => $w?->id ?? (-1 * $report?->id),
                     'week_start_date' => $weekKey,
-                    'week_end_date' => $w->week_end_date?->toDateString(),
-                    'calls_available' => $w->calls_available,
-                    'calls_fetched' => $w->calls_fetched,
-                    'calls_blocked' => $w->calls_blocked,
-                    'status' => $w->status,
-                    'report_available' => $reportStatus === 'completed',
-                    'last_attempted_at' => $w->last_attempted_at?->toIso8601String(),
-                    'completed_at' => $w->completed_at?->toIso8601String(),
+                    'week_end_date' => $w?->week_end_date?->toDateString() ?? $report?->week_end_date?->toDateString(),
+                    'calls_available' => $w?->calls_available ?? $report?->total_calls ?? 0,
+                    'calls_fetched' => $w?->calls_fetched ?? $report?->total_calls ?? 0,
+                    'calls_blocked' => $isTracked ? ($w->calls_blocked ?? 0) : 0,
+                    'status' => $isTracked ? $w->status : 'complete',
+                    'report_available' => $isTracked ? ($report?->status === 'completed') : true,
+                    'last_attempted_at' => $w?->last_attempted_at?->toIso8601String(),
+                    'completed_at' => $w?->completed_at?->toIso8601String(),
                     'pipeline_status' => $isActive ? $run->status : null,
                     'pipeline_stage' => $isActive ? $run->current_stage : null,
                 ];
