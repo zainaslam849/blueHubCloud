@@ -464,7 +464,10 @@ onBeforeUnmount(() => {
                                     </button>
                                 </template>
                                 <template v-else-if="weekAction(w).kind === 'done'">
-                                    <RouterLink :to="{ name: 'reports' }" class="histLink">View report →</RouterLink>
+                                    <RouterLink
+                                        :to="{ name: 'report-detail', params: { companySlug: auth.state.user?.company_slug ?? '', weekStart: w.week_start_date } }"
+                                        class="histLink"
+                                    >View report →</RouterLink>
                                 </template>
                                 <template v-else-if="weekAction(w).kind === 'credits'">
                                     <span class="histActions">

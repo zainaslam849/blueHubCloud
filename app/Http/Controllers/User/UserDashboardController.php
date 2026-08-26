@@ -95,7 +95,15 @@ class UserDashboardController extends Controller
             ->get();
         $fetchesByWeek = $weeklyFetches->keyBy(fn (CompanyWeeklyFetch $w) => $w->week_start_date?->toDateString());
 
-        $weekKeys = $fetchesByWeek->keys()->merge($reportsByWeek->keys())->filter()->unique()->sortDesc()->take(26)->values();
+        // A report-only week (no company_weekly_fetches row) only has something
+        // useful to show once its report has actually finished — a still-
+        // processing/failed admin run has no real fetch record to act on and
+        // nothing viewable yet, so it's left out rather than shown misleadingly.
+        $completedReportOnlyWeeks = $reportsByWeek
+            ->filter(fn (WeeklyCallReport $r, string $week) => $r->status === 'completed' && ! $fetchesByWeek->has($week))
+            ->keys();
+
+        $weekKeys = $fetchesByWeek->keys()->merge($completedReportOnlyWeeks)->unique()->sortDesc()->take(26)->values();
 
         // Latest pipeline run per week (drives the "processing" live status on
         // the smart button — a queued/running run means a job is genuinely
