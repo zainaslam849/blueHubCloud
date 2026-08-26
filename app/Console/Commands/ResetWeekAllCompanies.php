@@ -11,6 +11,7 @@ use App\Models\ExtensionPerformanceReport;
 use App\Models\RingGroupPerformanceReport;
 use App\Models\WeeklyCallReport;
 use App\Services\Billing\CreditService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -68,10 +69,18 @@ class ResetWeekAllCompanies extends Command
             $report = $reportsByCompany->get($companyId);
             $fetch = $fetchesByCompany->get($companyId);
 
+            // calls.started_at is stored in UTC; weekStart/weekEnd are calendar
+            // dates in the company's local timezone. Comparing them directly
+            // against the UTC column (whereDate) shifts the window by the
+            // company's UTC offset — convert to actual UTC instant bounds.
+            $timezone = is_string($company?->timezone) && $company->timezone !== '' ? $company->timezone : 'UTC';
+            $utcStart = CarbonImmutable::parse($weekStart, $timezone)->startOfDay()->setTimezone('UTC');
+            $utcEnd = CarbonImmutable::parse($weekEnd, $timezone)->endOfDay()->setTimezone('UTC');
+
             $callIds = DB::table('calls')
                 ->where('company_id', $companyId)
-                ->whereDate('started_at', '>=', $weekStart)
-                ->whereDate('started_at', '<=', $weekEnd)
+                ->where('started_at', '>=', $utcStart->toDateTimeString())
+                ->where('started_at', '<=', $utcEnd->toDateTimeString())
                 ->pluck('id');
 
             $creditsToRefund = (float) DB::table('credit_transactions')

@@ -22,7 +22,7 @@ class WeeklyCallReportShowQueryService
      */
     public function getReportByCompanyAndWeek(int $companyId, string $weekStart): WeeklyCallReport
     {
-        return WeeklyCallReport::with(['company:id,name,slug', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
+        return WeeklyCallReport::with(['company:id,name,slug,timezone', 'companyPbxAccount:id,pbx_provider_id,server_id,status'])
             ->where('company_id', $companyId)
             ->whereDate('week_start_date', $weekStart)
             ->firstOrFail();
@@ -30,6 +30,10 @@ class WeeklyCallReportShowQueryService
 
     public function getCallEndpoints(WeeklyCallReport $report): array
     {
+        $timezone = is_string($report->company?->timezone) && $report->company->timezone !== ''
+            ? $report->company->timezone
+            : 'UTC';
+
         return Call::query()
             ->where('weekly_call_report_id', $report->id)
             ->where(function ($query) {
@@ -47,13 +51,20 @@ class WeeklyCallReportShowQueryService
                 'duration_seconds',
                 'pbx_unique_id',
             ])
-            ->map(function ($call) {
+            ->map(function ($call) use ($timezone) {
+                // started_at is stored in UTC; convert to the company's local
+                // timezone so this matches the hourly distribution's timezone
+                // handling instead of leaking raw UTC to the frontend.
+                $startedAt = $call->started_at
+                    ? CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone)->toIso8601String()
+                    : null;
+
                 return [
                     'call_id' => (int) $call->id,
                     'from' => $call->from,
                     'to' => $call->to,
                     'status' => $call->status,
-                    'started_at' => $call->started_at?->toIso8601String(),
+                    'started_at' => $startedAt,
                     'duration_seconds' => (int) ($call->duration_seconds ?? 0),
                     'pbx_unique_id' => $call->pbx_unique_id,
                 ];
@@ -86,7 +97,10 @@ class WeeklyCallReportShowQueryService
         }
 
         if (! $hasCategoryCounts) {
-            $fallback = $this->buildCategoryBreakdownFromReportCalls((int) $report->id);
+            $timezone = is_string($report->company?->timezone) && $report->company->timezone !== ''
+                ? $report->company->timezone
+                : 'UTC';
+            $fallback = $this->buildCategoryBreakdownFromReportCalls((int) $report->id, $timezone);
             if (! empty($fallback['counts'])) {
                 $categoryBreakdowns = $fallback;
             }
@@ -118,6 +132,10 @@ class WeeklyCallReportShowQueryService
 
     public function buildAdvancedViews(WeeklyCallReport $report, array $categoryBreakdowns): array
     {
+        $timezone = is_string($report->company?->timezone) && $report->company->timezone !== ''
+            ? $report->company->timezone
+            : 'UTC';
+
         $extensionReports = ExtensionPerformanceReport::query()
             ->where('weekly_call_report_id', $report->id)
             ->orderByDesc('automation_impact_score')
@@ -270,7 +288,7 @@ class WeeklyCallReportShowQueryService
             ];
         })->values()->all();
 
-        $extensionScorecards = $extensionReports->map(function ($row) use ($report) {
+        $extensionScorecards = $extensionReports->map(function ($row) use ($report, $timezone) {
             $timeline = Call::query()
                 ->leftJoin('call_categories', 'call_categories.id', '=', 'calls.category_id')
                 ->leftJoin('sub_categories', 'sub_categories.id', '=', 'calls.sub_category_id')
@@ -297,7 +315,7 @@ class WeeklyCallReportShowQueryService
             $samples = $timeline
                 ->filter(fn ($call) => is_string($call->transcript_text ?? null) && trim((string) $call->transcript_text) !== '')
                 ->take(5)
-                ->map(function ($call) {
+                ->map(function ($call) use ($timezone) {
                     $snippet = trim((string) $call->transcript_text);
                     if (mb_strlen($snippet) > 180) {
                         $snippet = mb_substr($snippet, 0, 180).'...';
@@ -305,7 +323,9 @@ class WeeklyCallReportShowQueryService
 
                     return [
                         'call_id' => $call->id,
-                        'started_at' => $call->started_at,
+                        'started_at' => $call->started_at
+                            ? CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone)->toIso8601String()
+                            : null,
                         'did' => $call->did,
                         'snippet' => $snippet,
                         'recording_or_transcript_link' => '/admin/calls/'.$call->id,
@@ -323,10 +343,12 @@ class WeeklyCallReportShowQueryService
             return [
                 'extension' => $row->extension,
                 'department' => $row->department,
-                'timeline' => $timeline->map(function ($call) {
+                'timeline' => $timeline->map(function ($call) use ($timezone) {
                     return [
                         'call_id' => $call->id,
-                        'started_at' => $call->started_at,
+                        'started_at' => $call->started_at
+                            ? CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone)->toIso8601String()
+                            : null,
                         'duration_seconds' => (int) ($call->duration_seconds ?? 0),
                         'category_name' => $call->category_name,
                         'sub_category_name' => $call->sub_category_name,
@@ -429,7 +451,7 @@ class WeeklyCallReportShowQueryService
         ];
     }
 
-    private function buildCategoryBreakdownFromReportCalls(int $reportId): array
+    private function buildCategoryBreakdownFromReportCalls(int $reportId, string $timezone = 'UTC'): array
     {
         $rows = Call::query()
             ->leftJoin('call_categories', 'call_categories.id', '=', 'calls.category_id')
@@ -442,7 +464,7 @@ class WeeklyCallReportShowQueryService
                 'calls.sub_category_id',
                 DB::raw('COALESCE(sub_categories.name, calls.sub_category_label) as sub_category_name'),
                 'calls.did',
-                DB::raw('HOUR(calls.started_at) as hour_bucket'),
+                'calls.started_at',
             ])
             ->get();
 
@@ -464,7 +486,9 @@ class WeeklyCallReportShowQueryService
             $categoryName = (string) ($row->category_name ?? 'Uncategorized');
             $subCategoryName = is_string($row->sub_category_name ?? null) ? trim((string) $row->sub_category_name) : '';
             $did = is_string($row->did ?? null) ? trim((string) $row->did) : '';
-            $hour = isset($row->hour_bucket) ? (string) ((int) $row->hour_bucket) : null;
+            $hour = $row->started_at
+                ? (string) CarbonImmutable::parse($row->started_at, 'UTC')->setTimezone($timezone)->format('G')
+                : null;
 
             $counts[$categoryName] = ($counts[$categoryName] ?? 0) + 1;
 

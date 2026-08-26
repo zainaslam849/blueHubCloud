@@ -456,7 +456,10 @@ class CategorizeSingleCallJob implements ShouldQueue
     }
 
     /**
-     * Determine if call was after business hours.
+     * Determine if call was after business hours, in the company's own
+     * timezone. calls.started_at is stored in UTC, so comparing its raw
+     * hour directly (without converting to local time first) would tell
+     * the AI the wrong thing for any company not on UTC.
      */
     private function isAfterHours(Call $call): bool
     {
@@ -464,8 +467,12 @@ class CategorizeSingleCallJob implements ShouldQueue
             return false;
         }
 
-        $hour = $call->started_at->hour;
-        
+        $timezone = is_string($call->company?->timezone) && $call->company->timezone !== ''
+            ? $call->company->timezone
+            : 'UTC';
+
+        $hour = \Carbon\CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone)->hour;
+
         // Business hours: 9 AM to 5 PM
         return $hour < 9 || $hour >= 17;
     }

@@ -19,6 +19,7 @@ class WeeklyCallReportShowPresenter
                 'company' => [
                     'id' => $report->company?->id,
                     'name' => $report->company?->name,
+                    'timezone' => $report->company?->timezone,
                 ],
                 'ai_incomplete' => (bool) ($report->ai_incomplete ?? false),
                 'ai_incomplete_call_count' => (int) ($report->ai_incomplete_call_count ?? 0),

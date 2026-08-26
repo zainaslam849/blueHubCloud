@@ -48,6 +48,9 @@ class AdvancedReportGenerationService
             'category_reports' => 0,
         ];
 
+        $company = Company::find($companyId);
+        $timezone = is_string($company?->timezone) && $company->timezone !== '' ? $company->timezone : 'UTC';
+
         // Ensure regenerated analytics do not keep stale rows for the same weekly report.
         if ($weeklyReportId) {
             ExtensionPerformanceReport::query()->where('weekly_call_report_id', $weeklyReportId)->delete();
@@ -61,7 +64,8 @@ class AdvancedReportGenerationService
                 $companyId,
                 $periodStart,
                 $periodEnd,
-                $weeklyReportId
+                $weeklyReportId,
+                $timezone
             );
 
             // Generate ring group performance reports
@@ -69,7 +73,8 @@ class AdvancedReportGenerationService
                 $companyId,
                 $periodStart,
                 $periodEnd,
-                $weeklyReportId
+                $weeklyReportId,
+                $timezone
             );
 
             // Generate category analytics reports (drill-down)
@@ -77,7 +82,8 @@ class AdvancedReportGenerationService
                 $companyId,
                 $periodStart,
                 $periodEnd,
-                $weeklyReportId
+                $weeklyReportId,
+                $timezone
             );
 
             Log::info("Comprehensive reports generated successfully", $results);
@@ -93,19 +99,32 @@ class AdvancedReportGenerationService
     }
 
     /**
+     * calls.started_at is stored in UTC, but period boundaries are calendar
+     * dates in the company's local timezone. Comparing a local date directly
+     * against the UTC column shifts the window by the company's UTC offset,
+     * so every date-range query against started_at goes through this.
+     */
+    private function localDateBoundToUtc(string $localDate, string $timezone, bool $endOfDay = false): string
+    {
+        $local = CarbonImmutable::parse($localDate, $timezone);
+        $local = $endOfDay ? $local->endOfDay() : $local->startOfDay();
+
+        return $local->setTimezone('UTC')->toDateTimeString();
+    }
+
+    /**
      * Generate Extension Performance Reports (Leaderboard data)
      */
     private function generateExtensionReports(
         int $companyId,
         CarbonImmutable $periodStart,
         CarbonImmutable $periodEnd,
-        ?int $weeklyReportId
+        ?int $weeklyReportId,
+        string $timezone = 'UTC'
     ): int {
         $calls = Call::where('company_id', $companyId)
-            ->whereBetween('started_at', [
-                $periodStart->startOfDay(),
-                $periodEnd->endOfDay()
-            ])
+            ->where('started_at', '>=', $this->localDateBoundToUtc($periodStart->toDateString(), $timezone))
+            ->where('started_at', '<=', $this->localDateBoundToUtc($periodEnd->toDateString(), $timezone, true))
             ->get();
 
         $extensionData = [];
@@ -237,13 +256,12 @@ class AdvancedReportGenerationService
         int $companyId,
         CarbonImmutable $periodStart,
         CarbonImmutable $periodEnd,
-        ?int $weeklyReportId
+        ?int $weeklyReportId,
+        string $timezone = 'UTC'
     ): int {
         $calls = Call::where('company_id', $companyId)
-            ->whereBetween('started_at', [
-                $periodStart->startOfDay(),
-                $periodEnd->endOfDay()
-            ])
+            ->where('started_at', '>=', $this->localDateBoundToUtc($periodStart->toDateString(), $timezone))
+            ->where('started_at', '<=', $this->localDateBoundToUtc($periodEnd->toDateString(), $timezone, true))
             ->get();
 
         $ringGroupData = [];
@@ -271,14 +289,19 @@ class AdvancedReportGenerationService
 
             $ringGroupData[$ringGroup]['total_calls']++;
 
+            $localStartedAt = $call->started_at
+                ? CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone)
+                : null;
+
             if ($call->status === 'answered') {
                 $ringGroupData[$ringGroup]['answered_calls']++;
             } elseif ($call->status === 'missed') {
                 $ringGroupData[$ringGroup]['missed_calls']++;
-                
+
                 // Track when missed calls occur
-                $hour = $call->started_at->hour;
-                $ringGroupData[$ringGroup]['missed_by_hour'][$hour]++;
+                if ($localStartedAt) {
+                    $ringGroupData[$ringGroup]['missed_by_hour'][$localStartedAt->hour]++;
+                }
             } elseif ($call->status === 'abandoned') {
                 $ringGroupData[$ringGroup]['abandoned_calls']++;
             }
@@ -286,8 +309,9 @@ class AdvancedReportGenerationService
             $ringGroupData[$ringGroup]['total_seconds'] += $call->duration_seconds ?? 0;
 
             // Track hourly distribution
-            $hour = $call->started_at->hour;
-            $ringGroupData[$ringGroup]['hourly_distribution'][$hour]++;
+            if ($localStartedAt) {
+                $ringGroupData[$ringGroup]['hourly_distribution'][$localStartedAt->hour]++;
+            }
 
             // Track categories with minutes
             if ($call->category_id) {
@@ -366,7 +390,8 @@ class AdvancedReportGenerationService
         int $companyId,
         CarbonImmutable $periodStart,
         CarbonImmutable $periodEnd,
-        ?int $weeklyReportId
+        ?int $weeklyReportId,
+        string $timezone = 'UTC'
     ): int {
         $categories = CallCategory::where('company_id', $companyId)
             ->where('is_enabled', true)
@@ -377,10 +402,8 @@ class AdvancedReportGenerationService
         foreach ($categories as $category) {
             $calls = Call::where('company_id', $companyId)
                 ->where('category_id', $category->id)
-                ->whereBetween('started_at', [
-                    $periodStart->startOfDay(),
-                    $periodEnd->endOfDay()
-                ])
+                ->where('started_at', '>=', $this->localDateBoundToUtc($periodStart->toDateString(), $timezone))
+                ->where('started_at', '<=', $this->localDateBoundToUtc($periodEnd->toDateString(), $timezone, true))
                 ->get();
 
             if ($calls->isEmpty()) continue;
@@ -420,9 +443,11 @@ class AdvancedReportGenerationService
                 }
 
                 // Trends
-                $dayOfWeek = $call->started_at->dayOfWeek; // 0 = Sunday
-                $dailyTrend[$dayOfWeek]++;
-                $hourlyTrend[$call->started_at->hour]++;
+                if ($call->started_at) {
+                    $localStartedAt = CarbonImmutable::parse($call->started_at, 'UTC')->setTimezone($timezone);
+                    $dailyTrend[$localStartedAt->dayOfWeek]++; // 0 = Sunday
+                    $hourlyTrend[$localStartedAt->hour]++;
+                }
 
                 // Sample calls (top 5)
                 if (count($sampleCallIds) < 5) {

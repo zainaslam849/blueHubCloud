@@ -78,13 +78,19 @@ class AdminTranscriptionsController extends Controller
             $debugCounts['company_filtered_count'] = (clone $query)->count();
         }
 
+        // This list can span every company at once, each potentially on a
+        // different timezone, so there's no single "correct" local day to
+        // filter by. Almost all companies today are Australian, so default
+        // the filter's day boundaries to Australia/Sydney (converted to UTC
+        // for the comparison) rather than a raw UTC day — closer to right
+        // for the common case, revisit if companies span more zones.
         if ($startDate) {
-            $query->where('calls.started_at', '>=', CarbonImmutable::parse($startDate, 'UTC')->startOfDay());
+            $query->where('calls.started_at', '>=', CarbonImmutable::parse($startDate, 'Australia/Sydney')->startOfDay()->setTimezone('UTC'));
             $debugCounts['start_date_filtered_count'] = (clone $query)->count();
         }
 
         if ($endDate) {
-            $query->where('calls.started_at', '<=', CarbonImmutable::parse($endDate, 'UTC')->endOfDay());
+            $query->where('calls.started_at', '<=', CarbonImmutable::parse($endDate, 'Australia/Sydney')->endOfDay()->setTimezone('UTC'));
             $debugCounts['end_date_filtered_count'] = (clone $query)->count();
         }
 

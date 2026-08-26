@@ -11,6 +11,7 @@ use App\Models\ExtensionPerformanceReport;
 use App\Models\RingGroupPerformanceReport;
 use App\Models\WeeklyCallReport;
 use App\Services\Billing\CreditService;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -40,10 +41,19 @@ class ResetWeeklyReport extends Command
         $company = Company::withTrashed()->find($report->company_id);
         $dryRun = (bool) $this->option('dry-run');
 
+        // calls.started_at is stored in UTC; the report's week_start_date/
+        // week_end_date are calendar dates in the company's local timezone.
+        // Comparing the local date directly against the UTC column (whereDate)
+        // shifts the window by the company's UTC offset — convert to the
+        // actual UTC instant bounds instead.
+        $timezone = is_string($company?->timezone) && $company->timezone !== '' ? $company->timezone : 'UTC';
+        $utcStart = CarbonImmutable::parse($report->week_start_date->toDateString(), $timezone)->startOfDay()->setTimezone('UTC');
+        $utcEnd = CarbonImmutable::parse($report->week_end_date->toDateString(), $timezone)->endOfDay()->setTimezone('UTC');
+
         $calls = DB::table('calls')
             ->where('company_id', $report->company_id)
-            ->whereDate('started_at', '>=', $report->week_start_date->toDateString())
-            ->whereDate('started_at', '<=', $report->week_end_date->toDateString())
+            ->where('started_at', '>=', $utcStart->toDateTimeString())
+            ->where('started_at', '<=', $utcEnd->toDateTimeString())
             ->get(['id']);
         $callIds = $calls->pluck('id');
 

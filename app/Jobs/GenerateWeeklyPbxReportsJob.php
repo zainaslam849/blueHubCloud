@@ -361,7 +361,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         (int) $weekly['company_pbx_account_id'],
                         $weekStart->toDateString(),
                         $weekEnd->toDateString(),
-                        60
+                        60,
+                        $timezone
                     );
 
                     if (! empty($callSummaries)) {
@@ -426,8 +427,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                         ->where('company_id', $companyId)
                         ->where('company_pbx_account_id', (int) $weekly['company_pbx_account_id'])
                         ->where('status', 'answered') // Only completed calls
-                        ->whereDate('started_at', '>=', $weekStart->toDateString())
-                        ->whereDate('started_at', '<=', $weekEnd->toDateString())
+                        ->where('started_at', '>=', $this->localDateBoundToUtc($weekStart->toDateString(), $timezone))
+                        ->where('started_at', '<=', $this->localDateBoundToUtc($weekEnd->toDateString(), $timezone, true))
                         ->whereNull('weekly_call_report_id') // Only unassigned calls
                         ->when(! empty($weekly['server_id']), function ($q) use ($weekly) {
                             return $q->where('server_id', $weekly['server_id']);
@@ -587,8 +588,8 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
                 ->where('company_id', $companyId)
                 ->where('company_pbx_account_id', $companyPbxAccountId)
                 ->where('calls.category_id', (int) $categoryId)
-                ->whereDate('started_at', '>=', $weekStartDate)
-                ->whereDate('started_at', '<=', $weekEndDate)
+                ->where('started_at', '>=', $this->localDateBoundToUtc($weekStartDate, $timezone))
+                ->where('started_at', '<=', $this->localDateBoundToUtc($weekEndDate, $timezone, true))
                 ->whereNotNull('transcript_text')
                 ->where('transcript_text', '!=', '')
                 // Prioritize: valid DID first, then by transcript length
@@ -632,14 +633,15 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
         int $companyPbxAccountId,
         string $weekStartDate,
         string $weekEndDate,
-        int $limit
+        int $limit,
+        string $timezone = 'UTC'
     ): array {
         $summaries = DB::table('calls')
             ->select(['ai_summary'])
             ->where('company_id', $companyId)
             ->where('company_pbx_account_id', $companyPbxAccountId)
-            ->whereDate('started_at', '>=', $weekStartDate)
-            ->whereDate('started_at', '<=', $weekEndDate)
+            ->where('started_at', '>=', $this->localDateBoundToUtc($weekStartDate, $timezone))
+            ->where('started_at', '<=', $this->localDateBoundToUtc($weekEndDate, $timezone, true))
             ->whereNotNull('ai_summary')
             ->where('ai_summary', '!=', '')
             ->orderByDesc('started_at')
@@ -655,6 +657,23 @@ class GenerateWeeklyPbxReportsJob implements ShouldQueue
             ->all();
 
         return $summaries;
+    }
+
+    /**
+     * calls.started_at is stored in UTC, but week boundaries are calendar
+     * dates in the company's local timezone. Comparing a local date string
+     * directly against the UTC column (via whereDate/whereBetween) silently
+     * shifts the window by the company's UTC offset, so every date-range
+     * query against started_at must go through this: resolve the local
+     * calendar day in the company's timezone, then convert to the UTC
+     * instant that actually bounds the column's values.
+     */
+    private function localDateBoundToUtc(string $localDate, string $timezone, bool $endOfDay = false): string
+    {
+        $local = CarbonImmutable::parse($localDate, $timezone);
+        $local = $endOfDay ? $local->endOfDay() : $local->startOfDay();
+
+        return $local->setTimezone('UTC')->toDateTimeString();
     }
 
     /**

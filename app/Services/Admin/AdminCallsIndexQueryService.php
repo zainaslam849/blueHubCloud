@@ -105,13 +105,19 @@ class AdminCallsIndexQueryService
             $query->where('calls.category_confidence', '<=', $validated['confidence_max']);
         }
 
+        // This list can span every company at once, each potentially on a
+        // different timezone, so there's no single "correct" local day to
+        // filter by. Almost all companies today are Australian, so default
+        // the filter's day boundaries to Australia/Sydney (converted to UTC
+        // for the comparison) rather than the server's raw UTC day — closer
+        // to right for the common case, revisit if companies span more zones.
         if (isset($validated['start_date'])) {
-            $startDate = Carbon::parse($validated['start_date'])->startOfDay();
+            $startDate = Carbon::parse($validated['start_date'], 'Australia/Sydney')->startOfDay()->setTimezone('UTC');
             $query->where('calls.created_at', '>=', $startDate);
         }
 
         if (isset($validated['end_date'])) {
-            $endDate = Carbon::parse($validated['end_date'])->endOfDay();
+            $endDate = Carbon::parse($validated['end_date'], 'Australia/Sydney')->endOfDay()->setTimezone('UTC');
             $query->where('calls.created_at', '<=', $endDate);
         }
 

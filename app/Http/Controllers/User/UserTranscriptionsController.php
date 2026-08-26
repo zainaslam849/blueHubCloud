@@ -4,6 +4,7 @@ namespace App\Http\Controllers\User;
 
 use App\Http\Controllers\Controller;
 use App\Models\Call;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -61,11 +62,20 @@ class UserTranscriptionsController extends Controller
             $query->where('status', $validated['call_status']);
         }
 
-        if (! empty($validated['start_date'])) {
-            $query->whereDate('started_at', '>=', $validated['start_date']);
-        }
-        if (! empty($validated['end_date'])) {
-            $query->whereDate('started_at', '<=', $validated['end_date']);
+        // calls.started_at is stored in UTC; a customer only ever sees their
+        // own company's calls, so use that company's own timezone for the
+        // date-range boundaries instead of comparing local dates against the
+        // raw UTC column (whereDate), which shifts the window by the UTC offset.
+        if (! empty($validated['start_date']) || ! empty($validated['end_date'])) {
+            $companyTimezone = $user->company?->timezone;
+            $timezone = is_string($companyTimezone) && $companyTimezone !== '' ? $companyTimezone : 'UTC';
+
+            if (! empty($validated['start_date'])) {
+                $query->where('started_at', '>=', CarbonImmutable::parse($validated['start_date'], $timezone)->startOfDay()->setTimezone('UTC'));
+            }
+            if (! empty($validated['end_date'])) {
+                $query->where('started_at', '<=', CarbonImmutable::parse($validated['end_date'], $timezone)->endOfDay()->setTimezone('UTC'));
+            }
         }
 
         $paginator = $query->paginate($perPage)->appends($request->query());

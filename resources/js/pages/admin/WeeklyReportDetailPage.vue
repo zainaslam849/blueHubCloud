@@ -157,12 +157,24 @@ function fmtNum(v) {
 function fmtDateTime(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
-    return Number.isFinite(d.getTime()) ? d.toLocaleString() : "—";
+    if (!Number.isFinite(d.getTime())) return "—";
+    const tz = report.value?.header?.company?.timezone;
+    try {
+        return tz ? d.toLocaleString(undefined, { timeZone: tz }) : d.toLocaleString();
+    } catch {
+        return d.toLocaleString();
+    }
 }
 function fmtDate(iso) {
     if (!iso) return "—";
     const d = new Date(iso);
-    return Number.isFinite(d.getTime()) ? d.toLocaleDateString() : "—";
+    if (!Number.isFinite(d.getTime())) return "—";
+    const tz = report.value?.header?.company?.timezone;
+    try {
+        return tz ? d.toLocaleDateString(undefined, { timeZone: tz }) : d.toLocaleDateString();
+    } catch {
+        return d.toLocaleDateString();
+    }
 }
 function fmtHour(hour) {
     if (hour === 0) return "12a";

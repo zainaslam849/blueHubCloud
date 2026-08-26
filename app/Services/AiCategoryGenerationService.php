@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Call;
+use App\Models\Company;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 class AiCategoryGenerationService
@@ -67,12 +69,21 @@ class AiCategoryGenerationService
             $query->where('company_pbx_account_id', $companyPbxAccountId);
         }
 
-        if (! empty($dateRange['start'])) {
-            $query->whereDate('started_at', '>=', $dateRange['start']);
-        }
+        // calls.started_at is stored in UTC; this is always scoped to one
+        // company, so use that company's own timezone for the date-range
+        // boundaries instead of comparing local dates against the raw UTC
+        // column (whereDate), which shifts the window by the UTC offset.
+        if (! empty($dateRange['start']) || ! empty($dateRange['end'])) {
+            $companyTimezone = Company::find($companyId)?->timezone;
+            $timezone = is_string($companyTimezone) && $companyTimezone !== '' ? $companyTimezone : 'UTC';
 
-        if (! empty($dateRange['end'])) {
-            $query->whereDate('started_at', '<=', $dateRange['end']);
+            if (! empty($dateRange['start'])) {
+                $query->where('started_at', '>=', CarbonImmutable::parse($dateRange['start'], $timezone)->startOfDay()->setTimezone('UTC'));
+            }
+
+            if (! empty($dateRange['end'])) {
+                $query->where('started_at', '<=', CarbonImmutable::parse($dateRange['end'], $timezone)->endOfDay()->setTimezone('UTC'));
+            }
         }
 
         return $query->pluck('ai_summary')

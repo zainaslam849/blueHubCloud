@@ -7,7 +7,7 @@ import { userApi } from "../api/user";
 interface WeekRange { start: string; end: string; formatted: string; }
 interface ReportHeader {
     id: number;
-    company: { id: number; name: string };
+    company: { id: number; name: string; timezone: string | null };
     pbx_account: { id: number; name: string; display?: string; server_id?: number } | null;
     week_range: WeekRange;
     generated_at: string;
@@ -203,12 +203,24 @@ function fmtNum(v: any): string {
 function fmtDateTime(iso: string | null | undefined): string {
     if (!iso) return "—";
     const d = new Date(iso);
-    return Number.isFinite(d.getTime()) ? d.toLocaleString() : "—";
+    if (!Number.isFinite(d.getTime())) return "—";
+    const tz = report.value?.header?.company?.timezone;
+    try {
+        return tz ? d.toLocaleString(undefined, { timeZone: tz }) : d.toLocaleString();
+    } catch {
+        return d.toLocaleString();
+    }
 }
 function fmtDate(iso: string | null | undefined): string {
     if (!iso) return "—";
     const d = new Date(iso);
-    return Number.isFinite(d.getTime()) ? d.toLocaleDateString() : "—";
+    if (!Number.isFinite(d.getTime())) return "—";
+    const tz = report.value?.header?.company?.timezone;
+    try {
+        return tz ? d.toLocaleDateString(undefined, { timeZone: tz }) : d.toLocaleDateString();
+    } catch {
+        return d.toLocaleDateString();
+    }
 }
 function fmtHour(hour: number): string {
     if (hour === 0) return "12a";
